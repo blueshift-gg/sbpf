@@ -16,7 +16,7 @@ enum Commands {
     #[command(about = "Create a new project scaffold")]
     Init(InitArgs),
     #[command(about = "Compile into a Solana program executable")]
-    Build,
+    Build(BuildArgs),
     #[command(about = "Build and deploy the program")]
     Deploy(DeployArgs),
     #[command(about = "Test deployed program")]
@@ -44,16 +44,26 @@ struct DeployArgs {
     url: Option<String>,
 }
 
+#[derive(Args, Default)]
+struct BuildArgs {
+    #[arg(
+        short,
+        long = "debug",
+        help = "Build program in debug mode"
+    )]
+    debug: bool
+}
+
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
     match &cli.command {
         Commands::Init(args) => init(args.name.clone(), args.ts_tests),
-        Commands::Build => build(),
+        Commands::Build(args) => build(args.debug),
         Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
         Commands::Test => test(),
         Commands::E2E(args) => {
-            build()?;
+            build(false)?;
             deploy(args.name.clone(), args.url.clone())?;
             test()
         }
