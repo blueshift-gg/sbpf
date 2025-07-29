@@ -7,6 +7,7 @@ use rand::rngs::OsRng;
 use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
+use crate::config::SbpfConfig; 
 
 pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
     let project_name = match name {
@@ -56,6 +57,16 @@ pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
             serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..]).to_string(),
         )?;
 
+        let mut config = SbpfConfig::default_for_project(&project_name);
+        
+        if ts_tests {
+            config.test.framework = "typescript".to_string();
+        } else {
+            config.test.framework = "mollusk".to_string();
+        }
+        
+        config.save(&project_path)?;
+
         if ts_tests {
             fs::write(
                 project_path.join("package.json"),
@@ -86,10 +97,13 @@ pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
         }
 
         println!(
-            "✅ Project '{}' initialized successfully with {} tests",
+            "✅ Project '{}' initialized successfully with {} tests and configuration file",
             project_name,
             if ts_tests { "TypeScript" } else { "Rust" }
         );
+        println!("📋 Configuration saved to {}/sbpf.toml", project_name);
+        println!("💡 You can customize settings with 'sbpf config' commands");
+        
         Ok(())
     } else {
         println!("⚠️ Project '{}' already exists!", project_name);

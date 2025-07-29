@@ -15,3 +15,4 @@ thiserror = "2.0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34-deprecated"
 dirs = "4.0" # For easily getting the home directory
+toml = "0.9.1"  
