@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use crate::commands::common::{SolanaConfig, DEFAULT_LINKER};
 
-pub fn build() -> Result<()> {
+pub fn build(debug: bool) -> Result<()> {
     // Construct the path to the config file
     let home_dir = home_dir().expect("❌ Could not find $HOME directory");
     // Solana Config path
@@ -57,18 +57,23 @@ pub fn build() -> Result<()> {
         out: &str,
         src: &str,
         filename: &str,
+        debug: bool,
     ) -> Result<()> {
         let output_file = format!("{}/{}.o", out, filename);
         let input_file = format!("{}/{}/{}.s", src, filename, filename);
+        let mut clang_args = vec![
+            arch,
+            arch_target,
+            "-c",
+            "-o",
+            &output_file,
+            &input_file,
+        ];
+        if debug {
+            clang_args.push("-g");
+        }
         let status = Command::new(clang)
-            .args([
-                arch,
-                arch_target,
-                "-c",
-                "-o",
-                &output_file,
-                &input_file,
-            ])
+            .args(clang_args)
             .status()?;
 
         if !status.success() {
@@ -164,7 +169,7 @@ pub fn build() -> Result<()> {
                 if Path::new(&asm_file).exists() {
                     println!("🔄 Building \"{}\"", subdir);
                     let start = Instant::now();
-                    compile_assembly(&clang, arch, arch_target, out, src, subdir)?;
+                    compile_assembly(&clang, arch, arch_target, out, src, subdir, debug)?;
                     build_shared_object(&ld, subdir)?;
                     let duration = start.elapsed();
                     println!(
