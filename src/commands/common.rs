@@ -152,13 +152,29 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
 
 [dev-dependencies]
 mollusk-svm = "0.4.1"
 solana-sdk = "2.2.1"
 
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 1
+
 [features]
-test-sbf = []"#;
+test-sbf = []
+"#;
 
 pub const RUST_TESTS: &str = r#"#[cfg(test)]
 mod tests {

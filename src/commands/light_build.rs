@@ -4,80 +4,79 @@ use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use std::fs;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use std::path::Path;
 use std::time::Instant;
 use std::fs::create_dir_all;
 
 pub fn light_build() -> Result<()> {
-    // Set src/out directory
     let src = "src";
     let deploy = "deploy";
 
-    // Create necessary directories
-    create_dir_all(deploy)?;
-
-    // Function to compile assembly
-    fn compile_assembly(src: &str, deploy: &str) -> Result<()> {
-        assemble(src, deploy)
+    // Create deploy directory if it doesn't exist
+    if !Path::new(deploy).exists() {
+        fs::create_dir_all(deploy)?;
     }
 
-    // Function to check if keypair file exists.
-    fn has_keypair_file(dir: &Path) -> bool {
-        if dir.exists() && dir.is_dir() {
-            match fs::read_dir(dir) {
-                Ok(entries) => entries.filter_map(Result::ok).any(|entry| {
-                    entry
-                        .path()
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|name| name.ends_with("-keypair.json"))
-                        .unwrap_or(false)
-                }),
-                Err(_) => false,
-            }
-        } else {
-            false
-        }
-    }
-
-    // Check if keypair file exists. If not, create one.
-    let deploy_path = Path::new(deploy);
-    if !has_keypair_file(deploy_path) {
-        let project_path = std::env::current_dir()?;
-        let project_name = project_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("program");
-        let mut rng = OsRng;
-        fs::write(
-            deploy_path.join(format!("{}-keypair.json", project_name)),
-            serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..]).to_string(),
-        )?;
-    }
-
-    // Processing directories
+    // Find all assembly files in src directory
     let src_path = Path::new(src);
-    for entry in src_path.read_dir()? {
+    if !src_path.exists() {
+        return Err(Error::msg("Source directory 'src' not found"));
+    }
+
+    let mut compiled_files = Vec::new();
+
+    for entry in fs::read_dir(src_path)? {
         let entry = entry?;
         let path = entry.path();
+        
         if path.is_dir() {
             if let Some(subdir) = path.file_name().and_then(|name| name.to_str()) {
                 let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
                 if Path::new(&asm_file).exists() {
-                    println!("⚡️ Light building \"{}\"", subdir);
-                    let start = Instant::now();
-                    compile_assembly(&asm_file, deploy)?;
+                    println!("🔄 Building \"{}\"", subdir);
+                    let start = std::time::Instant::now();
+                    
+                    // Use the new assembler API
+                    let source_code = fs::read_to_string(&asm_file)?;
+                    let (bytecode, metrics) = sbpf_assembler::assemble_with_validation(&source_code, deploy)?;
+                    
+                    // Write the compiled bytecode
+                    let output_file = format!("{}/{}.so", deploy, subdir);
+                    fs::write(&output_file, bytecode)?;
+                    
                     let duration = start.elapsed();
                     println!(
                         "✅ \"{}\" built successfully in {}ms!",
                         subdir,
                         duration.as_micros() as f64 / 1000.0
                     );
+                    
+                    // Print metrics
+                    metrics.print_report();
+                    
+                    compiled_files.push(subdir.to_string());
                 }
             }
         }
     }
 
+    if compiled_files.is_empty() {
+        println!("⚠️  No assembly files found in src directory");
+    } else {
+        println!("🎉 Successfully compiled {} files", compiled_files.len());
+    }
+
+    Ok(())
+}
+
+// Legacy function for backward compatibility
+fn compile_assembly(src: &str, deploy: &str) -> Result<()> {
+    let source_code = fs::read_to_string(src)?;
+    let (_, metrics) = sbpf_assembler::assemble_with_validation(&source_code, deploy)?;
+    
+    // Print metrics for debugging
+    metrics.print_report();
+    
     Ok(())
 }

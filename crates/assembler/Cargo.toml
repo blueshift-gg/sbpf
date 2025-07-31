@@ -1,10 +1,11 @@
 [package]
-name                   = "sbpf-assembler"
-description            = "SBPF Assembler"
-edition 			   = "2024"
-version.workspace      = true
+name = "sbpf-assembler"
+version = "0.1.1"
+edition = "2021"
 
 [dependencies]
-num-derive = { workspace = true }
-num-traits = { workspace = true }
-anyhow = { workspace = true }
+num-derive = "0.4"
+num-traits = "0.2"
+anyhow = "1.0.86"
+thiserror = "2.0.12"
+proptest = "1.4"

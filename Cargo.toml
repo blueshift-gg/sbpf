@@ -16,6 +16,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34-deprecated"
 dirs = "4.0" # For easily getting the home directory
 
+# Production-level dependencies
+proptest = "1.4" # Property-based testing
+indicatif = "0.17" # Progress indicators
+tracing = "0.1" # Structured logging
+tracing-subscriber = "0.3" # Logging implementation
+
 sbpf-assembler = { workspace = true }
 
 [workspace]
@@ -28,5 +34,7 @@ version = "0.1.1"
  num-derive    = "0.4"
  num-traits    = "0.2"
  anyhow = "1.0.86"
+ thiserror = "2.0.12"
+ proptest = "1.4"
 
  sbpf-assembler = { path = "crates/assembler" }
