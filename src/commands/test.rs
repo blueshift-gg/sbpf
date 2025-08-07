@@ -1,5 +1,6 @@
 use anyhow::{Error, Result};
 use std::{fs, io, path::Path, process::Command};
+use crate::config::SbpfConfig;
 
 pub fn test() -> Result<(), Error> {
     println!("🧪 Running tests");
@@ -29,47 +30,66 @@ pub fn test() -> Result<(), Error> {
         crate::commands::build::build()?;
     }
 
-    let has_cargo = Path::new("Cargo.toml").exists();
-    let has_package_json = Path::new("package.json").exists();
-
-    match (has_cargo, has_package_json) {
-        (true, _) => {
-            let output = Command::new("cargo")
-                .arg("test-sbf")
-                .arg("--")
-                .arg("--nocapture")
-                .env("RUST_BACKTRACE", "1")
-                .status()?;
-
-            if !output.success() {
-                eprintln!("Failed to run Rust tests");
-                return Err(Error::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "❌ Rust tests failed",
-                )));
-            }
+    let config = match SbpfConfig::load() {
+        Ok(config) => {
+            println!("📋 Using test configuration from sbpf.toml");
+            config
         }
-        (false, true) => {
-            crate::commands::deploy(None, None)?;
-
-            let status = Command::new("yarn").arg("test").status()?;
-
-            if !status.success() {
-                eprintln!("Failed to run tests");
-                return Err(Error::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "❌ Test failed",
-                )));
-            }
+        Err(_) => {
+            let current_dir = std::env::current_dir()?;
+            let project_name = current_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("sbpf-project");
+            
+            println!("📋 No sbpf.toml found, using default test command");
+            SbpfConfig::default_for_project(project_name)
         }
-        (false, false) => {
-            return Err(Error::new(io::Error::new(
-                io::ErrorKind::NotFound,
-                "❌ No test configuration found. Expected either Cargo.toml or package.json",
-            )));
-        }
+    };
+
+    // Check if user defined custom test script
+    if let Some(test_script) = config.scripts.get_script("test") {
+        println!("🧪 Running custom test script: {}", test_script);
+        return run_script_command(test_script);
     }
+    
+    // Default test command
+    println!("🧪 Running default test command: cargo test-sbf");
+    run_default_test()
+}
 
-    println!("✅ Tests completed successfully!");
+fn run_script_command(command: &str) -> Result<(), Error> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .status()?;
+
+    if !status.success() {
+        return Err(Error::new(io::Error::new(
+            io::ErrorKind::Other,
+            "❌ Test script failed",
+        )));
+    }
+    
+    println!("✔️ Tests completed successfully!");
+    Ok(())
+}
+
+fn run_default_test() -> Result<(), Error> {
+    let status = Command::new("cargo")
+        .arg("test-sbf")
+        .arg("--")
+        .arg("--nocapture")
+        .env("RUST_BACKTRACE", "1")
+        .status()?;
+
+    if !status.success() {
+        return Err(Error::new(io::Error::new(
+            io::ErrorKind::Other,
+            "❌ Default tests failed",
+        )));
+    }
+    
+    println!("✔️ Tests completed successfully!");
     Ok(())
 }

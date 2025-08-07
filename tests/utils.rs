@@ -78,7 +78,7 @@ pub fn run_command(cmd: &mut Command, operation_name: &str) -> Output {
         panic!("{} failed:\nSTDOUT: {}\nSTDERR: {}", operation_name, stdout, stderr);
     }
     
-    println!("✅ {} completed successfully", operation_name);
+    println!("✔️ {} completed successfully", operation_name);
     println!("STDOUT: {}", String::from_utf8_lossy(&output.stdout));
     
     output
@@ -96,7 +96,7 @@ pub fn init_project(env: &TestEnv, project_name: &str) {
         &format!("target/debug/sbpf init {}", project_name)
     );
     
-    println!("✅ Project initialized successfully");
+    println!("✔️ Project initialized successfully");
     println!("STDOUT: {}", String::from_utf8_lossy(&init_output.stdout));
 }
 
@@ -163,5 +163,5 @@ pub fn run_tests(env: &TestEnv) {
 pub fn update_assembly_file(env: &TestEnv, project_name: &str, content: &str) {
     let assembly_path = env.project_dir.join(format!("src/{}/{}.s", project_name, project_name));
     fs::write(&assembly_path, content).expect(&format!("Failed to write new {}.s content", project_name));
-    println!("✅ Updated {}.s with specified content", project_name);
+    println!("✔️ Updated {}.s with specified content", project_name);
 }
