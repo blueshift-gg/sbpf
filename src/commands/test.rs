@@ -35,6 +35,8 @@ pub fn test() -> Result<(), Error> {
     match (has_cargo, has_package_json) {
         (true, _) => {
             let output = Command::new("cargo")
+                .arg("test")
+                .arg("--features")
                 .arg("test-sbf")
                 .arg("--")
                 .arg("--nocapture")
