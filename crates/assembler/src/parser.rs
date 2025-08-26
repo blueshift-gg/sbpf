@@ -889,7 +889,11 @@ impl Parser {
                     if rodata_phase {
                         match ROData::parse(tokens) {
                             Ok((rodata, rest)) => {
-                            self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
+                            if self.m_label_offsets.contains_key(name) {
+                                errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), custom_label: None });
+                            } else {
+                                self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
+                            }
                             self.m_rodata_size += rodata.get_size();
                             rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_accum_offset });
                             tokens = rest;
@@ -900,7 +904,11 @@ impl Parser {
                             }
                         }
                     } else {
-                        self.m_label_offsets.insert(name.clone(), self.m_accum_offset);
+                        if self.m_label_offsets.contains_key(name) {
+                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), custom_label: None });
+                        } else {
+                            self.m_label_offsets.insert(name.clone(), self.m_accum_offset);
+                        }
                         nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() } });
                         tokens = &tokens[1..];
                     }
