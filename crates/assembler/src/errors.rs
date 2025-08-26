@@ -72,6 +72,11 @@ define_compile_errors! {
         label = "Undefined label",
         fields = { label: String, span: Range<usize> }
     },
+    DuplicateLabel {
+        error = "Duplicate label '{label}'",
+        label = "Label redefined",
+        fields = { label: String, span: Range<usize> }
+    },
 }
 
 
