@@ -185,7 +185,7 @@ impl ROData {
                             }
                         }
                     }
-                    "quad" | "octa"=> {
+                    "quad" => {
                         // this should be errored out at parsing time
                         return Ok(());
                     }
