@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use codespan_reporting::files::SimpleFile;
 use crate::debuginfo::span_to_line_number;
+use crate::errors::CompileError;
 
 #[derive(Debug, Clone)]
 pub enum ASTNode {
@@ -135,6 +136,89 @@ impl ROData {
             _ => panic!("Invalid ROData declaration"),
         }
         size
+    }
+    pub fn verify(&self) -> Result<(), CompileError> {
+        match (
+            &self.args[0],
+            &self.args[1],
+        ) {
+            (Token::Directive(directive, directive_span), Token::StringLiteral(_, _)) => {
+                if directive.as_str() != "ascii" {
+                    return Err(CompileError::InvalidRODataDirective { span: directive_span.clone(), custom_label: None });
+                }
+            }
+            (Token::Directive(directive, directive_span), Token::ImmediateValue(_, immediate_value_span)) => {
+                match directive.as_str() {
+                    "byte" => {
+                        if let Token::ImmediateValue(value, _) = &self.args[1] {
+                            match value {
+                                ImmediateValue::Int(val) => if *val < i8::MIN as i64 || *val > i8::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                                ImmediateValue::Addr(val) => if *val < i8::MIN as i64 || *val > i8::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                            }
+                        }
+                    }
+                    "short" => {
+                        if let Token::ImmediateValue(value, _) = &self.args[1] {
+                            match value {
+                                ImmediateValue::Int(val) => if *val < i16::MIN as i64 || *val > i16::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                                ImmediateValue::Addr(val) => if *val < i16::MIN as i64 || *val > i16::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                            }
+                        }
+                    }
+                    "int" | "long" => {
+                        if let Token::ImmediateValue(value, _) = &self.args[1] {
+                            match value {
+                                ImmediateValue::Int(val) => if *val < i32::MIN as i64 || *val > i32::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                                ImmediateValue::Addr(val) => if *val < i32::MIN as i64 || *val > i32::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                            }
+                        }
+                    }
+                    "quad" => {
+                        if let Token::ImmediateValue(value, _) = &self.args[1] {
+                            match value {
+                                ImmediateValue::Int(val) => if *val < i64::MIN as i64 || *val > i64::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                                ImmediateValue::Addr(val) => if *val < i64::MIN as i64 || *val > i64::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
+                                },
+                            }
+                        }
+                    }
+                    "octa" => {
+                        if let Token::ImmediateValue(value, _) = &self.args[1] {
+                            match value {
+                                ImmediateValue::Int(val) => if *val < i128::MIN as i64 || *val > i128::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: directive_span.clone(), custom_label: None });
+                                },
+                                ImmediateValue::Addr(val) => if *val < i128::MIN as i64 || *val > i128::MAX as i64 {
+                                    return Err(CompileError::OutOfRangeLiteral { span: directive_span.clone(), custom_label: None });
+                                },
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(CompileError::InvalidRODataDirective { span: directive_span.clone(), custom_label: None });
+                    }
+                }
+            }
+            _ => {
+                return Err(CompileError::InvalidRodataDecl { span: self.span.clone(), custom_label: None });
+            }
+        }
+        Ok(())
     }
 }
 
