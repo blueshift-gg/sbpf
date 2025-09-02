@@ -104,11 +104,35 @@ pub struct ROData {
 
 impl ROData {
     pub fn get_size(&self) -> u64 {
-        let mut size = 0;
-        for arg in &self.args {
-            if let Token::StringLiteral(s, _) = arg {
-                size += s.len() as u64;
+        let size: u64;
+        match (
+            &self.args[0],
+            &self.args[1],
+        ) {
+            (Token::Directive(_, _), Token::StringLiteral(s, _)) => {
+                size = s.len() as u64;
             }
+            (Token::Directive(directive, _), Token::ImmediateValue(_, _)) => {
+                match directive.as_str() {
+                    "byte" => {
+                        size = 1;
+                    }
+                    "short" => {
+                        size = 2;
+                    }
+                    "int" | "long" => {
+                        size = 4;
+                    }
+                    "quad" => {
+                        size = 8;
+                    }
+                    "octa" => {
+                        size = 16;
+                    }
+                    _ => panic!("Invalid ROData declaration"),
+                }
+            }
+            _ => panic!("Invalid ROData declaration"),
         }
         size
     }
@@ -346,12 +370,55 @@ impl ASTNode {
             ASTNode::ROData { rodata: ROData { name: _, args, .. }, .. } => {
                 let mut bytes = Vec::new();
                 let debug_map = HashMap::<u64, DebugInfo>::new();
-                for arg in args {
-                    if let Token::StringLiteral(s, _) = arg {
-                        // Convert string to bytes and add null terminator
-                        let str_bytes = s.as_bytes().to_vec();
-                        bytes.extend(str_bytes);
+                match (
+                    &args[0],
+                    &args[1],
+                ) {
+                    (Token::Directive(directive, _), Token::StringLiteral(str_literal, _)) => {
+                        if directive == "ascii" {
+                            // Convert string to bytes and add null terminator
+                            let str_bytes = str_literal.as_bytes().to_vec();
+                            bytes.extend(str_bytes);
+                        } else {
+                            panic!("Invalid ROData declaration");
+                        }
+                    } 
+                    (Token::Directive(directive, _), Token::ImmediateValue(imm, _)) => {
+                        if directive == "byte" {
+                            let imm8 = match imm {
+                                ImmediateValue::Int(val) => *val as i8,
+                                ImmediateValue::Addr(val) => *val as i8,
+                            };
+                            bytes.extend(imm8.to_le_bytes());
+                        } else if directive == "short" {
+                            let imm16 = match imm {
+                                ImmediateValue::Int(val) => *val as i16,
+                                ImmediateValue::Addr(val) => *val as i16,
+                            };
+                            bytes.extend(imm16.to_le_bytes());
+                        } else if directive == "int" || directive == "long" {
+                            let imm32 = match imm {
+                                ImmediateValue::Int(val) => *val as i32,
+                                ImmediateValue::Addr(val) => *val as i32,
+                            };
+                            bytes.extend(imm32.to_le_bytes());
+                        } else if directive == "quad" {
+                            let imm64 = match imm {
+                                ImmediateValue::Int(val) => *val as i64,
+                                ImmediateValue::Addr(val) => *val as i64,
+                            };
+                            bytes.extend(imm64.to_le_bytes());
+                        } else if directive == "octa" {
+                            let imm128 = match imm {
+                                ImmediateValue::Int(val) => *val as i128,
+                                ImmediateValue::Addr(val) => *val as i128,
+                            };
+                            bytes.extend(imm128.to_le_bytes());
+                        } else {
+                            panic!("Invalid ROData declaration");
+                        }
                     }
+                    _ => panic!("Invalid ROData declaration"),
                 }
                 Some((bytes, debug_map))
             },

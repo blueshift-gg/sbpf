@@ -173,6 +173,22 @@ impl Parse for ROData {
                     &tokens[3..]
                 ))
             }
+            (
+                Token::Label(name, span),
+                Token::Directive(_, _),
+                Token::ImmediateValue(_, _)
+            ) => {
+                args.push(tokens[1].clone());
+                args.push(tokens[2].clone());
+                Ok((
+                    ROData {
+                        name: name.clone(),
+                        args,
+                        span: span.clone()
+                    },
+                    &tokens[3..]
+                ))
+            }
             _ => Err(CompileError::InvalidRodataDecl { span: span.clone(), custom_label: Some(EXPECTS_LABEL_DIR_STR.to_string()) }),
         }
     }
