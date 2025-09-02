@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use crate::errors::CompileError;
 use crate::messages::*;
 use crate::bug;
+use crate::debuginfo::span_to_line_number;
 
 pub struct Parser<> {
     tokens: Vec<Token>,
@@ -20,6 +21,7 @@ pub struct Parser<> {
     // TODO: consolidate all temporary parsing related informaion
     m_const_map: HashMap<String, ImmediateValue>,
     m_label_offsets: HashMap<String, u64>,
+    m_label_spans: HashMap<String, std::ops::Range<usize>>,
 
     // TODO: consolidate all dynamic symbol information to one big map
     m_entry_label: Option<String>,
@@ -804,6 +806,7 @@ impl Parser {
             , m_entry_label: None
             , m_const_map: HashMap::new()
             , m_label_offsets: HashMap::new()
+            , m_label_spans: HashMap::new()
             , m_rodata_size: 0
             , m_dynamic_symbols: DynamicSymbolMap::new()
             , m_rel_dyns: RelDynMap::new()
@@ -890,9 +893,14 @@ impl Parser {
                         match ROData::parse(tokens) {
                             Ok((rodata, rest)) => {
                             if self.m_label_offsets.contains_key(name) {
-                                errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), custom_label: None });
+                                let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
+                                let file = self.m_file.as_ref().unwrap();
+                                let orig_line = span_to_line_number(original_span.clone(), file);
+                                let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
+                                errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
                             } else {
                                 self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
+                                self.m_label_spans.insert(name.clone(), span.clone());
                             }
                             self.m_rodata_size += rodata.get_size();
                             rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_accum_offset });
@@ -905,9 +913,14 @@ impl Parser {
                         }
                     } else {
                         if self.m_label_offsets.contains_key(name) {
-                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), custom_label: None });
+                            let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
+                            let file = self.m_file.as_ref().unwrap();
+                            let orig_line = span_to_line_number(original_span.clone(), file);
+                            let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
+                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
                         } else {
                             self.m_label_offsets.insert(name.clone(), self.m_accum_offset);
+                            self.m_label_spans.insert(name.clone(), span.clone());
                         }
                         nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() } });
                         tokens = &tokens[1..];

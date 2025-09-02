@@ -75,7 +75,7 @@ define_compile_errors! {
     DuplicateLabel {
         error = "Duplicate label '{label}'",
         label = "Label redefined",
-        fields = { label: String, span: Range<usize> }
+        fields = { label: String, span: Range<usize>, original_span: Range<usize> }
     },
 }
 
@@ -89,9 +89,19 @@ pub trait AsDiagnostic {
 
 impl AsDiagnostic for CompileError {
     fn to_diagnostic(&self) -> Diagnostic<()> {
-        Diagnostic::error()
-            .with_message(self.to_string())
-            .with_labels(vec![Label::primary((), self.span().start..self.span().end).with_message(self.label())])
+        match self {
+            CompileError::DuplicateLabel { span, original_span, .. } => {
+                Diagnostic::error()
+                    .with_message(self.to_string())
+                    .with_labels(vec![
+                        Label::primary((), span.start..span.end).with_message(self.label()),
+                        Label::secondary((), original_span.start..original_span.end).with_message("previous definition is here"),
+                    ])
+            }
+            _ => Diagnostic::error()
+                .with_message(self.to_string())
+                .with_labels(vec![Label::primary((), self.span().start..self.span().end).with_message(self.label())]),
+        }
     }
 }
 
