@@ -90,7 +90,7 @@ pub trait AsDiagnostic {
 impl AsDiagnostic for CompileError {
     fn to_diagnostic(&self) -> Diagnostic<()> {
         match self {
-            // will show both the redefinition and original definition
+            // Show both the redefinition and the original definition
             CompileError::DuplicateLabel { span, original_span, .. } => {
                 Diagnostic::error()
                     .with_message(self.to_string())
