@@ -438,14 +438,9 @@ impl ASTNode {
                     &args[0],
                     &args[1],
                 ) {
-                    (Token::Directive(directive, _), Token::StringLiteral(str_literal, _)) => {
-                        if directive == "ascii" {
-                            // Convert string to bytes and add null terminator
-                            let str_bytes = str_literal.as_bytes().to_vec();
-                            bytes.extend(str_bytes);
-                        } else {
-                            panic!("Invalid ROData declaration");
-                        }
+                    (Token::Directive(_, _), Token::StringLiteral(str_literal, _)) => {
+                        let str_bytes = str_literal.as_bytes().to_vec();
+                        bytes.extend(str_bytes);
                     } 
                     (Token::Directive(directive, _), Token::ImmediateValue(imm, _)) => {
                         if directive == "byte" {
