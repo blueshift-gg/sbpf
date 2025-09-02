@@ -127,9 +127,9 @@ impl ROData {
                     "quad" => {
                         size = 8;
                     }
-                    "octa" => {
-                        size = 16;
-                    }
+                    // "octa" => {
+                    //     size = 16;
+                    // }
                     _ => panic!("Invalid ROData declaration"),
                 }
             }
@@ -185,29 +185,9 @@ impl ROData {
                             }
                         }
                     }
-                    "quad" => {
-                        if let Token::ImmediateValue(value, _) = &self.args[1] {
-                            match value {
-                                ImmediateValue::Int(val) => if *val < i64::MIN as i64 || *val > i64::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                                ImmediateValue::Addr(val) => if *val < i64::MIN as i64 || *val > i64::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                            }
-                        }
-                    }
-                    "octa" => {
-                        if let Token::ImmediateValue(value, _) = &self.args[1] {
-                            match value {
-                                ImmediateValue::Int(val) => if *val < i128::MIN as i64 || *val > i128::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: directive_span.clone(), custom_label: None });
-                                },
-                                ImmediateValue::Addr(val) => if *val < i128::MIN as i64 || *val > i128::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: directive_span.clone(), custom_label: None });
-                                },
-                            }
-                        }
+                    "quad" | "octa"=> {
+                        // this should be errored out at parsing time
+                        return Ok(());
                     }
                     _ => {
                         return Err(CompileError::InvalidRODataDirective { span: directive_span.clone(), custom_label: None });
