@@ -66,6 +66,16 @@ define_compile_errors! {
         label = "Unmatched parenthesis",
         fields = { span: Range<usize> }
     },
+    OutOfRangeLiteral {
+        error = "Out of range literal'",
+        label = "Out of range literal",
+        fields = { span: Range<usize> }
+    },
+    InvalidRODataDirective {
+        error = "Invalid rodata directive",
+        label = "Invalid rodata directive",
+        fields = { span: Range<usize> }
+    },
     // Semantic errors
     UndefinedLabel {
         error = "Undefined label '{label}'",

@@ -70,8 +70,6 @@ impl Program {
         current_offset += padding;
 
         if !is_static {
-
-
             let mut symbol_names = Vec::new();
             let mut dyn_syms = Vec::new();
             let mut dyn_str_offset = 1;

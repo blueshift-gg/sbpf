@@ -175,6 +175,22 @@ impl Parse for ROData {
                     &tokens[3..]
                 ))
             }
+            (
+                Token::Label(name, span),
+                Token::Directive(_, _),
+                Token::ImmediateValue(_, _)
+            ) => {
+                args.push(tokens[1].clone());
+                args.push(tokens[2].clone());
+                Ok((
+                    ROData {
+                        name: name.clone(),
+                        args,
+                        span: span.clone()
+                    },
+                    &tokens[3..]
+                ))
+            }
             _ => Err(CompileError::InvalidRodataDecl { span: span.clone(), custom_label: Some(EXPECTS_LABEL_DIR_STR.to_string()) }),
         }
     }
@@ -892,19 +908,22 @@ impl Parser {
                     if rodata_phase {
                         match ROData::parse(tokens) {
                             Ok((rodata, rest)) => {
-                            if self.m_label_offsets.contains_key(name) {
-                                let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
-                                let file = self.m_file.as_ref().unwrap();
-                                let orig_line = span_to_line_number(original_span.clone(), file);
-                                let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
-                                errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
-                            } else {
-                                self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
-                                self.m_label_spans.insert(name.clone(), span.clone());
-                            }
-                            self.m_rodata_size += rodata.get_size();
-                            rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_accum_offset });
-                            tokens = rest;
+                                if self.m_label_offsets.contains_key(name) {
+                                    let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
+                                    let file = self.m_file.as_ref().unwrap();
+                                    let orig_line = span_to_line_number(original_span.clone(), file);
+                                    let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
+                                    errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
+                                } else {
+                                    self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
+                                    if let Err(e) = rodata.verify() {
+                                        errors.push(e);
+                                    } else {
+                                        self.m_rodata_size += rodata.get_size();
+                                    }
+                                }
+                                rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_accum_offset });
+                                tokens = rest;
                             }
                             Err(e) => {
                                 errors.push(e);
