@@ -3,6 +3,8 @@
  * and make it easier to update or translate. We could move error messages here too
  */
 
+ pub const LABEL_REDEFINED: &str = "Label is redefined";
+
 // we can do a more fine-grained error message by pointing out the exact token that caused the error
 // with a special error pattern parser, but for now we just provide expected patterns
 pub const EXPECTS_LABEL_DIR_STR: &str = "expects <label>, <directive>, <string literal>";

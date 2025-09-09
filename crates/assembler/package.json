@@ -1,0 +1,21 @@
+{
+	"name": "sbpf-assembler",
+	"description": "Assembler to assemble and link sbpf assembly to bytecode",
+	"version": "0.1.0",
+	"main": "dist/node/sbpf_assembler.js",
+	"browser": "dist/web/sbpf_assembler.js",
+	"types": "dist/node/sbpf_assembler.d.ts",
+	"files": [
+		"dist"
+	],
+	"keywords": [
+		"sbpf",
+		"rust",
+		"wasm"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/blueshift-gg/sbpf.git"
+	}
+}

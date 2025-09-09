@@ -119,7 +119,8 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     }
                     let span = token_start..token_start + number.len();
                     if is_addr {
-                        if let Ok(value) = i64::from_str_radix(&number, 16) {
+                        if let Ok(value) = u64::from_str_radix(&number, 16) {
+                            let value = value as i64;
                             tokens.push(Token::ImmediateValue(ImmediateValue::Addr(value), span.clone()));
                         } else {
                             errors.push(CompileError::InvalidNumber { number, span: span.clone(), custom_label: None });

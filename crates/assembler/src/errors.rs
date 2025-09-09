@@ -88,31 +88,3 @@ define_compile_errors! {
         fields = { label: String, span: Range<usize>, original_span: Range<usize> }
     },
 }
-
-
-use codespan_reporting::diagnostic::{Diagnostic, Label};
-
-pub trait AsDiagnostic {
-    // currently only support single source file reporting
-    fn to_diagnostic(&self) -> Diagnostic<()>;
-}
-
-impl AsDiagnostic for CompileError {
-    fn to_diagnostic(&self) -> Diagnostic<()> {
-        match self {
-            // Show both the redefinition and the original definition
-            CompileError::DuplicateLabel { span, original_span, .. } => {
-                Diagnostic::error()
-                    .with_message(self.to_string())
-                    .with_labels(vec![
-                        Label::primary((), span.start..span.end).with_message(self.label()),
-                        Label::secondary((), original_span.start..original_span.end).with_message("previous definition is here"),
-                    ])
-            }
-            _ => Diagnostic::error()
-                .with_message(self.to_string())
-                .with_labels(vec![Label::primary((), self.span().start..self.span().end).with_message(self.label())]),
-        }
-    }
-}
-

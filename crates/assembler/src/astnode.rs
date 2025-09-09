@@ -4,8 +4,6 @@ use crate::dynsym::RelocationType;
 use crate::debuginfo::{DebugInfo, RegisterHint, RegisterType};
 use std::collections::HashMap;
 use std::ops::Range;
-use codespan_reporting::files::SimpleFile;
-use crate::debuginfo::span_to_line_number;
 use crate::errors::CompileError;
 
 #[derive(Debug, Clone)]
@@ -261,20 +259,12 @@ impl Instruction {
 
 
 impl ASTNode {
-    pub fn bytecode_with_debug_map(&self, file: Option<&SimpleFile<String, String>>) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
+    pub fn bytecode_with_debug_map(&self) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
         match self {
             ASTNode::Instruction { instruction: Instruction { opcode, operands, span }, offset } => {
                 let mut bytes = Vec::new();
-                let mut line_map = HashMap::new();
                 let mut debug_map = HashMap::new();
-                // Record the start of this instruction
-                let line_number = if let Some(file) = file {
-                    span_to_line_number(span.clone(), file)
-                } else {
-                    1 // fallback
-                };
-                line_map.insert(*offset, line_number);
-                let mut debug_info = DebugInfo::new(line_number);
+                let mut debug_info = DebugInfo::new(span.clone());
                 bytes.push(opcode.to_bytecode());  // 1 byte opcode
                 
                 if *opcode == Opcode::Call {
@@ -487,6 +477,6 @@ impl ASTNode {
 
     // Keep the old bytecode method for backward compatibility
     pub fn bytecode(&self) -> Option<Vec<u8>> {
-        self.bytecode_with_debug_map(None).map(|(bytes, _)| bytes)
+        self.bytecode_with_debug_map().map(|(bytes, _)| bytes)
     }
 }

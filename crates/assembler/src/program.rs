@@ -221,15 +221,6 @@ impl Program {
         }
     }
 
-    pub fn get_line_map(&self) -> HashMap<u64, usize> {
-        let code = self.sections.iter().find(|s| s.name() == ".text").unwrap();
-        if let SectionType::Code(code_section) = code {
-            code_section.get_line_map().clone()
-        } else {
-            panic!("Code section not found");
-        }
-    }
-
     pub fn get_debug_map(&self) -> HashMap<u64, DebugInfo> {
         let code = self.sections.iter().find(|s| s.name() == ".text").unwrap();
         if let SectionType::Code(code_section) = code {
