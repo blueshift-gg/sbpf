@@ -15,6 +15,8 @@ thiserror = "2.0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.34-deprecated"
 dirs = "4.0" # For easily getting the home directory
+codespan-reporting = "0.12.0"
+termcolor = "1.4"
 
 sbpf-assembler = { workspace = true }
 
@@ -29,6 +31,6 @@ num-derive    = "0.4"
 num-traits    = "0.2"
 thiserror = "2.0.12"
 anyhow = "1.0.86"
-codespan-reporting = "0.12.0"
+codespan-reporting = "0.12.0" 
 
 sbpf-assembler = { path = "crates/assembler" }

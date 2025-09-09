@@ -6,7 +6,6 @@ use crate::lexer::Token;
 use crate::debuginfo::DebugInfo;
 use std::collections::HashMap;
 use crate::astnode::ROData;
-use codespan_reporting::files::SimpleFile;
 
 // Base Section trait
 pub trait Section {
@@ -35,16 +34,14 @@ pub struct CodeSection {
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
-    line_map: HashMap<u64, usize>,
     debug_map: HashMap<u64, DebugInfo>,
 }
 
 impl CodeSection {
-    pub fn new(nodes: Vec<ASTNode>, size: u64, file: &SimpleFile<String, String>) -> Self {
-        let line_map = HashMap::new();
+    pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
         let mut debug_map = HashMap::new();
         for node in &nodes {
-            if let Some((_, node_debug_map)) = node.bytecode_with_debug_map(Some(file)) {
+            if let Some((_, node_debug_map)) = node.bytecode_with_debug_map() {
                 debug_map.extend(node_debug_map);
             }
         }
@@ -53,13 +50,8 @@ impl CodeSection {
             nodes,
             size,
             offset: 0,
-            line_map,
             debug_map,
         }
-    }
-
-    pub fn get_line_number(&self, offset: u64) -> Option<usize> {
-        self.debug_map.get(&offset).map(|debug_info| debug_info.line_number)
     }
 
     pub fn get_nodes(&self) -> &Vec<ASTNode> {
@@ -68,10 +60,6 @@ impl CodeSection {
 
     pub fn get_size(&self) -> u64 {
         self.size
-    }
-
-    pub fn get_line_map(&self) -> &HashMap<u64, usize> {
-        &self.line_map
     }
 
     pub fn get_debug_map(&self) -> &HashMap<u64, DebugInfo> {
@@ -127,36 +115,17 @@ pub struct DataSection {
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
-    // line_map: HashMap<u64, usize>,
-    // debug_map: HashMap<usize, DebugInfo>,
 }
 
 impl DataSection {
     pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
-        // let mut line_map = HashMap::new();
-        // let mut current_offset = 0;
-        // for node in &nodes {
-        //     if let Some((bytes, node_line_map)) = node.bytecode_with_line_map() {
-        //         // Update offsets in the line map to be relative to the start of the data section
-        //         for (offset, line) in node_line_map {
-        //             line_map.insert(current_offset + offset, line);
-        //         }
-        //         current_offset += bytes.len() as u64;
-        //     }
-        // }
         Self {
             name: String::from(".rodata"),
             nodes,
             size,
             offset: 0,
-            // line_map,
-            // debug_map,
         }
     }
-
-    // pub fn get_line_number(&self, offset: u64) -> Option<usize> {
-    //     self.line_map.get(&offset).copied()
-    // }
 
     pub fn get_nodes(&self) -> &Vec<ASTNode> {
         &self.nodes
@@ -165,10 +134,6 @@ impl DataSection {
     pub fn get_size(&self) -> u64 {
         self.size
     }
-
-    // pub fn get_line_map(&self) -> &HashMap<u64, usize> {
-    //     &self.line_map
-    // }
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
@@ -274,11 +239,11 @@ pub struct ShStrTabSection {
 impl ShStrTabSection {
     pub fn new(name_offset: u32, section_names: Vec<String>) -> Self {
         Self {
-            name: String::from(".shstrtab"),
+            name: String::from(".s"),
             name_offset,
             section_names: {
                 let mut names = section_names;
-                names.push(".shstrtab".to_string());
+                names.push(".s".to_string());
                 names
             },
             offset: 0,

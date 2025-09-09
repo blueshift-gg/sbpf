@@ -4,10 +4,17 @@ description            = "SBPF Assembler"
 edition 			   = "2024"
 version.workspace      = true
 
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sbpf_assembler"
+
 [dependencies]
 num-derive = { workspace = true }
 num-traits = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 codespan-reporting = { workspace = true }
-termcolor = "1.4"
+
+wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
+serde-wasm-bindgen = "0.6.5"
+serde = { version = "1.0.219", features = ["derive"] }

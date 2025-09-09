@@ -1,5 +1,4 @@
 use std::ops::Range;
-use codespan_reporting::files::{SimpleFile, Files};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisterType {
@@ -35,17 +34,14 @@ impl Default for RegisterHint {
 
 #[derive(Debug, Clone)]
 pub struct DebugInfo {
-    pub line_number: usize,
+    pub code_span: Range<usize>,
     pub register_hint: RegisterHint,
 }
 
 impl DebugInfo {
-    pub fn new(line_number: usize) -> Self {
-        Self { line_number, register_hint: RegisterHint::default() }
+    pub fn new(code_span: Range<usize>) -> Self {
+        Self { code_span, register_hint: RegisterHint::default() }
     }
 }
 
-pub fn span_to_line_number(span: Range<usize>, file: &SimpleFile<String, String>) -> usize {
-    let start_line = file.line_index((), span.start).ok();
-    start_line.unwrap_or(0) + 1
-}
+

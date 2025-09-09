@@ -1,13 +1,42 @@
 use sbpf_assembler::assemble;
+use sbpf_assembler::errors::CompileError;
 
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use std::fs;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use std::path::Path;
 use std::time::Instant;
 use std::fs::create_dir_all;
+use codespan_reporting::files::SimpleFile;
+use codespan_reporting::term;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
+use termcolor::{ColorChoice, StandardStream};
+
+pub trait AsDiagnostic {
+    // currently only support single source file reporting
+    fn to_diagnostic(&self) -> Diagnostic<()>;
+}
+
+impl AsDiagnostic for CompileError {
+    fn to_diagnostic(&self) -> Diagnostic<()> {
+        match self {
+            // Show both the redefinition and the original definition
+            CompileError::DuplicateLabel { span, original_span, .. } => {
+                Diagnostic::error()
+                    .with_message(self.to_string())
+                    .with_labels(vec![
+                        Label::primary((), span.start..span.end).with_message(self.label()),
+                        Label::secondary((), original_span.start..original_span.end).with_message("previous definition is here"),
+                    ])
+            }
+            _ => Diagnostic::error()
+                .with_message(self.to_string())
+                .with_labels(vec![Label::primary((), self.span().start..self.span().end).with_message(self.label())]),
+        }
+    }
+}
 
 pub fn build() -> Result<()> {
     // Set src/out directory
@@ -19,7 +48,34 @@ pub fn build() -> Result<()> {
 
     // Function to compile assembly
     fn compile_assembly(src: &str, deploy: &str) -> Result<()> {
-        assemble(src, deploy)
+        let source_code = std::fs::read_to_string(src).unwrap();
+        let file = SimpleFile::new(src.to_string(), source_code.clone());
+        
+        // assemble <filename>.s to bytecode 
+        let bytecode = match assemble(&source_code) {
+            Ok(bytecode) => bytecode,
+            Err(errors) => {
+                for error in errors {
+                    let writer = StandardStream::stderr(ColorChoice::Auto);
+                    let config = term::Config::default();
+                    let diagnostic = error.to_diagnostic();
+                    term::emit(&mut writer.lock(), &config, &file, &diagnostic)?;
+                }
+                return Err(Error::msg("Compilation failed"));
+            }
+        };
+        
+        // write bytecode to <filename>.so
+        let output_path = Path::new(deploy)
+            .join(Path::new(src)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .replace(".s", ".so"));
+
+        std::fs::write(output_path, bytecode)?;
+        Ok(())
     }
 
     // Function to check if keypair file exists.

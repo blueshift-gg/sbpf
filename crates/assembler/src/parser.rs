@@ -4,13 +4,11 @@ use crate::lexer::{Token, ImmediateValue};
 use crate::section::{CodeSection, DataSection};
 use crate::astnode::{ASTNode, Directive, GlobalDecl, EquDecl, ExternDecl, RodataDecl, Label, Instruction, ROData};
 use crate::dynsym::{DynamicSymbolMap, RelDynMap, RelocationType};
-use codespan_reporting::files::SimpleFile;
 use num_traits::FromPrimitive;
 use std::collections::HashMap;
 use crate::errors::CompileError;
 use crate::messages::*;
 use crate::bug;
-use crate::debuginfo::span_to_line_number;
 
 pub struct Parser<> {
     tokens: Vec<Token>,
@@ -29,7 +27,6 @@ pub struct Parser<> {
     m_rel_dyns: RelDynMap,
 
     m_rodata_size: u64,
-    m_file: Option<SimpleFile<String, String>>,
 }
 
 pub struct ParseResult {
@@ -815,7 +812,7 @@ fn inline_and_fold_constant_with_map(
 
 impl Parser {
 
-    pub fn new(tokens: Vec<Token>, file: &SimpleFile<String, String>) -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
         Self { tokens
             , m_prog_is_static: true
             , m_accum_offset: 0
@@ -826,7 +823,6 @@ impl Parser {
             , m_rodata_size: 0
             , m_dynamic_symbols: DynamicSymbolMap::new()
             , m_rel_dyns: RelDynMap::new()
-            , m_file: Some(file.clone())
         }
     }
 
@@ -910,10 +906,7 @@ impl Parser {
                             Ok((rodata, rest)) => {
                                 if self.m_label_offsets.contains_key(name) {
                                     let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
-                                    let file = self.m_file.as_ref().unwrap();
-                                    let orig_line = span_to_line_number(original_span.clone(), file);
-                                    let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
-                                    errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
+                                    errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
                                 } else {
                                     self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
                                     if let Err(e) = rodata.verify() {
@@ -933,10 +926,7 @@ impl Parser {
                     } else {
                         if self.m_label_offsets.contains_key(name) {
                             let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
-                            let file = self.m_file.as_ref().unwrap();
-                            let orig_line = span_to_line_number(original_span.clone(), file);
-                            let custom_label = Some(format!("Label redefined; previous at line {}", orig_line));
-                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label });
+                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
                         } else {
                             self.m_label_offsets.insert(name.clone(), self.m_accum_offset);
                             self.m_label_spans.insert(name.clone(), span.clone());
@@ -1029,7 +1019,7 @@ impl Parser {
             return Err(errors);
         } else {
             Ok(ParseResult {
-                code_section: CodeSection::new(nodes, self.m_accum_offset, self.m_file.as_ref().unwrap()),
+                code_section: CodeSection::new(nodes, self.m_accum_offset),
                 data_section: DataSection::new(rodata_nodes, self.m_rodata_size),
                 dynamic_symbols: DynamicSymbolMap::copy(&self.m_dynamic_symbols),
                 relocation_data: RelDynMap::copy(&self.m_rel_dyns),
