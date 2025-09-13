@@ -10,9 +10,8 @@ use std::path::Path;
 use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Program {
-    pub is_static: bool,
     pub elf_header: ElfHeader,
-    pub program_headers: Vec<ProgramHeader>,
+    pub program_headers: Option<Vec<ProgramHeader>>,
     pub sections: Vec<SectionType>,
 }
 
@@ -23,26 +22,23 @@ impl Program {
             data_section,
             dynamic_symbols,
             relocation_data,
-            prog_is_static: is_static,
+            prog_is_static,
         }: ParseResult,
     ) -> Self {
         let mut elf_header = ElfHeader::new();
-       
-        let ph_count = if is_static { 1 } else { 3 };
+        let mut program_headers = None;
+        
+        // omit program headers if static
+        let ph_count = if prog_is_static { 0 } else { 3 };
         elf_header.e_phnum = ph_count;
         
+        // save read + execute size for program header before
+        // ownership of code/data sections is transferred
+        let text_size = code_section.size() + data_section.size();
+
         // Calculate base offset after ELF header and program headers
         let mut current_offset = 64 + (ph_count as u64 * 56); // 64 bytes ELF header, 56 bytes per program header
         elf_header.e_entry = current_offset;
-
-        // Create program headers vector starting with the Read+Execute header
-        let mut program_headers = vec![
-            ProgramHeader::new_load(
-                elf_header.e_entry,
-                code_section.size() + data_section.size(),
-                true,   // executable
-            )
-        ];
 
         // Create a vector of sections
         let mut sections = Vec::new();
@@ -69,7 +65,7 @@ impl Program {
         let padding = (8 - (current_offset % 8)) % 8;
         current_offset += padding;
 
-        if !is_static {
+        if !prog_is_static {
             let mut symbol_names = Vec::new();
             let mut dyn_syms = Vec::new();
             let mut dyn_str_offset = 1;
@@ -138,25 +134,28 @@ impl Program {
             shstrtab_section.set_offset(current_offset);
             current_offset += shstrtab_section.size();
 
-            let ro_header = ProgramHeader::new_load(
-                dynsym_section.offset(),
-                dynsym_section.size() + dynstr_section.size() + rel_dyn_section.size(),
-                false
-            );
-
-            let dynamic_header = ProgramHeader::new_dynamic(
-                dynamic_section.offset(),
-                dynamic_section.size(),
-            );
+            program_headers = Some(vec![
+                ProgramHeader::new_load(
+                    elf_header.e_entry,
+                    text_size,
+                    true,   // executable
+                ),
+                ProgramHeader::new_load(
+                    dynsym_section.offset(),
+                    dynsym_section.size() + dynstr_section.size() + rel_dyn_section.size(),
+                    false,
+                ),
+                ProgramHeader::new_dynamic(
+                    dynamic_section.offset(),
+                    dynamic_section.size(),
+                )
+            ]);
 
             sections.push(dynamic_section);
             sections.push(dynsym_section);
             sections.push(dynstr_section);
             sections.push(rel_dyn_section);
             sections.push(shstrtab_section);
-
-            program_headers.push(ro_header);
-            program_headers.push(dynamic_header);
         } else {
             // Create a vector of section names
             let mut section_names = Vec::new();
@@ -177,7 +176,6 @@ impl Program {
         elf_header.e_shstrndx = sections.len() as u16 - 1;
         
         Self {
-            is_static,
             elf_header,
             program_headers,
             sections,
@@ -191,8 +189,10 @@ impl Program {
         bytes.extend(self.elf_header.bytecode());
 
         // Emit program headers
-        for ph in &self.program_headers {
-            bytes.extend(ph.bytecode());
+        if self.program_headers.is_some() {
+            for ph in self.program_headers.as_ref().unwrap() {
+                bytes.extend(ph.bytecode());
+            }
         }
 
         // Emit sections
