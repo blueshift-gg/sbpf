@@ -31,6 +31,5 @@ num-derive    = "0.4"
 num-traits    = "0.2"
 thiserror = "2.0.12"
 anyhow = "1.0.86"
-codespan-reporting = "0.12.0" 
 
 sbpf-assembler = { path = "crates/assembler" }
