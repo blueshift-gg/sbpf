@@ -13,10 +13,6 @@
 
 A simple scaffold to bootstrap sBPF Assembly programs.
 
-### Dependencies
-
-Please make sure you have the latest version of [Solana Command Line Tools](https://docs.solanalabs.com/cli/install) installed.
-
 ### Installation
 
 ```sh
