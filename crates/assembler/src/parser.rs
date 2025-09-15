@@ -50,8 +50,8 @@ pub trait Parse {
         where Self: Sized;
 }
 
-pub trait ParseInstruction {
-    fn parse_instruction<'a>(tokens: &'a [Token], const_map: &HashMap<String, ImmediateValue>) -> Result<(Self, &'a [Token]), CompileError>
+pub trait ParseWithConstMap {
+    fn parse_with_constmap<'a>(tokens: &'a [Token], const_map: &HashMap<String, ImmediateValue>) -> Result<(Self, &'a [Token]), CompileError>
         where Self: Sized;
 }
 
@@ -73,13 +73,13 @@ impl Parse for GlobalDecl {
     }
 }
 
-impl Parse for EquDecl {
-    fn parse(tokens: &[Token]) -> Result<(Self, &[Token]), CompileError> {
+impl ParseWithConstMap for EquDecl {
+    fn parse_with_constmap<'a>(tokens: &'a [Token], const_map: &HashMap<String, ImmediateValue>) -> Result<(Self, &'a [Token]), CompileError> {
         let Token::Directive(_, span) = &tokens[0] else { bug!("EquDecl not a valid directive") };
         if tokens.len() < 3 {
             return Err(CompileError::InvalidEquDecl { span: span.clone(), custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
         }
-        let (value, advance_token_num) = inline_and_fold_constant_with_map(tokens, None, 3);
+        let (value, advance_token_num) = inline_and_fold_constant(tokens, const_map, 3);
         if let Some(value) = value {
             match (
                 &tokens[1],
@@ -193,8 +193,8 @@ impl Parse for ROData {
     }
 }
 
-impl ParseInstruction for Instruction {
-    fn parse_instruction<'a>(tokens: &'a [Token], const_map: &HashMap<String, ImmediateValue>) -> Result<(Self, &'a [Token]), CompileError> {
+impl ParseWithConstMap for Instruction {
+    fn parse_with_constmap<'a>(tokens: &'a [Token], const_map: &HashMap<String, ImmediateValue>) -> Result<(Self, &'a [Token]), CompileError> {
         let next_token_num;
         match &tokens[0] {
             Token::Opcode(opcode, span) => {
@@ -878,7 +878,7 @@ impl Parser {
                             tokens = &tokens[1..];
                         }
                         "equ" => {
-                            match EquDecl::parse(tokens) {
+                            match EquDecl::parse_with_constmap(tokens, &self.m_const_map) {
                                 Ok((node, rest)) => {
                                 self.m_const_map.insert(node.get_name(), node.get_val());
                                 nodes.push(ASTNode::EquDecl { equ_decl: node });
@@ -936,7 +936,7 @@ impl Parser {
                     }
                 }
                 Token::Opcode(_, _) => {
-                    match Instruction::parse_instruction(tokens, &self.m_const_map) {
+                    match Instruction::parse_with_constmap(tokens, &self.m_const_map) {
                         Ok((inst, rest)) => {
                             let offset = self.m_accum_offset;
                             self.m_accum_offset += inst.get_size();
