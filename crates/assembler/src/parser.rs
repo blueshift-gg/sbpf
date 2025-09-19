@@ -338,8 +338,8 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                     ) => {
                                         operands.push(tokens[2].clone());
-                                        operands.push(Token::ImmediateValue(value, span.clone()));
                                         operands.push(Token::ImmediateValue(value2, span.clone()));
+                                        operands.push(Token::ImmediateValue(value, span.clone()));
                                     }
                                     _ => {
                                         return Err(
