@@ -18,3 +18,4 @@ pub const EXPECTS_REG_COM_IMM_OR_IDEN: &str = "expects <register>, <immediate va
 pub const EXPECTS_REG_COM_IMM_COM_IMM_OR_IDEN: &str = "expects <register>, <immediate value>, <immediate value>/<identifier>";
 pub const EXPECTS_REG_COM_LB_REG_BIOP_IMM_RB: &str = "expects <register>, [<register> <binary operator> <immediate value>]";
 pub const EXPECTS_LB_REG_BIOP_IMM_RB_COM_REG: &str = "expects [<register> <binary operator> <immediate value>], <register>";
+pub const EXPECTS_LB_REG_BIOP_IMM_RB_COM_IMM: &str = "expects [<register> <binary operator> <immediate value>], <immediate value>";
