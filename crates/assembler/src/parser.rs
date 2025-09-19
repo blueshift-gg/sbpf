@@ -307,7 +307,64 @@ impl ParseWithConstMap for Instruction {
                                     , custom_label: Some(EXPECTS_REG_COM_LB_REG_BIOP_IMM_RB.to_string()) });
                         }
                     }
-                    Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw
+                    Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw => {
+                        if tokens.len() < 8 {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
+                        }
+                        let (value, advance_token_num) = inline_and_fold_constant(tokens, const_map, 4);
+                        if let Some(value) = value {
+                            // Now we need to fold the second immediate value (after the comma)
+                            let (value2, advance_token_num2) = inline_and_fold_constant(tokens, const_map, advance_token_num + 2);
+                            if let Some(value2) = value2 {
+                                match (
+                                    &tokens[1],
+                                    &tokens[2],
+                                    &tokens[3],
+                                    // Fourth operand is folded to an immediate value
+                                    &tokens[advance_token_num],
+                                    &tokens[advance_token_num + 1],
+                                    // Sixth operand is also folded to an immediate value
+                                ) {
+                                    (
+                                        Token::LeftBracket(_),
+                                        Token::Register(_, _),
+                                        Token::BinaryOp(_, _),
+                                        // Fourth operand is folded to an immediate value
+                                        Token::RightBracket(_),
+                                        Token::Comma(_),
+                                    ) => {
+                                        operands.push(tokens[2].clone());
+                                        operands.push(Token::ImmediateValue(value, span.clone()));
+                                        operands.push(Token::ImmediateValue(value2, span.clone()));
+                                    }
+                                    _ => {
+                                        return Err(
+                                            CompileError::InvalidInstruction {  //
+                                                instruction: opcode.to_string() //
+                                                , span: span.clone()            //
+                                                , custom_label: Some(EXPECTS_LB_REG_BIOP_IMM_RB_COM_IMM.to_string()) });
+                                    }
+                                }
+                                next_token_num = advance_token_num2;
+                            } else {
+                                return Err(
+                                    CompileError::InvalidInstruction {  //
+                                        instruction: opcode.to_string() //
+                                        , span: span.clone()            //
+                                        , custom_label: Some(EXPECTS_LB_REG_BIOP_IMM_RB_COM_IMM.to_string()) });
+                            }
+                        } else {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_LB_REG_BIOP_IMM_RB_COM_IMM.to_string()) });
+                        }
+                    }
                     | Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
                         if tokens.len() < 8 {
                             return Err(
