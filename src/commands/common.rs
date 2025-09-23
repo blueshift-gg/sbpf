@@ -44,7 +44,7 @@ ENTRY (entrypoint)"#;
 
 pub const README: &str = r#"# default_project_name
 
-Created with [sbpf](https://github.com/deanmlittle/sbpf)"#;
+Created with [sbpf](https://github.com/blueshift-gg/sbpf)"#;
 
 pub const GITIGNORE: &str = r#"build/**/*
 deploy/**/*
