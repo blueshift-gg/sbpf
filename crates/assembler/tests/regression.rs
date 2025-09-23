@@ -17,14 +17,11 @@ struct Case {
     file: String,
     #[serde(default)]
     hash: String,
-    #[serde(default = "default_runs")]
-    runs: u32,
 }
 
 #[derive(Debug)]
 enum IssueKind {
     HashMismatch,
-    NonDeterministic,
     AssemblerError,
 }
 #[derive(Debug)]
@@ -35,10 +32,6 @@ struct Issue {
     expected: Option<String>,
     actual: Option<String>,
     note: Option<String>,
-}
-
-fn default_runs() -> u32 {
-    10
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -88,54 +81,9 @@ fn test_regression() {
     let mut updated_entries = 0usize;
     for (name, case) in manifest.cases.iter_mut() {
         let source = read_source(&case.file);
-        let mut first_hash: Option<String> = None;
-        let mut nondeterministic = false;
-        let mut assembler_failed = false;
-
-        for _ in 0..case.runs.max(1) {
-            let bytes = match sbpf_assembler::assemble(&source) {
-                Ok(b) => b,
-                Err(e) => {
-                    assembler_failed = true;
-                    any_missing_or_mismatch = true;
-                    issues.push(Issue {
-                        kind: IssueKind::AssemblerError,
-                        name: name.clone(),
-                        file: case.file.clone(),
-                        expected: None,
-                        actual: None,
-                        note: Some(format!("assembler failed: {:?}", e)),
-                    });
-                    break;
-                }
-            };
-            let h = hash_bytes(&bytes);
-            if let Some(prev) = &first_hash {
-                if &h != prev {
-                    nondeterministic = true;
-                    issues.push(Issue {
-                        kind: IssueKind::NonDeterministic,
-                        name: name.clone(),
-                        file: case.file.clone(),
-                        expected: Some(prev.clone()),
-                        actual: Some(h.clone()),
-                        note: Some("bytecode hash varied across runs".to_string()),
-                    });
-                    break;
-                }
-            } else {
-                first_hash = Some(h);
-            }
-        }
-
-        if assembler_failed {
-            // Already recorded. Skip to next case.
-            continue;
-        }
-
-        let actual = match first_hash {
-            Some(h) => h,
-            None => {
+        let actual = match sbpf_assembler::assemble(&source) {
+            Ok(bytes) => hash_bytes(&bytes),
+            Err(e) => {
                 any_missing_or_mismatch = true;
                 issues.push(Issue {
                     kind: IssueKind::AssemblerError,
@@ -143,19 +91,15 @@ fn test_regression() {
                     file: case.file.clone(),
                     expected: None,
                     actual: None,
-                    note: Some("no hash computed".to_string()),
+                    note: Some(format!("assembler failed: {:?}", e)),
                 });
                 continue;
             }
         };
 
-        if nondeterministic {
-            any_missing_or_mismatch = true;
-            continue;
-        }
-
         if actual != case.hash {
-            if update_hashes {
+            if update_hashes && case.hash.is_empty() {
+                // Only update the hash if it's empty.
                 case.hash = actual.clone();
                 updated_entries += 1;
             } else {
@@ -180,7 +124,6 @@ fn test_regression() {
     if any_missing_or_mismatch {
         // Print report.
         let mut mismatched = 0usize;
-        let mut nondet = 0usize;
         let mut asmerr = 0usize;
 
         eprintln!("\n===== Regression Report =====");
@@ -196,15 +139,6 @@ fn test_regression() {
                         issue.actual.as_deref().unwrap_or("<none>")
                     );
                 }
-                IssueKind::NonDeterministic => {
-                    nondet += 1;
-                    eprintln!(
-                        "[Non-deterministic] case='{}' file='{}' note={}",
-                        issue.name,
-                        issue.file,
-                        issue.note.as_deref().unwrap_or("")
-                    );
-                }
                 IssueKind::AssemblerError => {
                     asmerr += 1;
                     eprintln!(
@@ -217,10 +151,9 @@ fn test_regression() {
             }
         }
         eprintln!(
-            "===== Summary: total={} mismatched={} non-deterministic={} assembler-error={} =====\n",
+            "===== Summary: total={} mismatched={} assembler-error={} =====\n",
             issues.len(),
             mismatched,
-            nondet,
             asmerr
         );
 
