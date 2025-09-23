@@ -1,8 +1,8 @@
-
-let imports = {};
-imports['__wbindgen_placeholder__'] = module.exports;
 let wasm;
-const { TextEncoder, TextDecoder } = require(`util`);
+export function __wbg_set_wasm(val) {
+    wasm = val;
+}
+
 
 function debugString(val) {
     // primitive types
@@ -80,7 +80,9 @@ function getUint8ArrayMemory0() {
     return cachedUint8ArrayMemory0;
 }
 
-const cachedTextEncoder = new TextEncoder('utf-8');
+const lTextEncoder = typeof TextEncoder === 'undefined' ? (0, module.require)('util').TextEncoder : TextEncoder;
+
+const cachedTextEncoder = new lTextEncoder('utf-8');
 
 const encodeString = (typeof cachedTextEncoder.encodeInto === 'function'
     ? function (arg, view) {
@@ -143,11 +145,21 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 
-let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+const lTextDecoder = typeof TextDecoder === 'undefined' ? (0, module.require)('util').TextDecoder : TextDecoder;
+
+let cachedTextDecoder = new lTextDecoder('utf-8', { ignoreBOM: true, fatal: true });
 
 cachedTextDecoder.decode();
 
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
 function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new lTextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
@@ -170,7 +182,7 @@ function getArrayU8FromWasm0(ptr, len) {
  * @param {string} source
  * @returns {Uint8Array}
  */
-module.exports.assemble = function(source) {
+export function assemble(source) {
     const ptr0 = passStringToWasm0(source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.assemble(ptr0, len0);
@@ -180,27 +192,27 @@ module.exports.assemble = function(source) {
     var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
     return v2;
-};
+}
 
-module.exports.__wbg_new_07b483f72211fd66 = function() {
+export function __wbg_new_1930cbb8d9ffc31b() {
     const ret = new Object();
     return ret;
 };
 
-module.exports.__wbg_new_58353953ad2097cc = function() {
+export function __wbg_new_e969dc3f68d25093() {
     const ret = new Array();
     return ret;
 };
 
-module.exports.__wbg_set_3f1d0b984ed272ed = function(arg0, arg1, arg2) {
+export function __wbg_set_3f1d0b984ed272ed(arg0, arg1, arg2) {
     arg0[arg1] = arg2;
 };
 
-module.exports.__wbg_set_7422acbe992d64ab = function(arg0, arg1, arg2) {
+export function __wbg_set_d636a0463acf1dbc(arg0, arg1, arg2) {
     arg0[arg1 >>> 0] = arg2;
 };
 
-module.exports.__wbindgen_debug_string = function(arg0, arg1) {
+export function __wbg_wbindgendebugstring_bb652b1bc2061b6d(arg0, arg1) {
     const ret = debugString(arg1);
     const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
@@ -208,7 +220,17 @@ module.exports.__wbindgen_debug_string = function(arg0, arg1) {
     getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
 };
 
-module.exports.__wbindgen_init_externref_table = function() {
+export function __wbg_wbindgenthrow_4c11a24fca429ccf(arg0, arg1) {
+    throw new Error(getStringFromWasm0(arg0, arg1));
+};
+
+export function __wbindgen_cast_2241b6af4c4b2941(arg0, arg1) {
+    // Cast intrinsic for `Ref(String) -> Externref`.
+    const ret = getStringFromWasm0(arg0, arg1);
+    return ret;
+};
+
+export function __wbindgen_init_externref_table() {
     const table = wasm.__wbindgen_export_2;
     const offset = table.grow(4);
     table.set(0, undefined);
@@ -218,23 +240,4 @@ module.exports.__wbindgen_init_externref_table = function() {
     table.set(offset + 3, false);
     ;
 };
-
-module.exports.__wbindgen_string_new = function(arg0, arg1) {
-    const ret = getStringFromWasm0(arg0, arg1);
-    return ret;
-};
-
-module.exports.__wbindgen_throw = function(arg0, arg1) {
-    throw new Error(getStringFromWasm0(arg0, arg1));
-};
-
-const path = require('path').join(__dirname, 'sbpf_assembler_bg.wasm');
-const bytes = require('fs').readFileSync(path);
-
-const wasmModule = new WebAssembly.Module(bytes);
-const wasmInstance = new WebAssembly.Instance(wasmModule, imports);
-wasm = wasmInstance.exports;
-module.exports.__wasm = wasm;
-
-wasm.__wbindgen_start();
 

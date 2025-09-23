@@ -7,5 +7,3 @@ e:
     add64 r1, CONST_A
     add64 r1, CONST_B
     exit
-
-

@@ -14,6 +14,7 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
 serde-wasm-bindgen = "0.6.5"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -21,3 +22,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 [dev-dependencies]
 blake3 = "1"
 toml = "0.8"
+serde = { version = "1.0.219", features = ["derive"] }

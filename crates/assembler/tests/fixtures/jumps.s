@@ -11,5 +11,3 @@ target_1:
 
 target_2:
     exit
-
-
