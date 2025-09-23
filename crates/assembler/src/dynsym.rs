@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub struct DynamicSymbol {
@@ -41,13 +41,13 @@ pub enum SymbolKind {
 
 #[derive(Debug)]
 pub struct DynamicSymbolMap {
-    symbols: HashMap<String, Vec<(SymbolKind, u64)>>,
+    symbols: BTreeMap<String, Vec<(SymbolKind, u64)>>,
 }
 
 impl DynamicSymbolMap {
     pub fn new() -> Self {
         Self {
-            symbols: HashMap::new(),
+            symbols: BTreeMap::new(),
         }
     }
 
@@ -91,7 +91,7 @@ impl DynamicSymbolMap {
         self.symbols.get(name)
     }
 
-    pub fn get_symbols(&self) -> &HashMap<String, Vec<(SymbolKind, u64)>> {
+    pub fn get_symbols(&self) -> &BTreeMap<String, Vec<(SymbolKind, u64)>> {
         &self.symbols
     }
 }
@@ -135,12 +135,12 @@ impl RelDyn {
 
 #[derive(Debug)]
 pub struct RelDynMap {
-    rel_dyns: HashMap<u64, Vec<(RelocationType, String)>>,
+    rel_dyns: BTreeMap<u64, Vec<(RelocationType, String)>>,
 }
 
 impl RelDynMap {
     pub fn new() -> Self {
-        Self { rel_dyns: HashMap::new() }
+        Self { rel_dyns: BTreeMap::new() }
     }
 
     pub fn add_rel_dyn(&mut self, offset: u64, rel_type: RelocationType, name: String) {
