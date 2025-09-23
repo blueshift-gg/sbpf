@@ -1,0 +1,19 @@
+[cases.calls]
+file = "calls.s"
+hash = "8ac48356694172cae5e47109804d1a3550e5cdd441c6c85bf7da957b1570e0e1"
+runs = 10
+
+[cases.equ]
+file = "equ.s"
+hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"
+runs = 10
+
+[cases.jumps]
+file = "jumps.s"
+hash = "7be6d8971386a6fb59845d0353d688183677b3115cc683cddfc2d636efa01bc0"
+runs = 10
+
+[cases.rodata]
+file = "rodata.s"
+hash = "518f8ea95a4b2a2c0e18c27b90540355996e53844dcc3c6321348fadd94fc7c1"
+runs = 10
