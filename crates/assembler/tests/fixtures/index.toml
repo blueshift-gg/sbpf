@@ -15,5 +15,5 @@ runs = 10
 
 [cases.rodata]
 file = "rodata.s"
-hash = "518f8ea95a4b2a2c0e18c27b90540355996e53844dcc3c6321348fadd94fc7c1"
+hash = "b5bf26be95f734324c4aeb29ec94ac6456e051ad931f6167a391f64fde9a0647"
 runs = 10
