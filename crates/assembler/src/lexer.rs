@@ -75,6 +75,7 @@ pub enum Token {
     ImmediateValue(ImmediateValue, Range<usize>),
     BinaryOp(Op, Range<usize>),
     StringLiteral(String, Range<usize>),
+    VectorLiteral(Vec<ImmediateValue>, Range<usize>),
 
     LeftBracket(Range<usize>),
     RightBracket(Range<usize>),
@@ -137,7 +138,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                 c if c.is_ascii_alphanumeric() || *c == '_' => {
                     let mut identifier = String::new();
                     while let Some((_, c)) = chars.peek() {
-                        if c.is_ascii_alphanumeric() || *c == '_' || *c == ':' {
+                        if *c == '_' || *c == ':' || *c == '.' || c.is_ascii_alphanumeric() { 
                             identifier.push(chars.next().unwrap().1);
                         } else {
                             break;
@@ -254,7 +255,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
             }
         }
         byte_offset += line.len();
-        tokens.push(Token::Newline(byte_offset..byte_offset + 1));
+        // tokens.push(Token::Newline(byte_offset..byte_offset + 1));
         byte_offset += 1;
     }
 

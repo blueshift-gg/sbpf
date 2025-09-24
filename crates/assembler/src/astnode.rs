@@ -26,6 +26,7 @@ pub enum ASTNode {
     },
     Label {
         label: Label,
+        offset: u64,
     },
     // present in the bytecode
     ROData {
@@ -102,6 +103,28 @@ pub struct ROData {
 }
 
 impl ROData {
+    /// Validates that an immediate value is within the specified range
+    fn validate_immediate_range(
+        value: &ImmediateValue,
+        min: i64,
+        max: i64,
+        span: Range<usize>,
+    ) -> Result<(), CompileError> {
+        match value {
+            ImmediateValue::Int(val) => {
+                if *val < min || *val > max {
+                    return Err(CompileError::OutOfRangeLiteral { span, custom_label: None });
+                }
+            }
+            ImmediateValue::Addr(val) => {
+                if *val < min || *val > max {
+                    return Err(CompileError::OutOfRangeLiteral { span, custom_label: None });
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_size(&self) -> u64 {
         let size: u64;
         match (
@@ -111,23 +134,20 @@ impl ROData {
             (Token::Directive(_, _), Token::StringLiteral(s, _)) => {
                 size = s.len() as u64;
             }
-            (Token::Directive(directive, _), Token::ImmediateValue(_, _)) => {
+            (Token::Directive(directive, _), Token::VectorLiteral(values, _)) => {
                 match directive.as_str() {
                     "byte" => {
-                        size = 1;
+                        size = values.len() as u64 * 1;
                     }
                     "short" => {
-                        size = 2;
+                        size = values.len() as u64 * 2;
                     }
                     "int" | "long" => {
-                        size = 4;
+                        size = values.len() as u64 * 4;
                     }
                     "quad" => {
-                        size = 8;
+                        size = values.len() as u64 * 8;
                     }
-                    // "octa" => {
-                    //     size = 16;
-                    // }
                     _ => panic!("Invalid ROData declaration"),
                 }
             }
@@ -145,49 +165,29 @@ impl ROData {
                     return Err(CompileError::InvalidRODataDirective { span: directive_span.clone(), custom_label: None });
                 }
             }
-            (Token::Directive(directive, directive_span), Token::ImmediateValue(_, immediate_value_span)) => {
+            (Token::Directive(directive, directive_span), Token::VectorLiteral(values, vector_literal_span)) => {
                 match directive.as_str() {
                     "byte" => {
-                        if let Token::ImmediateValue(value, _) = &self.args[1] {
-                            match value {
-                                ImmediateValue::Int(val) => if *val < i8::MIN as i64 || *val > i8::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                                ImmediateValue::Addr(val) => if *val < i8::MIN as i64 || *val > i8::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                            }
+                        for value in values {
+                            Self::validate_immediate_range(value, i8::MIN as i64, i8::MAX as i64, vector_literal_span.clone())?;
                         }
                     }
                     "short" => {
-                        if let Token::ImmediateValue(value, _) = &self.args[1] {
-                            match value {
-                                ImmediateValue::Int(val) => if *val < i16::MIN as i64 || *val > i16::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                                ImmediateValue::Addr(val) => if *val < i16::MIN as i64 || *val > i16::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                            }
+                        for value in values {
+                            Self::validate_immediate_range(value, i16::MIN as i64, i16::MAX as i64, vector_literal_span.clone())?;
                         }
                     }
                     "int" | "long" => {
-                        if let Token::ImmediateValue(value, _) = &self.args[1] {
-                            match value {
-                                ImmediateValue::Int(val) => if *val < i32::MIN as i64 || *val > i32::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                                ImmediateValue::Addr(val) => if *val < i32::MIN as i64 || *val > i32::MAX as i64 {
-                                    return Err(CompileError::OutOfRangeLiteral { span: immediate_value_span.clone(), custom_label: None });
-                                },
-                            }
+                        for value in values {
+                            Self::validate_immediate_range(value, i32::MIN as i64, i32::MAX as i64, vector_literal_span.clone())?;
                         }
                     }
                     "quad" => {
-                        // this should be errored out at parsing time
-                        return Ok(());
+                        for value in values {
+                            Self::validate_immediate_range(value, i64::MIN as i64, i64::MAX as i64, vector_literal_span.clone())?;
+                        }
                     }
-                    _ => {
+                _ => {
                         return Err(CompileError::InvalidRODataDirective { span: directive_span.clone(), custom_label: None });
                     }
                 }
@@ -432,41 +432,44 @@ impl ASTNode {
                         let str_bytes = str_literal.as_bytes().to_vec();
                         bytes.extend(str_bytes);
                     } 
-                    (Token::Directive(directive, _), Token::ImmediateValue(imm, _)) => {
+                    (Token::Directive(directive, _), Token::VectorLiteral(values, _)) => {
                         if directive == "byte" {
-                            let imm8 = match imm {
-                                ImmediateValue::Int(val) => *val as i8,
-                                ImmediateValue::Addr(val) => *val as i8,
-                            };
-                            bytes.extend(imm8.to_le_bytes());
+                            for value in values {
+                                let imm8 = match value {
+                                    ImmediateValue::Int(val) => *val as i8,
+                                    ImmediateValue::Addr(val) => *val as i8,
+                                };
+                                bytes.extend(imm8.to_le_bytes());
+                            }
                         } else if directive == "short" {
-                            let imm16 = match imm {
-                                ImmediateValue::Int(val) => *val as i16,
-                                ImmediateValue::Addr(val) => *val as i16,
-                            };
-                            bytes.extend(imm16.to_le_bytes());
+                            for value in values {
+                                let imm16 = match value {
+                                    ImmediateValue::Int(val) => *val as i16,
+                                    ImmediateValue::Addr(val) => *val as i16,
+                                };
+                                bytes.extend(imm16.to_le_bytes());
+                            }
                         } else if directive == "int" || directive == "long" {
-                            let imm32 = match imm {
-                                ImmediateValue::Int(val) => *val as i32,
-                                ImmediateValue::Addr(val) => *val as i32,
-                            };
-                            bytes.extend(imm32.to_le_bytes());
+                            for value in values {
+                                let imm32 = match value {
+                                    ImmediateValue::Int(val) => *val as i32,
+                                    ImmediateValue::Addr(val) => *val as i32,
+                                };
+                                bytes.extend(imm32.to_le_bytes());
+                            }
                         } else if directive == "quad" {
-                            let imm64 = match imm {
-                                ImmediateValue::Int(val) => *val as i64,
-                                ImmediateValue::Addr(val) => *val as i64,
-                            };
-                            bytes.extend(imm64.to_le_bytes());
-                        } else if directive == "octa" {
-                            let imm128 = match imm {
-                                ImmediateValue::Int(val) => *val as i128,
-                                ImmediateValue::Addr(val) => *val as i128,
-                            };
-                            bytes.extend(imm128.to_le_bytes());
+                            for value in values {
+                                let imm64 = match value {
+                                    ImmediateValue::Int(val) => *val as i64,
+                                    ImmediateValue::Addr(val) => *val as i64,
+                                };
+                                bytes.extend(imm64.to_le_bytes());
+                            }
                         } else {
                             panic!("Invalid ROData declaration");
                         }
                     }
+
                     _ => panic!("Invalid ROData declaration"),
                 }
                 Some((bytes, debug_map))
