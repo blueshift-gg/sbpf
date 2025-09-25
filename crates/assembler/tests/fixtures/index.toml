@@ -13,3 +13,7 @@ hash = "7be6d8971386a6fb59845d0353d688183677b3115cc683cddfc2d636efa01bc0"
 [cases.rodata]
 file = "rodata.s"
 hash = "b5bf26be95f734324c4aeb29ec94ac6456e051ad931f6167a391f64fde9a0647"
+
+[cases.ro_bytearray]
+file = "ro_bytearray.s"
+hash = "f2967906640257efdddd7684bd818109efb2857af8a3bb2bff1578c47265481f" 

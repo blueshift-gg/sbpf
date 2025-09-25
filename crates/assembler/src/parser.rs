@@ -26,7 +26,7 @@ pub struct Parser<> {
     m_dynamic_symbols: DynamicSymbolMap,
     m_rel_dyns: RelDynMap,
 
-    m_rodata_size: u64,
+    m_rodata_accum_offset: u64,
 }
 
 pub struct ParseResult {
@@ -175,17 +175,19 @@ impl Parse for ROData {
             (
                 Token::Label(name, span),
                 Token::Directive(_, _),
-                Token::ImmediateValue(_, _)
+                Token::ImmediateValue(val, _)
             ) => {
+                let mut data_vector = vec![val.clone()];
+                let idx = parse_vector_literal(tokens, &mut data_vector, 3);
                 args.push(tokens[1].clone());
-                args.push(tokens[2].clone());
+                args.push(Token::VectorLiteral(data_vector, span.clone()));
                 Ok((
                     ROData {
                         name: name.clone(),
                         args,
                         span: span.clone()
                     },
-                    &tokens[3..]
+                    &tokens[idx..]
                 ))
             }
             _ => Err(CompileError::InvalidRodataDecl { span: span.clone(), custom_label: Some(EXPECTS_LABEL_DIR_STR.to_string()) }),
@@ -718,6 +720,22 @@ impl ParseWithConstMap for Instruction {
     }
 }
 
+fn parse_vector_literal(tokens: &[Token], stack: &mut Vec<ImmediateValue>, start_idx: usize) -> usize {
+    let mut idx = start_idx;
+    while idx < tokens.len() - 1 {
+        match (&tokens[idx], &tokens[idx + 1]) {
+            (Token::Comma(_), Token::ImmediateValue(val, _)) => {
+                stack.push(val.clone());
+                idx += 2;
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+    idx
+}
+
 fn fold_top(stack: &mut Vec<Token>) {
     if stack.len() < 3 {
         return;
@@ -877,7 +895,7 @@ impl Parser {
             , m_const_map: HashMap::new()
             , m_label_offsets: HashMap::new()
             , m_label_spans: HashMap::new()
-            , m_rodata_size: 0
+            , m_rodata_accum_offset: 0
             , m_dynamic_symbols: DynamicSymbolMap::new()
             , m_rel_dyns: RelDynMap::new()
         }
@@ -929,6 +947,10 @@ impl Parser {
                                 }
                             }
                         }
+                        "text" => {
+                            rodata_phase = false;
+                            tokens = &tokens[1..];
+                        }
                         "rodata" => {
                             nodes.push(ASTNode::RodataDecl { rodata_decl: RodataDecl { span: span.clone() } });
                             rodata_phase = true;
@@ -961,18 +983,18 @@ impl Parser {
                     if rodata_phase {
                         match ROData::parse(tokens) {
                             Ok((rodata, rest)) => {
-                                if self.m_label_offsets.contains_key(name) {
+                                if self.m_label_spans.contains_key(name) {
                                     let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
                                     errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
                                 } else {
-                                    self.m_label_offsets.insert(name.clone(), self.m_accum_offset + self.m_rodata_size);
+                                    self.m_label_spans.insert(name.clone(), span.clone());
                                     if let Err(e) = rodata.verify() {
                                         errors.push(e);
-                                    } else {
-                                        self.m_rodata_size += rodata.get_size();
                                     }
                                 }
-                                rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_accum_offset });
+                                let rodata_size = rodata.get_size();
+                                rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_rodata_accum_offset });
+                                self.m_rodata_accum_offset += rodata_size;
                                 tokens = rest;
                             }
                             Err(e) => {
@@ -981,14 +1003,13 @@ impl Parser {
                             }
                         }
                     } else {
-                        if self.m_label_offsets.contains_key(name) {
+                        if self.m_label_spans.contains_key(name) {
                             let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
                             errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
                         } else {
-                            self.m_label_offsets.insert(name.clone(), self.m_accum_offset);
                             self.m_label_spans.insert(name.clone(), span.clone());
                         }
-                        nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() } });
+                        nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() }, offset: self.m_accum_offset });
                         tokens = &tokens[1..];
                     }
                 }
@@ -1017,6 +1038,22 @@ impl Parser {
         }
 
         // Second pass to resolve labels
+        for node in &nodes {
+            match node {
+                ASTNode::Label { label, offset } => {
+                    self.m_label_offsets.insert(label.name.clone(), *offset);
+                }
+                _ => {}
+            }
+        }
+        for node in &rodata_nodes {
+            match node {
+                ASTNode::ROData { rodata, offset } => {
+                    self.m_label_offsets.insert(rodata.name.clone(), *offset + self.m_accum_offset);
+                }
+                _ => {}
+            }
+        }
         for node in &mut nodes {
             match node {
                 ASTNode::Instruction { instruction: inst, offset, .. } => {
@@ -1077,7 +1114,7 @@ impl Parser {
         } else {
             Ok(ParseResult {
                 code_section: CodeSection::new(nodes, self.m_accum_offset),
-                data_section: DataSection::new(rodata_nodes, self.m_rodata_size),
+                data_section: DataSection::new(rodata_nodes, self.m_rodata_accum_offset),
                 dynamic_symbols: DynamicSymbolMap::copy(&self.m_dynamic_symbols),
                 relocation_data: RelDynMap::copy(&self.m_rel_dyns),
                 prog_is_static: self.m_prog_is_static,
