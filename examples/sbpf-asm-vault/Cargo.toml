@@ -1,0 +1,13 @@
+[package]
+name = "sbpf-asm-vault"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dev-dependencies]
+mollusk-svm = "0.4.1"
+solana-sdk = "2.2.1"
+
+[features]
+test-sbf = []
