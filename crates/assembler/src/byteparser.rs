@@ -74,7 +74,7 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
                     };
 
                 // Replace the immediate value with the rodata label
-                let ro_label = ast.get_rodata_at_offset(rel.0 + addend as u64).unwrap();
+                let ro_label = ast.get_rodata_at_offset(addend as u64).unwrap();
                 let ro_label_name = ro_label.name.clone();
                 let node: &mut Instruction = ast.get_instruction_at_offset(rel.0 as u64).unwrap();
                 let last_idx = node.operands.len() - 1;
