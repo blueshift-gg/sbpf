@@ -68,7 +68,7 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
                 // as the immediate value of the instruction
                 let addend = //
                     match ast.get_instruction_at_offset(rel.0 as u64).unwrap()
-                        .operands[0].clone() { 
+                        .operands.last().unwrap().clone() {
                             Token::ImmediateValue(ImmediateValue::Int(val), _) => val,
                             _ => 0 
                     };

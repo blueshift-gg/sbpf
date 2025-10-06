@@ -115,6 +115,8 @@ impl AST {
                         if let Some(Token::Identifier(name, span)) = inst.operands.last() {
                             let label = name.clone();
                             if let Some(target_offset) = label_offset_map.get(&label) {
+                                // actually lddw with label makes a program dynamic, so
+                                // we should be able to hard code ph_offset
                                 let ph_count = if program_is_static { 1 } else { 3 };
                                 let ph_offset = 64 + (ph_count as u64 * 56) as i64;
                                 let abs_offset = *target_offset as i64 + ph_offset;

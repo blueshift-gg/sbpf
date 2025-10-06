@@ -868,11 +868,6 @@ fn inline_and_fold_constant_with_map(
     }
 }
 
-pub trait ParserTrait {
-    fn parse(&mut self) -> Result<ParseResult, Vec<CompileError>>;
-    fn resolve_labels(&mut self, nodes: &mut Vec<ASTNode>) -> Result<(), Vec<CompileError>>;
-}
-
 pub fn parse_tokens(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileError>> {
     let mut ast = AST::new();
 
