@@ -13,4 +13,7 @@ pub use test::*;
 pub mod clean;
 pub use clean::*;
 
+pub mod disassemble;
+pub use disassemble::*;
+
 pub mod common;
