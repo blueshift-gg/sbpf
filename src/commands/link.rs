@@ -9,6 +9,10 @@ pub fn link(source: &str) -> Result<()> {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("main");
-    std::fs::write(format!("{}.so", src_name), bytecode)?;
+    let output_path = std::path::Path::new(source)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join(format!("{}.so", src_name));
+    std::fs::write(output_path, bytecode)?;
     Ok(())
 }
