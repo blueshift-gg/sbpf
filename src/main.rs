@@ -1,7 +1,7 @@
 pub mod commands;
 use anyhow::Error;
 use clap::{Args, Parser, Subcommand};
-use commands::{build, link, clean, deploy, init, test};
+use commands::{build, clean, deploy, disassemble, link, init, test};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -27,6 +27,8 @@ enum Commands {
     E2E(DeployArgs),
     #[command(about = "Clean up build and deploy artifacts")]
     Clean,
+    #[command(about = "Disassemble a Solana program executable")]
+    Disassemble(DisassembleArgs),
 }
 
 #[derive(Args)]
@@ -51,6 +53,13 @@ struct LinkArgs {
     source: Option<String>,
 }
 
+#[derive(Args)]
+struct DisassembleArgs {
+    filename: String,
+    #[arg(short, long)]
+    asm: bool,
+}
+
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
@@ -67,5 +76,6 @@ fn main() -> Result<(), Error> {
             test()
         }
         Commands::Clean => clean(),
+        Commands::Disassemble(args) => disassemble(args.filename.clone(), args.asm),
     }
 }
