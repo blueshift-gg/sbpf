@@ -19,9 +19,10 @@ codespan-reporting = "0.12.0"
 termcolor = "1.4"
 
 sbpf-assembler = { workspace = true }
+sbpf-disassembler = { workspace = true }
 
 [workspace]
-members = ["crates/assembler"]
+members = ["crates/assembler", "crates/disassembler"]
 exclude = ["examples"]
 
 [workspace.package]
@@ -34,3 +35,4 @@ thiserror = "2.0.12"
 anyhow = "1.0.86"
 
 sbpf-assembler = { path = "crates/assembler" }
+sbpf-disassembler = { path = "crates/disassembler" }
