@@ -2,32 +2,15 @@ use crate::lexer::Op;
 use crate::opcode::Opcode;
 use crate::lexer::{Token, ImmediateValue};
 use crate::section::{CodeSection, DataSection};
-use crate::astnode::{ASTNode, Directive, GlobalDecl, EquDecl, ExternDecl, RodataDecl, Label, Instruction, ROData};
-use crate::dynsym::{DynamicSymbolMap, RelDynMap, RelocationType};
+use crate::ast::AST;
+use crate::astnode::{ASTNode, Directive, GlobalDecl, EquDecl, ExternDecl, RodataDecl, Label, ROData};
+use crate::instruction::Instruction;
+use crate::dynsym::{DynamicSymbolMap, RelDynMap};
 use num_traits::FromPrimitive;
 use std::collections::HashMap;
 use crate::errors::CompileError;
 use crate::messages::*;
 use crate::bug;
-
-pub struct Parser<> {
-    tokens: Vec<Token>,
-
-    pub m_prog_is_static: bool,
-    pub m_accum_offset: u64,
-
-    // TODO: consolidate all temporary parsing related informaion
-    m_const_map: HashMap<String, ImmediateValue>,
-    m_label_offsets: HashMap<String, u64>,
-    m_label_spans: HashMap<String, std::ops::Range<usize>>,
-
-    // TODO: consolidate all dynamic symbol information to one big map
-    m_entry_label: Option<String>,
-    m_dynamic_symbols: DynamicSymbolMap,
-    m_rel_dyns: RelDynMap,
-
-    m_rodata_accum_offset: u64,
-}
 
 pub struct ParseResult {
     // TODO: parse result is basically 1. static part 2. dynamic part of the program
@@ -885,140 +868,93 @@ fn inline_and_fold_constant_with_map(
     }
 }
 
-impl Parser {
+pub fn parse_tokens(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileError>> {
+    let mut ast = AST::new();
 
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens
-            , m_prog_is_static: true
-            , m_accum_offset: 0
-            , m_entry_label: None
-            , m_const_map: HashMap::new()
-            , m_label_offsets: HashMap::new()
-            , m_label_spans: HashMap::new()
-            , m_rodata_accum_offset: 0
-            , m_dynamic_symbols: DynamicSymbolMap::new()
-            , m_rel_dyns: RelDynMap::new()
-        }
-    }
+    let mut rodata_phase = false;
+    let mut accum_offset = 0;
+    let mut rodata_accum_offset = 0;
+    let mut const_map = HashMap::<String, ImmediateValue>::new();
+    let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
+    let mut errors = Vec::new();
 
-    pub fn parse(&mut self) -> Result<ParseResult, Vec<CompileError>> {
-        let mut nodes = Vec::new();
-        let mut rodata_nodes = Vec::new();
-        let mut rodata_phase = false;
-
-        let mut errors = Vec::new();
-
-        let mut tokens = self.tokens.as_slice();
-
-        // TODO: when parse error occurs, we should probably just jump to the next line
-        // if we're able to error out the scenario where users put 2 instructions in the same line
-        // for now we just continue to the next token
-
-        // TODO: it would be nice if we build a token iterator that can 
-        // 1. peek the next multiple tokens (for detecting patterns)
-        // 2. jump to the next line
-        // 3. continue to the next token
-        while !tokens.is_empty() {
-            match &tokens[0] {
-                Token::Directive(name, span) => {
-                    match name.as_str() {
-                        "global" | "globl" => {
-                            match GlobalDecl::parse(tokens) {
-                                Ok((node, rest)) => {
-                                self.m_entry_label = Some(node.get_entry_label());
-                                nodes.push(ASTNode::GlobalDecl { global_decl: node });
-                                tokens = rest;
-                                }
-                                Err(e) => {
-                                    errors.push(e);
-                                    tokens = &tokens[1..];
-                                }
-                            }
-                        }
-                        "extern" => {
-                            match ExternDecl::parse(tokens) {
-                                Ok((node, rest)) => {
-                                nodes.push(ASTNode::ExternDecl { extern_decl: node });
-                                tokens = rest;
-                                }
-                                Err(e) => {
-                                    errors.push(e);
-                                    tokens = &tokens[1..];
-                                }
-                            }
-                        }
-                        "text" => {
-                            rodata_phase = false;
-                            tokens = &tokens[1..];
-                        }
-                        "rodata" => {
-                            nodes.push(ASTNode::RodataDecl { rodata_decl: RodataDecl { span: span.clone() } });
-                            rodata_phase = true;
-                            tokens = &tokens[1..];
-                        }
-                        "equ" => {
-                            match EquDecl::parse_with_constmap(tokens, &self.m_const_map) {
-                                Ok((node, rest)) => {
-                                self.m_const_map.insert(node.get_name(), node.get_val());
-                                nodes.push(ASTNode::EquDecl { equ_decl: node });
-                                tokens = rest;
-                                }
-                                Err(e) => {
-                                    errors.push(e);
-                                    tokens = &tokens[1..];
-                                }
-                            }
-                        }
-                        "section" => {
-                            nodes.push(ASTNode::Directive { directive: Directive { name: name.clone(), args: Vec::new(), span: span.clone() } });
-                            tokens = &tokens[1..];
-                        }
-                        _ => {
-                            errors.push(CompileError::InvalidDirective { directive: name.clone(), span: span.clone(), custom_label: None });
-                            tokens = &tokens[1..];
-                        }
-                    }
-                }
-                Token::Label(name, span) => {
-                    if rodata_phase {
-                        match ROData::parse(tokens) {
-                            Ok((rodata, rest)) => {
-                                if self.m_label_spans.contains_key(name) {
-                                    let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
-                                    errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
-                                } else {
-                                    self.m_label_spans.insert(name.clone(), span.clone());
-                                    if let Err(e) = rodata.verify() {
-                                        errors.push(e);
-                                    }
-                                }
-                                let rodata_size = rodata.get_size();
-                                rodata_nodes.push(ASTNode::ROData { rodata, offset: self.m_rodata_accum_offset });
-                                self.m_rodata_accum_offset += rodata_size;
-                                tokens = rest;
+    while !tokens.is_empty() {
+        match &tokens[0] {
+            Token::Directive(name, span) => {
+                match name.as_str() {
+                    "global" | "globl" => {
+                        match GlobalDecl::parse(tokens) {
+                            Ok((node, rest)) => {
+                            ast.entry_label = Some(node.get_entry_label());
+                            ast.nodes.push(ASTNode::GlobalDecl { global_decl: node });
+                            tokens = rest;
                             }
                             Err(e) => {
                                 errors.push(e);
                                 tokens = &tokens[1..];
                             }
                         }
-                    } else {
-                        if self.m_label_spans.contains_key(name) {
-                            let original_span = self.m_label_spans.get(name).cloned().unwrap_or(span.clone());
-                            errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
-                        } else {
-                            self.m_label_spans.insert(name.clone(), span.clone());
+                    }
+                    "extern" => {
+                        match ExternDecl::parse(tokens) {
+                            Ok((node, rest)) => {
+                            ast.nodes.push(ASTNode::ExternDecl { extern_decl: node });
+                            tokens = rest;
+                            }
+                            Err(e) => {
+                                errors.push(e);
+                                tokens = &tokens[1..];
+                            }
                         }
-                        nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() }, offset: self.m_accum_offset });
+                    }
+                    "text" => {
+                        rodata_phase = false;
+                        tokens = &tokens[1..];
+                    }
+                    "rodata" => {
+                        ast.nodes.push(ASTNode::RodataDecl { rodata_decl: RodataDecl { span: span.clone() } });
+                        rodata_phase = true;
+                        tokens = &tokens[1..];
+                    }
+                    "equ" => {
+                        match EquDecl::parse_with_constmap(tokens, &const_map) {
+                            Ok((node, rest)) => {
+                            const_map.insert(node.get_name(), node.get_val());
+                            ast.nodes.push(ASTNode::EquDecl { equ_decl: node });
+                            tokens = rest;
+                            }
+                            Err(e) => {
+                                errors.push(e);
+                                tokens = &tokens[1..];
+                            }
+                        }
+                    }
+                    "section" => {
+                        ast.nodes.push(ASTNode::Directive { directive: Directive { name: name.clone(), args: Vec::new(), span: span.clone() } });
+                        tokens = &tokens[1..];
+                    }
+                    _ => {
+                        errors.push(CompileError::InvalidDirective { directive: name.clone(), span: span.clone(), custom_label: None });
                         tokens = &tokens[1..];
                     }
                 }
-                Token::Opcode(_, _) => {
-                    match Instruction::parse_with_constmap(tokens, &self.m_const_map) {
-                        Ok((inst, rest)) => {
-                            let offset = self.m_accum_offset;
-                            self.m_accum_offset += inst.get_size();
-                            nodes.push(ASTNode::Instruction { instruction: inst, offset });
+            }
+            Token::Label(name, span) => {
+                if rodata_phase {
+                    match ROData::parse(tokens) {
+                        Ok((rodata, rest)) => {
+                            if label_spans.contains_key(name) {
+                                let original_span = label_spans.get(name).cloned().unwrap_or(span.clone());
+                                errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
+                            } else {
+                                label_spans.insert(name.clone(), span.clone());
+                                if let Err(e) = rodata.verify() {
+                                    errors.push(e);
+                                }
+                            }
+                            let rodata_size = rodata.get_size();
+                            ast.rodata_nodes.push(ASTNode::ROData { rodata, offset: rodata_accum_offset });
+                            rodata_accum_offset += rodata_size;
                             tokens = rest;
                         }
                         Err(e) => {
@@ -1026,99 +962,49 @@ impl Parser {
                             tokens = &tokens[1..];
                         }
                     }
-                }
-                _ => {
+                } else {
+                    if label_spans.contains_key(name) {
+                        let original_span = label_spans.get(name).cloned().unwrap_or(span.clone());
+                        errors.push(CompileError::DuplicateLabel { label: name.clone(), span: span.clone(), original_span, custom_label: Some(LABEL_REDEFINED.to_string()) });
+                    } else {
+                        label_spans.insert(name.clone(), span.clone());
+                    }
+                    ast.nodes.push(ASTNode::Label { label: Label { name: name.clone(), span: span.clone() }, offset: accum_offset });
                     tokens = &tokens[1..];
                 }
             }
-        }
-
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-
-        // Second pass to resolve labels
-        for node in &nodes {
-            match node {
-                ASTNode::Label { label, offset } => {
-                    self.m_label_offsets.insert(label.name.clone(), *offset);
-                }
-                _ => {}
-            }
-        }
-        for node in &rodata_nodes {
-            match node {
-                ASTNode::ROData { rodata, offset } => {
-                    self.m_label_offsets.insert(rodata.name.clone(), *offset + self.m_accum_offset);
-                }
-                _ => {}
-            }
-        }
-        for node in &mut nodes {
-            match node {
-                ASTNode::Instruction { instruction: inst, offset, .. } => {
-                    // For jump/call instructions, replace label with relative offsets
-                    if inst.is_jump() || inst.opcode == Opcode::Call {
-                        if let Some(Token::Identifier(label, span)) = inst.operands.last() {
-                            let label = label.clone();
-                            if let Some(target_offset) = self.m_label_offsets.get(&label) {
-                                let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
-                                let last_idx = inst.operands.len() - 1;
-                                inst.operands[last_idx] = Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
-                            } else if inst.is_jump() {
-                                // only error out unresolved jump labels, since call 
-                                // labels could exist externally
-                                errors.push(CompileError::UndefinedLabel { label: label.clone(), span: span.clone(), custom_label: None });
-                            }
-                        }
+            Token::Opcode(_, _) => {
+                match Instruction::parse_with_constmap(tokens, &const_map) {
+                    Ok((inst, rest)) => {
+                        let offset = accum_offset;
+                        accum_offset += inst.get_size();
+                        ast.nodes.push(ASTNode::Instruction { instruction: inst, offset });
+                        tokens = rest;
                     }
-                    // This has to be done before resolving lddw labels since lddw 
-                    // operand needs to be absolute offset values
-                    if inst.needs_relocation() {
-                        self.m_prog_is_static = false;
-                        let (reloc_type, label) = inst.get_relocation_info();
-                        self.m_rel_dyns.add_rel_dyn(*offset, reloc_type, label.clone());
-                        if reloc_type == RelocationType::RSbfSyscall {
-                            self.m_dynamic_symbols.add_call_target(label.clone(), *offset);
-                        }
-                    }
-                    if inst.opcode == Opcode::Lddw {
-                        if let Some(Token::Identifier(name, span)) = inst.operands.last() {
-                            let label = name.clone();
-                            if let Some(target_offset) = self.m_label_offsets.get(&label) {
-                                let ph_count = if self.m_prog_is_static { 1 } else { 3 };
-                                let ph_offset = 64 + (ph_count as u64 * 56) as i64;
-                                let abs_offset = *target_offset as i64 + ph_offset;
-                                // Replace label with immediate value
-                                let last_idx = inst.operands.len() - 1;
-                                inst.operands[last_idx] = Token::ImmediateValue(ImmediateValue::Addr(abs_offset), span.clone());
-                            }  else {
-                                errors.push(CompileError::UndefinedLabel { label: name.clone(), span: span.clone(), custom_label: None });
-                            }
-                        }
+                    Err(e) => {
+                        errors.push(e);
+                        tokens = &tokens[1..];
                     }
                 }
-                _ => {}
+            }
+            _ => {
+                tokens = &tokens[1..];
             }
         }
+    }
 
-        // Set entry point offset if an entry label was specified
-        if let Some(entry_label) = &self.m_entry_label {
-            if let Some(offset) = self.m_label_offsets.get(entry_label) {
-                self.m_dynamic_symbols.add_entry_point(entry_label.clone(), *offset);
-            }
-        }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
-        if !errors.is_empty() {
-            return Err(errors);
-        } else {
-            Ok(ParseResult {
-                code_section: CodeSection::new(nodes, self.m_accum_offset),
-                data_section: DataSection::new(rodata_nodes, self.m_rodata_accum_offset),
-                dynamic_symbols: DynamicSymbolMap::copy(&self.m_dynamic_symbols),
-                relocation_data: RelDynMap::copy(&self.m_rel_dyns),
-                prog_is_static: self.m_prog_is_static,
-            })
-        }
+    ast.set_text_size(accum_offset);
+    ast.set_rodata_size(rodata_accum_offset);
+
+
+    let parse_result = ast.build_program();
+    if let Ok(parse_result) = parse_result {
+        return Ok(parse_result);
+    } else {
+        return Err(parse_result.err().unwrap());
     }
 }
