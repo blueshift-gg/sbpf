@@ -20,9 +20,10 @@ termcolor = "1.4"
 
 sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }
+sbpf-common = { workspace = true }
 
 [workspace]
-members = ["crates/assembler", "crates/disassembler"]
+members = ["crates/assembler", "crates/common", "crates/disassembler"]
 exclude = ["examples"]
 
 [workspace.package]
@@ -36,3 +37,4 @@ anyhow = "1.0.86"
 
 sbpf-assembler = { path = "crates/assembler" }
 sbpf-disassembler = { path = "crates/disassembler" }
+sbpf-common = { path = "crates/common" }
