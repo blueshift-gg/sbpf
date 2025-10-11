@@ -166,7 +166,6 @@ impl Instruction {
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::Register(src, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
             }
             
             // Unary operations
