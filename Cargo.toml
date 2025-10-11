@@ -1,7 +1,14 @@
 [package]
 name = "sbpf"
 version = "0.1.1"
+authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"]
 edition = "2021"
+description = "A complete toolchain for building and deploying Solana BPF programs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+readme = "README.md"
+keywords = ["solana", "bpf", "blockchain", "assembler"]
+categories = ["development-tools", "command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -18,14 +25,13 @@ dirs = "4.0" # For easily getting the home directory
 codespan-reporting = "0.12.0"
 termcolor = "1.4"
 
-sbpf-assembler = { workspace = true }
+sbpf-assembler = { version = "0.1.1", path = "crates/assembler" }
 object = "0.37.3"
-sbpf-disassembler = { workspace = true }
-sbpf-linker = { workspace = true }
-sbpf-common = { workspace = true }
+sbpf-disassembler = { version = "0.1.1", path = "crates/disassembler" }
+sbpf-common = { version = "0.1.1", path = "crates/common" }
 
 [workspace]
-members = ["crates/assembler", "crates/common", "crates/disassembler", "crates/linker"]
+members = ["crates/assembler", "crates/common", "crates/disassembler"]
 exclude = ["examples"]
 
 [workspace.package]
@@ -39,5 +45,4 @@ anyhow = "1.0.86"
 
 sbpf-assembler = { path = "crates/assembler" }
 sbpf-disassembler = { path = "crates/disassembler" }
-sbpf-linker = { path = "crates/linker" }
 sbpf-common = { path = "crates/common" }

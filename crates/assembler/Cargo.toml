@@ -1,8 +1,12 @@
 [package]
-name                   = "sbpf-assembler"
-description            = "SBPF Assembler"
-edition 			   = "2024"
-version.workspace      = true
+name = "sbpf-assembler"
+version.workspace = true
+description = "Assembler for SBPF (Solana BPF) assembly language"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+keywords = ["solana", "bpf", "assembler", "blockchain"]
+categories = ["development-tools", "compilers"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

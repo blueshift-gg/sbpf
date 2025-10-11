@@ -4,9 +4,6 @@ pub use init::*;
 pub mod build;
 pub use build::*;
 
-pub mod link;
-pub use link::*;
-
 pub mod deploy;
 pub use deploy::*;
 

@@ -1,7 +1,7 @@
 pub mod commands;
 use anyhow::Error;
 use clap::{Args, Parser, Subcommand};
-use commands::{build, clean, deploy, disassemble, link, init, test};
+use commands::{build, clean, deploy, disassemble, init, test};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -17,8 +17,6 @@ enum Commands {
     Init(InitArgs),
     #[command(about = "Compile into a Solana program executable")]
     Build,
-    #[command(about = "Link object file into a Solana program executable")]
-    Link(LinkArgs),
     #[command(about = "Build and deploy the program")]
     Deploy(DeployArgs),
     #[command(about = "Test deployed program")]
@@ -66,7 +64,6 @@ fn main() -> Result<(), Error> {
     match &cli.command {
         Commands::Init(args) => init(args.name.clone(), args.ts_tests),
         Commands::Build => build(),
-        Commands::Link(args) => link(&args.source.clone().unwrap_or("src".to_string())),
         Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
         Commands::Test => test(),
         // use arg to specify if use light build

@@ -1,8 +1,12 @@
 [package]
 name = "sbpf-common"
-description = "SBPF Common"
-edition = "2024"
 version.workspace = true
+description = "Common types and utilities for SBPF (Solana BPF)"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+keywords = ["solana", "bpf", "blockchain"]
+categories = ["development-tools"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

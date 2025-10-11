@@ -1,8 +1,12 @@
 [package]
 name = "sbpf-disassembler"
-description = "SBPF Disassembler"
-edition = "2024"
 version.workspace = true
+description = "Disassembler for SBPF (Solana BPF) bytecode"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+keywords = ["solana", "bpf", "disassembler", "blockchain"]
+categories = ["development-tools"]
 
 [lib]
 crate-type = ["cdylib", "lib"]
