@@ -1,7 +1,9 @@
 use crate::opcode::Opcode;
 use crate::lexer::{Token, ImmediateValue};
-use std::ops::Range;
 use crate::dynsym::RelocationType;
+use crate::syscall::SYSCALLS;
+
+use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
@@ -68,78 +70,55 @@ impl Instruction {
         let span = 0..bytes.len();
 
         let opcode = Opcode::from_u8(bytes[0]).unwrap();
+        let reg = bytes[1];
+        let src = reg >> 4;
+        let dst = reg & 0x0f;
+        let off = i16::from_le_bytes([bytes[2], bytes[3]]);
+        let imm = match opcode {
+            Opcode::Lddw => {
+                let imm_low =   // 
+                    i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+                let imm_high =  // 
+                    i32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
+                let imm64 = ((imm_high as i64) << 32) | (imm_low as u32 as i64);
+                imm64
+            }
+            _ => i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as i64,
+        };
+
 
         match opcode {
             Opcode::Lddw => {
-                // lddw format: [opcode(1)] [dst_reg(1)] [0(1)] [0(1)] [imm32_low(4)] [0(4)] [imm32_high(4)]
-                if bytes.len() < 16 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let imm_low = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-                let imm_high = i32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
-                let imm64 = ((imm_high as i64) << 32) | (imm_low as u32 as i64);
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm64), 4..12));
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..12));
             }
         
             Opcode::Call => {
-                // call format: [opcode(1)] [0(1)] [0(1)] [0(1)] [imm32(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let imm32 = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-                // HARDCODE call imm 4242 to sol_log_
-                if imm32 == 4242 {
-                    operands.push(Token::Identifier("sol_log_".to_string(), 4..8));
+                if let Some(name) = SYSCALLS.get(&(imm as u32)) {
+                    operands.push(Token::Identifier(name.to_string(), 4..8));
                 } else {
-                    operands.push(Token::ImmediateValue(ImmediateValue::Int(imm32 as i64), 4..8));
+                    operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
                 }
             }
         
             Opcode::Ja => {
-                // ja format: [opcode(1)] [0(1)] [imm16(2)] [0(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let imm16 = i16::from_le_bytes([bytes[2], bytes[3]]);
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm16 as i64), 2..4));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
             }
         
-            // Jump instructions with immediate values
             Opcode::JeqImm | Opcode::JgtImm | Opcode::JgeImm | Opcode::JltImm | 
             Opcode::JleImm | Opcode::JsetImm | Opcode::JneImm | Opcode::JsgtImm | 
             Opcode::JsgeImm | Opcode::JsltImm | Opcode::JsleImm => {
-                // Format: [opcode(1)] [dst_reg(1)] [0(1)] [0(1)] [imm32(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let imm32 = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm32 as i64), 4..8));
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
             }
         
-            // Jump instructions with register operands
             Opcode::JeqReg | Opcode::JgtReg | Opcode::JgeReg | Opcode::JltReg | 
             Opcode::JleReg | Opcode::JsetReg | Opcode::JneReg | Opcode::JsgtReg | 
             Opcode::JsgeReg | Opcode::JsltReg | Opcode::JsleReg => {
-                // Format: [opcode(1)] [dst_reg(1)] [src_reg(1)] [0(1)] [0(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let src_reg = bytes[2];
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::Register(src_reg, 2..3));
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::Register(src, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
             }
         
             // Arithmetic instructions with immediate values
@@ -153,16 +132,8 @@ impl Instruction {
             Opcode::Arsh64Imm | Opcode::Hor64Imm | Opcode::Lmul64Imm | Opcode::Uhmul64Imm |
             Opcode::Udiv64Imm | Opcode::Urem64Imm | Opcode::Shmul64Imm | Opcode::Sdiv64Imm |
             Opcode::Srem64Imm => {
-                // Format: [opcode(1)] [dst_reg(1)] [0(1)] [0(1)] [imm32(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let imm32 = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm32 as i64), 4..8));
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
             }
         
             // Arithmetic instructions with register operands
@@ -175,59 +146,32 @@ impl Instruction {
             Opcode::Rsh64Reg | Opcode::Mod64Reg | Opcode::Xor64Reg | Opcode::Mov64Reg |
             Opcode::Arsh64Reg | Opcode::Lmul64Reg | Opcode::Uhmul64Reg | Opcode::Udiv64Reg |
             Opcode::Urem64Reg | Opcode::Shmul64Reg | Opcode::Sdiv64Reg | Opcode::Srem64Reg => {
-                // Format: [opcode(1)] [dst_reg(1)] [src_reg(1)] [0(1)] [0(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let src_reg = bytes[2];
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::Register(src_reg, 2..3));
+                operands.push(Token::Register(dst   , 1..2));
+                operands.push(Token::Register(src, 1..2));
             }
-        
-            // Load/Store instructions with immediate offset
-            Opcode::Ldxb | Opcode::Ldxh | Opcode::Ldxw | Opcode::Ldxdw |
-            Opcode::Stb | Opcode::Sth | Opcode::Stw | Opcode::Stdw |
+
+            Opcode::Ldxw | Opcode::Ldxh | Opcode::Ldxb | Opcode::Ldxdw => {
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::Register(src, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
+            }
+            
+            Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw => {
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
+            }
+
             Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
-                // Format: [opcode(1)] [dst_reg(1)] [src_reg(1)] [offset16(2)] [imm32(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let offset16 = u16::from_le_bytes([bytes[3], bytes[4]]);
-                let imm32 = i32::from_le_bytes([bytes[5], bytes[6], bytes[7], 0]);
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm32 as i64), 5..8));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(offset16 as i64), 3..5));
+                operands.push(Token::Register(dst, 1..2));
+                operands.push(Token::Register(src, 1..2));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
+                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
             }
-        
+            
             // Unary operations
             Opcode::Neg32 | Opcode::Neg64 | Opcode::Exit => {
-                // Format: [opcode(1)] [dst_reg(1)] [0(1)] [0(1)] [0(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                operands.push(Token::Register(dst_reg, 1..2));
-            }
-        
-            // Endianness operations
-            Opcode::Le | Opcode::Be => {
-                // Format: [opcode(1)] [dst_reg(1)] [0(1)] [0(1)] [imm32(4)]
-                if bytes.len() < 8 {
-                    return None;
-                }
-            
-                let dst_reg = bytes[1];
-                let imm32 = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-            
-                operands.push(Token::Register(dst_reg, 1..2));
-                operands.push(Token::ImmediateValue(ImmediateValue::Int(imm32 as i64), 4..8));
+                operands.push(Token::Register(dst, 1..2));
             }
         
             _ => {

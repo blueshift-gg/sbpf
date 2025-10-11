@@ -1,5 +1,5 @@
 use anyhow::{Result, Context};
-use sbpf_assembler::link_program;
+use sbpf_linker::link_program;
 
 pub fn link(source: &str) -> Result<()> {
     let program = std::fs::read(source).context("Failed to read bytecode")?;
