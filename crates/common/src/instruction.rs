@@ -1,6 +1,6 @@
-use std::ops::Range;
-
 use crate::opcode::Opcode;
+
+use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub struct Register {

@@ -1,14 +1,15 @@
-use crate::ast::AST;
-use crate::astnode::{ASTNode, ROData};
-use crate::instruction::Instruction;
-use crate::lexer::{ImmediateValue, Token};
-use crate::opcode::Opcode;
-use crate::parser::ParseResult;
+use sbpf_assembler::ast::AST;
+use sbpf_assembler::astnode::{ASTNode, ROData};
+use sbpf_assembler::instruction::Instruction;
+use sbpf_assembler::lexer::{ImmediateValue, Token};
+use sbpf_assembler::opcode::Opcode;
+use sbpf_assembler::parser::ParseResult;
 
 use object::{File, Object, ObjectSection, ObjectSymbol};
 use object::RelocationTarget::Symbol;
 
 use anyhow::Result;
+use std::collections::HashMap;
 
 pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
     let mut ast = AST::new();
@@ -17,6 +18,7 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
 
     // only handle symbols in the .rodata section for now
     let ro_section = obj.section_by_name(".rodata").unwrap();
+    let mut rodata_table = HashMap::new();
     let mut rodata_offset = 0;
     for symbol in obj.symbols() {
         if symbol.section_index() == Some(ro_section.index()) && symbol.size() > 0 {
@@ -29,11 +31,12 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
                 rodata: ROData {
                     name: symbol.name().unwrap().to_string(),
                     args: vec![Token::Directive(String::from("byte"), 0..1) //
-                            , Token::VectorLiteral(bytes, 0..1)],
+                            , Token::VectorLiteral(bytes.clone(), 0..1)],
                     span: 0..1,
                 },
-                offset: symbol.address(),
+                offset: rodata_offset,
             });
+            rodata_table.insert(symbol.address(), symbol.name().unwrap().to_string());
             rodata_offset += symbol.size();
         }
     }
@@ -56,6 +59,7 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
                 });
                 offset += node_len;
             }
+            
             // handle relocations
             for rel in section.relocations() {
                 // only handle relocations for symbols in the .rodata section for now
@@ -63,22 +67,24 @@ pub fn parse_bytecode(bytes: &[u8]) -> Result<ParseResult, String> {
                     Symbol(sym) => Some(obj.symbol_by_index(sym).unwrap()), 
                     _ => None
                 };
-                assert!(symbol.unwrap().section_index() == Some(ro_section.index()));
-                // addend is not explicit in the relocation entry, but implicitly encoded
-                // as the immediate value of the instruction
-                let addend = //
-                    match ast.get_instruction_at_offset(rel.0 as u64).unwrap()
-                        .operands.last().unwrap().clone() {
-                            Token::ImmediateValue(ImmediateValue::Int(val), _) => val,
-                            _ => 0 
-                    };
+                
+                if symbol.unwrap().section_index() == Some(ro_section.index()) {
+                    // addend is not explicit in the relocation entry, but implicitly encoded
+                    // as the immediate value of the instruction
+                    let addend = //
+                        match ast.get_instruction_at_offset(rel.0 as u64).unwrap()
+                            .operands.last().unwrap().clone() {
+                                Token::ImmediateValue(ImmediateValue::Int(val), _) => val,
+                                _ => 0 
+                        };
 
-                // Replace the immediate value with the rodata label
-                let ro_label = ast.get_rodata_at_offset(addend as u64).unwrap();
-                let ro_label_name = ro_label.name.clone();
-                let node: &mut Instruction = ast.get_instruction_at_offset(rel.0 as u64).unwrap();
-                let last_idx = node.operands.len() - 1;
-                node.operands[last_idx] = Token::Identifier(ro_label_name, 0..1);
+                    // Replace the immediate value with the rodata label
+                    let ro_label = rodata_table.get(&(addend as u64)).unwrap();
+                    let ro_label_name = ro_label.clone();
+                    let node: &mut Instruction = ast.get_instruction_at_offset(rel.0 as u64).unwrap();
+                    let last_idx = node.operands.len() - 1;
+                    node.operands[last_idx] = Token::Identifier(ro_label_name, 0..1);
+                }
             }
             ast.set_text_size(section.size());
         }

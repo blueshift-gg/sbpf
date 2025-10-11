@@ -1,0 +1,56 @@
+[package]
+name = "sbpf-linker"
+edition = "2024"
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sbpf_linker"
+
+[dependencies]
+sbpf-assembler = { path = "../assembler" }
+clap = { version = "4.5.13", features = ["derive"] }
+object = "0.37.3"
+anyhow = "1.0"
+bpf-linker = "0.9.15"
+
+aya-rustc-llvm-proxy = { version = "0.9.5", optional = true }
+llvm-sys-19 = { package = "llvm-sys", features = ["disable-alltargets-init"], version = "191.0.0", optional = true }
+llvm-sys-20 = { package = "llvm-sys", features = ["disable-alltargets-init"], version = "201.0.1", optional = true }
+llvm-sys-21 = { package = "llvm-sys", features = ["disable-alltargets-init"], version = "211.0.0-rc1", optional = true }
+
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+tracing-tree = "0.4"
+
+tracing = "0.1"
+thiserror.workspace = true
+
+[[bin]]
+name = "sbpf-linker"
+
+[features]
+llvm-19 = ["dep:llvm-sys-19"]
+llvm-20 = ["dep:llvm-sys-20"]
+llvm-21 = ["dep:llvm-sys-21"]
+rust-llvm-19 = [
+    "dep:aya-rustc-llvm-proxy",
+    "llvm-19",
+    "llvm-sys-19/no-llvm-linking",
+]
+rust-llvm-20 = [
+    "dep:aya-rustc-llvm-proxy",
+    "llvm-20",
+    "llvm-sys-20/no-llvm-linking",
+]
+rust-llvm-21 = [
+    "dep:aya-rustc-llvm-proxy",
+    "llvm-21",
+    "llvm-sys-21/no-llvm-linking",
+]
+default = [
+    "llvm-21",
+    "rust-llvm-21",
+    "rustc-build-sysroot",
+]
+rustc-build-sysroot = []
