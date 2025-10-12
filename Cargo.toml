@@ -25,17 +25,17 @@ dirs = "4.0" # For easily getting the home directory
 codespan-reporting = "0.12.0"
 termcolor = "1.4"
 
-sbpf-assembler = { version = "0.1.1", path = "crates/assembler" }
+sbpf-assembler = { workspace = true, path = "crates/assembler" }
 object = "0.37.3"
-sbpf-disassembler = { version = "0.1.1", path = "crates/disassembler" }
-sbpf-common = { version = "0.1.1", path = "crates/common" }
+sbpf-disassembler = { workspace = true, path = "crates/disassembler" }
+sbpf-common = { workspace = true, path = "crates/common" }
 
 [workspace]
 members = ["crates/assembler", "crates/common", "crates/disassembler"]
 exclude = ["examples"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 
 [workspace.dependencies]
 num-derive    = "0.4"
