@@ -4,7 +4,7 @@ use object::Endianness;
 use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::errors::EZBpfError;
+use crate::errors::DisassemblerError;
 
 pub const EI_MAGIC: [u8; 4] = *b"\x7fELF"; // ELF magic
 pub const EI_CLASS: u8 = 0x02; // 64-bit
@@ -52,7 +52,7 @@ pub struct ELFHeader {
 }
 
 impl ELFHeader {
-    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Self, EZBpfError> {
+    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Self, DisassemblerError> {
         let endian = elf_file.endian();
         let elf_header = elf_file.elf_header();
 
@@ -83,7 +83,7 @@ impl ELFHeader {
             || (e_machine.ne(&E_MACHINE) && e_machine.ne(&E_MACHINE_SBPF))
             || e_version.ne(&E_VERSION)
         {
-            return Err(EZBpfError::NonStandardElfHeader);
+            return Err(DisassemblerError::NonStandardElfHeader);
         }
 
         Ok(ELFHeader {

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum EZBpfError {
+pub enum DisassemblerError {
     #[error("Non-standard ELF header")]
     NonStandardElfHeader,
     #[error("Invalid Program Type")]

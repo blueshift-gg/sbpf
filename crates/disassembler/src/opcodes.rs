@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::EZBpfError;
+use crate::errors::DisassemblerError;
 
 #[repr(u8)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,7 +133,7 @@ impl Display for OpCode {
 }
 
 impl TryFrom<u8> for OpCode {
-    type Error = EZBpfError;
+    type Error = DisassemblerError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -253,7 +253,7 @@ impl TryFrom<u8> for OpCode {
             0x85 => OpCode::Call,
             0x8d => OpCode::Callx,
             0x95 => OpCode::Exit,
-            _ => return Err(EZBpfError::InvalidOpcode),
+            _ => return Err(DisassemblerError::InvalidOpcode),
         })
     }
 }

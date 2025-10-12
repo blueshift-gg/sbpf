@@ -4,7 +4,7 @@ use object::Endianness;
 use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::EZBpfError;
+use crate::errors::DisassemblerError;
 use crate::section_header_entry::SectionHeaderEntry;
 
 #[allow(non_camel_case_types)]
@@ -32,7 +32,7 @@ pub enum SectionHeaderType {
 }
 
 impl TryFrom<u32> for SectionHeaderType {
-    type Error = EZBpfError;
+    type Error = DisassemblerError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -54,7 +54,7 @@ impl TryFrom<u32> for SectionHeaderType {
             0x11 => Self::SHT_GROUP,
             0x12 => Self::SHT_SYMTAB_SHNDX,
             0x13 => Self::SHT_NUM,
-            _ => return Err(EZBpfError::InvalidSectionHeaderType),
+            _ => return Err(DisassemblerError::InvalidSectionHeaderType),
         })
     }
 }
@@ -107,7 +107,7 @@ pub struct SectionHeader {
 impl SectionHeader {
     pub fn from_elf_file(
         elf_file: &ElfFile64<Endianness>,
-    ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), EZBpfError> {
+    ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
         let endian = elf_file.endian();
         let section_headers_data: Vec<_> = elf_file.elf_section_table().iter().collect();
 
@@ -154,8 +154,10 @@ impl SectionHeader {
             .map(|s| {
                 let current_offset = s.sh_name as usize;
                 let next_index = indices.binary_search(&s.sh_name).unwrap() + 1;
-                let next_offset =
-                    *indices.get(next_index).ok_or(EZBpfError::InvalidString)? as usize;
+                let next_offset = *indices
+                    .get(next_index)
+                    .ok_or(DisassemblerError::InvalidString)?
+                    as usize;
 
                 let label = String::from_utf8(shstrndx_value[current_offset..next_offset].to_vec())
                     .unwrap_or("default".to_string());

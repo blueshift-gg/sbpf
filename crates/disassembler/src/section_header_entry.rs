@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::EZBpfError, instructions::Ix};
+use crate::{errors::DisassemblerError, instructions::Ix};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionHeaderEntry {
@@ -16,7 +16,7 @@ pub struct SectionHeaderEntry {
 }
 
 impl SectionHeaderEntry {
-    pub fn new(label: String, offset: usize, data: Vec<u8>) -> Result<Self, EZBpfError> {
+    pub fn new(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
         let mut h = SectionHeaderEntry {
             label,
             offset,
@@ -39,9 +39,9 @@ impl SectionHeaderEntry {
         self.offset
     }
 
-    pub fn to_ixs(&self) -> Result<Vec<Ix>, EZBpfError> {
+    pub fn to_ixs(&self) -> Result<Vec<Ix>, DisassemblerError> {
         if self.data.len() % 8 != 0 {
-            return Err(EZBpfError::InvalidDataLength);
+            return Err(DisassemblerError::InvalidDataLength);
         }
         let mut ixs: Vec<Ix> = vec![];
         let mut pos = 0;

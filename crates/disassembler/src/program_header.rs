@@ -4,7 +4,7 @@ use object::Endianness;
 use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::EZBpfError;
+use crate::errors::DisassemblerError;
 
 // Program Segment Flags
 pub const PF_X: u8 = 0x01;
@@ -26,7 +26,7 @@ pub enum ProgramType {
 }
 
 impl TryFrom<u32> for ProgramType {
-    type Error = EZBpfError;
+    type Error = DisassemblerError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -38,7 +38,7 @@ impl TryFrom<u32> for ProgramType {
             5 => Self::PT_SHLIB,
             6 => Self::PT_PHDR,
             7 => Self::PT_TLS,
-            _ => return Err(EZBpfError::InvalidProgramType),
+            _ => return Err(DisassemblerError::InvalidProgramType),
         })
     }
 }
@@ -115,7 +115,7 @@ pub struct ProgramHeader {
 }
 
 impl ProgramHeader {
-    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Vec<Self>, EZBpfError> {
+    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Vec<Self>, DisassemblerError> {
         let endian = elf_file.endian();
         let program_headers_data = elf_file.elf_program_headers();
 

@@ -3,7 +3,7 @@ use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    elf_header::ELFHeader, errors::EZBpfError, program_header::ProgramHeader,
+    elf_header::ELFHeader, errors::DisassemblerError, program_header::ProgramHeader,
     section_header::SectionHeader, section_header_entry::SectionHeaderEntry,
 };
 
@@ -16,9 +16,9 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
+    pub fn from_bytes(b: &[u8]) -> Result<Self, DisassemblerError> {
         let elf_file =
-            ElfFile64::<Endianness>::parse(b).map_err(|_| EZBpfError::NonStandardElfHeader)?;
+            ElfFile64::<Endianness>::parse(b).map_err(|_| DisassemblerError::NonStandardElfHeader)?;
 
         // Parse elf header.
         let elf_header = ELFHeader::from_elf_file(&elf_file)?;

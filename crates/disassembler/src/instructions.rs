@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::EZBpfError, opcodes::OpCode};
+use crate::{errors::DisassemblerError, opcodes::OpCode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Ix {
@@ -27,20 +27,20 @@ impl Ix {
         format!("[r{}{}]", self.src, self.off_str())
     }
 
-    pub fn op_imm_bits(&self) -> Result<String, EZBpfError> {
+    pub fn op_imm_bits(&self) -> Result<String, DisassemblerError> {
         Ok(match self.imm {
             16 => format!("{}16", self.op),
             32 => format!("{}32", self.op),
             64 => format!("{}64", self.op),
-            _ => return Err(EZBpfError::InvalidImmediate),
+            _ => return Err(DisassemblerError::InvalidImmediate),
         })
     }
 }
 
 impl Ix {
-    pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
+    pub fn from_bytes(b: &[u8]) -> Result<Self, DisassemblerError> {
         if b.len() < 8 {
-            return Err(EZBpfError::InvalidDataLength);
+            return Err(DisassemblerError::InvalidDataLength);
         }
 
         let op = OpCode::try_from(b[0])?;
@@ -52,13 +52,13 @@ impl Ix {
         let imm = match op {
             OpCode::Lddw => {
                 if b.len() < 16 {
-                    return Err(EZBpfError::InvalidDataLength);
+                    return Err(DisassemblerError::InvalidDataLength);
                 }
                 let mut imm_bytes = [0u8; 8];
                 imm_bytes[0..4].copy_from_slice(&b[4..8]);
 
                 if u32::from_le_bytes([b[8], b[9], b[10], b[11]]) != 0 {
-                    return Err(EZBpfError::InvalidImmediate);
+                    return Err(DisassemblerError::InvalidImmediate);
                 }
 
                 imm_bytes[4..8].copy_from_slice(&b[12..16]);
@@ -87,7 +87,7 @@ impl Ix {
         b
     }
 
-    pub fn to_asm(&self) -> Result<String, EZBpfError> {
+    pub fn to_asm(&self) -> Result<String, DisassemblerError> {
         Ok(match self.op {
             // lddw - (load double word) takes up two instructions. The 64 bit value
             // is made up of two halves with the upper half being the immediate
