@@ -1,10 +1,9 @@
-use std::io::Cursor;
-
-use anyhow::Result;
+use object::Endianness;
+use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    cursor::ELFCursor, elf_header::ELFHeader, errors::EZBpfError, program_header::ProgramHeader,
+    elf_header::ELFHeader, errors::EZBpfError, program_header::ProgramHeader,
     section_header::SectionHeader, section_header_entry::SectionHeaderEntry,
 };
 
@@ -18,46 +17,20 @@ pub struct Program {
 
 impl Program {
     pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
-        let mut c = Cursor::new(b);
-        let elf_header = c.read_elf_header()?;
+        let elf_file =
+            ElfFile64::<Endianness>::parse(b).map_err(|_| EZBpfError::NonStandardElfHeader)?;
 
-        c.set_position(elf_header.e_phoff);
-        let program_headers = (0..elf_header.e_phnum)
-            .map(|_| c.read_program_header())
-            .collect::<Result<Vec<_>, _>>()?;
-        c.set_position(elf_header.e_shoff);
-        let section_headers = (0..elf_header.e_shnum)
-            .map(|_| c.read_section_header())
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse elf header.
+        let elf_header = ELFHeader::from_elf_file(&elf_file)?;
 
-        let shstrndx = &section_headers[elf_header.e_shstrndx as usize];
-        let shstrndx_value = b
-            [shstrndx.sh_offset as usize..shstrndx.sh_offset as usize + shstrndx.sh_size as usize]
-            .to_vec();
+        // Parse program headers.
+        let program_headers = ProgramHeader::from_elf_file(&elf_file)?;
 
-        let mut indices: Vec<u32> = section_headers.iter().map(|h| h.sh_name).collect();
-        indices.push(shstrndx.sh_size as u32);
-        indices.sort_unstable();
-
-        let section_header_entries = section_headers
-            .iter()
-            .map(|s| {
-                let current_offset = s.sh_name as usize;
-                let next_index = indices.binary_search(&s.sh_name).unwrap() + 1;
-                let next_offset =
-                    *indices.get(next_index).ok_or(EZBpfError::InvalidString)? as usize;
-
-                let label = String::from_utf8(shstrndx_value[current_offset..next_offset].to_vec())
-                    .unwrap_or("default".to_string());
-                let data =
-                    b[s.sh_offset as usize..s.sh_offset as usize + s.sh_size as usize].to_vec();
-
-                SectionHeaderEntry::new(label, s.sh_offset as usize, data)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse section headers and section header entries.
+        let (section_headers, section_header_entries) = SectionHeader::from_elf_file(&elf_file)?;
 
         Ok(Self {
-            elf_header,
+            elf_header: elf_header,
             program_headers,
             section_headers,
             section_header_entries,

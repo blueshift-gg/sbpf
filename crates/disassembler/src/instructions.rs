@@ -1,8 +1,6 @@
-use std::io::Cursor;
-
 use serde::{Deserialize, Serialize};
 
-use crate::{cursor::ELFCursor, errors::EZBpfError, opcodes::OpCode};
+use crate::{errors::EZBpfError, opcodes::OpCode};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Ix {
@@ -41,8 +39,41 @@ impl Ix {
 
 impl Ix {
     pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
-        let mut c = Cursor::new(b);
-        c.read_ix()
+        if b.len() < 8 {
+            return Err(EZBpfError::InvalidDataLength);
+        }
+
+        let op = OpCode::try_from(b[0])?;
+        let reg = b[1];
+        let src = reg >> 4;
+        let dst = reg & 0x0f;
+        let off = i16::from_le_bytes([b[2], b[3]]);
+
+        let imm = match op {
+            OpCode::Lddw => {
+                if b.len() < 16 {
+                    return Err(EZBpfError::InvalidDataLength);
+                }
+                let mut imm_bytes = [0u8; 8];
+                imm_bytes[0..4].copy_from_slice(&b[4..8]);
+
+                if u32::from_le_bytes([b[8], b[9], b[10], b[11]]) != 0 {
+                    return Err(EZBpfError::InvalidImmediate);
+                }
+
+                imm_bytes[4..8].copy_from_slice(&b[12..16]);
+                i64::from_le_bytes(imm_bytes)
+            }
+            _ => i32::from_le_bytes([b[4], b[5], b[6], b[7]]) as i64,
+        };
+
+        Ok(Ix {
+            op,
+            src,
+            dst,
+            off,
+            imm,
+        })
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

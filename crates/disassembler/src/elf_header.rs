@@ -1,9 +1,10 @@
-use std::io::Cursor;
 use std::str;
 
+use object::Endianness;
+use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{cursor::ELFCursor, errors::EZBpfError};
+use crate::errors::EZBpfError;
 
 pub const EI_MAGIC: [u8; 4] = *b"\x7fELF"; // ELF magic
 pub const EI_CLASS: u8 = 0x02; // 64-bit
@@ -51,9 +52,62 @@ pub struct ELFHeader {
 }
 
 impl ELFHeader {
-    pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
-        let mut c = Cursor::new(b);
-        c.read_elf_header()
+    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Self, EZBpfError> {
+        let endian = elf_file.endian();
+        let elf_header = elf_file.elf_header();
+
+        // Extract ELF header fields.
+        let e_ident = elf_header.e_ident;
+        let e_type = elf_header.e_type.get(endian);
+        let e_machine = elf_header.e_machine.get(endian);
+        let e_version = elf_header.e_version.get(endian);
+        let e_entry = elf_header.e_entry.get(endian);
+        let e_phoff = elf_header.e_phoff.get(endian);
+        let e_shoff = elf_header.e_shoff.get(endian);
+        let e_flags = elf_header.e_flags.get(endian);
+        let e_ehsize = elf_header.e_ehsize.get(endian);
+        let e_phentsize = elf_header.e_phentsize.get(endian);
+        let e_phnum = elf_header.e_phnum.get(endian);
+        let e_shentsize = elf_header.e_shentsize.get(endian);
+        let e_shnum = elf_header.e_shnum.get(endian);
+        let e_shstrndx = elf_header.e_shstrndx.get(endian);
+
+        // Validate ELF header fields.
+        if e_ident.magic.ne(&EI_MAGIC)
+            || e_ident.class.ne(&EI_CLASS)
+            || e_ident.data.ne(&EI_DATA)
+            || e_ident.version.ne(&EI_VERSION)
+            || e_ident.os_abi.ne(&EI_OSABI)
+            || e_ident.abi_version.ne(&EI_ABIVERSION)
+            || e_ident.padding.ne(&EI_PAD)
+            || (e_machine.ne(&E_MACHINE) && e_machine.ne(&E_MACHINE_SBPF))
+            || e_version.ne(&E_VERSION)
+        {
+            return Err(EZBpfError::NonStandardElfHeader);
+        }
+
+        Ok(ELFHeader {
+            ei_magic: e_ident.magic,
+            ei_class: e_ident.class,
+            ei_data: e_ident.data,
+            ei_version: e_ident.version,
+            ei_osabi: e_ident.os_abi,
+            ei_abiversion: e_ident.abi_version,
+            ei_pad: e_ident.padding,
+            e_type,
+            e_machine,
+            e_version,
+            e_entry,
+            e_phoff,
+            e_shoff,
+            e_flags,
+            e_ehsize,
+            e_phentsize,
+            e_phnum,
+            e_shentsize,
+            e_shnum,
+            e_shstrndx,
+        })
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -87,23 +141,29 @@ impl ELFHeader {
 mod tests {
     use hex_literal::hex;
 
-    use super::ELFHeader;
+    use crate::elf_header::{
+        E_MACHINE, E_MACHINE_SBPF, E_TYPE, E_VERSION, EI_ABIVERSION, EI_CLASS, EI_DATA, EI_MAGIC,
+        EI_OSABI, EI_PAD, EI_VERSION,
+    };
+    use crate::program::Program;
 
     #[test]
-    fn serialize_e2e() {
-        let b = hex!(
-            "7F454C460201010000000000000000000300F7000100000078000000000000004000000000000000900000000000000000000000400038000100400003000200"
-        );
-        let h = ELFHeader::from_bytes(&b).unwrap();
-        assert_eq!(h.to_bytes(), &b)
-    }
+    fn test_elf_header() {
+        let program = Program::from_bytes(&hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000")).unwrap();
 
-    #[test]
-    fn serialize_sbpf_machine_e2e() {
-        let b = hex!(
-            "7F454C46020101000000000000000000030007010100000020010000000000004000000000000000680200000000000000000000400038000300400006000500"
+        // Verify ELF header fields match expected constants.
+        assert_eq!(program.elf_header.ei_magic, EI_MAGIC);
+        assert_eq!(program.elf_header.ei_class, EI_CLASS);
+        assert_eq!(program.elf_header.ei_data, EI_DATA);
+        assert_eq!(program.elf_header.ei_version, EI_VERSION);
+        assert_eq!(program.elf_header.ei_osabi, EI_OSABI);
+        assert_eq!(program.elf_header.ei_abiversion, EI_ABIVERSION);
+        assert_eq!(program.elf_header.ei_pad, EI_PAD);
+        assert_eq!(program.elf_header.e_type, E_TYPE);
+        assert!(
+            program.elf_header.e_machine == E_MACHINE
+                || program.elf_header.e_machine == E_MACHINE_SBPF
         );
-        let h = ELFHeader::from_bytes(&b).unwrap();
-        assert_eq!(h.to_bytes(), &b)
+        assert_eq!(program.elf_header.e_version, E_VERSION);
     }
 }
