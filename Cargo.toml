@@ -1,6 +1,6 @@
 [package]
 name = "sbpf"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"]
 edition = "2021"
 description = "A complete toolchain for building and deploying Solana BPF programs"
