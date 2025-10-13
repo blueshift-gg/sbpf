@@ -1,4 +1,3 @@
-pub mod cursor;
 pub mod elf_header;
 pub mod errors;
 pub mod instructions;

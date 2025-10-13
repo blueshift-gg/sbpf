@@ -1,8 +1,8 @@
-use std::{fmt::Debug, io::Cursor};
+use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{cursor::ELFCursor, errors::EZBpfError, instructions::Ix};
+use crate::{errors::DisassemblerError, instructions::Ix};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionHeaderEntry {
@@ -16,7 +16,7 @@ pub struct SectionHeaderEntry {
 }
 
 impl SectionHeaderEntry {
-    pub fn new(label: String, offset: usize, data: Vec<u8>) -> Result<Self, EZBpfError> {
+    pub fn new(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
         let mut h = SectionHeaderEntry {
             label,
             offset,
@@ -25,7 +25,7 @@ impl SectionHeaderEntry {
             utf8: String::new(),
         };
 
-        if &h.label == ".text\0" {
+        if h.label.contains(".text\0") {
             h.ixs = h.to_ixs()?;
         }
 
@@ -39,17 +39,29 @@ impl SectionHeaderEntry {
         self.offset
     }
 
-    pub fn to_ixs(&self) -> Result<Vec<Ix>, EZBpfError> {
+    pub fn to_ixs(&self) -> Result<Vec<Ix>, DisassemblerError> {
         if self.data.len() % 8 != 0 {
-            return Err(EZBpfError::InvalidDataLength);
+            return Err(DisassemblerError::InvalidDataLength);
         }
         let mut ixs: Vec<Ix> = vec![];
-        if self.data.len() >= 8 {
-            let mut c = Cursor::new(self.data.as_slice());
-            while let Ok(ix) = c.read_ix() {
-                ixs.push(ix);
+        let mut pos = 0;
+
+        while pos < self.data.len() {
+            let remaining = &self.data[pos..];
+            if remaining.len() < 8 {
+                break;
             }
+
+            let ix = Ix::from_bytes(remaining)?;
+            if ix.op == crate::opcodes::OpCode::Lddw {
+                pos += 16;
+            } else {
+                pos += 8;
+            }
+
+            ixs.push(ix);
         }
+
         Ok(ixs)
     }
 

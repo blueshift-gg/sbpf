@@ -1,8 +1,10 @@
-use std::{fmt::Debug, io::Cursor};
+use std::fmt::Debug;
 
+use object::Endianness;
+use object::read::elf::ElfFile64;
 use serde::{Deserialize, Serialize};
 
-use crate::{cursor::ELFCursor, errors::EZBpfError};
+use crate::errors::DisassemblerError;
 
 // Program Segment Flags
 pub const PF_X: u8 = 0x01;
@@ -24,7 +26,7 @@ pub enum ProgramType {
 }
 
 impl TryFrom<u32> for ProgramType {
-    type Error = EZBpfError;
+    type Error = DisassemblerError;
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -36,7 +38,7 @@ impl TryFrom<u32> for ProgramType {
             5 => Self::PT_SHLIB,
             6 => Self::PT_PHDR,
             7 => Self::PT_TLS,
-            _ => return Err(EZBpfError::InvalidProgramType),
+            _ => return Err(DisassemblerError::InvalidProgramType),
         })
     }
 }
@@ -113,9 +115,34 @@ pub struct ProgramHeader {
 }
 
 impl ProgramHeader {
-    pub fn from_bytes(b: &[u8]) -> Result<Self, EZBpfError> {
-        let mut c = Cursor::new(b);
-        c.read_program_header()
+    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Vec<Self>, DisassemblerError> {
+        let endian = elf_file.endian();
+        let program_headers_data = elf_file.elf_program_headers();
+
+        let mut program_headers = Vec::new();
+        for ph in program_headers_data {
+            let p_type = ProgramType::try_from(ph.p_type.get(endian))?;
+            let p_flags = ProgramFlags::from(ph.p_flags.get(endian));
+            let p_offset = ph.p_offset.get(endian);
+            let p_vaddr = ph.p_vaddr.get(endian);
+            let p_paddr = ph.p_paddr.get(endian);
+            let p_filesz = ph.p_filesz.get(endian);
+            let p_memsz = ph.p_memsz.get(endian);
+            let p_align = ph.p_align.get(endian);
+
+            program_headers.push(ProgramHeader {
+                p_type,
+                p_flags,
+                p_offset,
+                p_vaddr,
+                p_paddr,
+                p_filesz,
+                p_memsz,
+                p_align,
+            });
+        }
+
+        Ok(program_headers)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -135,14 +162,24 @@ impl ProgramHeader {
 mod tests {
     use hex_literal::hex;
 
-    use crate::program_header::ProgramHeader;
+    use crate::program::Program;
 
     #[test]
-    fn serialize_e2e() {
-        let b = hex!(
-            "0100000005000000780000000000000078000000000000007800000000000000080000000000000008000000000000000010000000000000"
+    fn test_program_headers() {
+        let original_bytes = hex!(
+            "7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000"
         );
-        let h = ProgramHeader::from_bytes(&b).unwrap();
-        assert_eq!(h.to_bytes(), &b)
+        let program = Program::from_bytes(&original_bytes).unwrap();
+
+        // Verify we have the expected number of program headers.
+        assert_eq!(program.program_headers.len(), 3);
+
+        // Verify that serialized program headers match the original ELF data.
+        for (i, program_header) in program.program_headers.iter().enumerate() {
+            let serialized = program_header.to_bytes();
+            let header_offset = 0x40 + (i * 56);
+            let original_header_bytes = &original_bytes[header_offset..header_offset + 56];
+            assert_eq!(serialized, original_header_bytes,);
+        }
     }
 }
