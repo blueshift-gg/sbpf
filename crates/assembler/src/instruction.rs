@@ -100,6 +100,11 @@ impl Instruction {
                     operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
                 }
             }
+
+            Opcode::Callx => {
+                // callx source register is encoded in the imm field
+                operands.push(Token::Register(imm as u8, 1..2));
+            }
         
             Opcode::Ja => {
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
@@ -131,7 +136,7 @@ impl Instruction {
             Opcode::Rsh64Imm | Opcode::Mod64Imm | Opcode::Xor64Imm | Opcode::Mov64Imm |
             Opcode::Arsh64Imm | Opcode::Hor64Imm | Opcode::Lmul64Imm | Opcode::Uhmul64Imm |
             Opcode::Udiv64Imm | Opcode::Urem64Imm | Opcode::Shmul64Imm | Opcode::Sdiv64Imm |
-            Opcode::Srem64Imm => {
+            Opcode::Srem64Imm | Opcode::Be | Opcode::Le => {
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(imm as i64), 4..8));
             }

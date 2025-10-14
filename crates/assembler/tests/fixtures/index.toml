@@ -16,4 +16,8 @@ hash = "b5bf26be95f734324c4aeb29ec94ac6456e051ad931f6167a391f64fde9a0647"
 
 [cases.ro_bytearray]
 file = "ro_bytearray.s"
-hash = "f2967906640257efdddd7684bd818109efb2857af8a3bb2bff1578c47265481f" 
+hash = "f2967906640257efdddd7684bd818109efb2857af8a3bb2bff1578c47265481f"
+
+[cases.be_le_callx]
+file = "be_le_callx.s"
+hash = "c13b88606e194b06e9acba56b2cdc46c92895b17006a8df0eb8e80df6a8e94b9" 
