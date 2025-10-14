@@ -265,8 +265,14 @@ impl ASTNode {
                         },
 
                         [Token::Register(reg, _)] => {
-                            bytes.push(*reg);
-                            bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                            if *opcode == Opcode::Callx {
+                                bytes.push(0);
+                                bytes.extend_from_slice(&[0, 0]);
+                                bytes.extend_from_slice(&[*reg, 0, 0, 0]);
+                            } else {
+                                bytes.push(*reg);
+                                bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                            }
                         },
 
                         [Token::Register(reg, _), Token::ImmediateValue(imm, _)] => {

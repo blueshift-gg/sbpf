@@ -350,7 +350,7 @@ impl ParseWithConstMap for Instruction {
                                     , custom_label: Some(EXPECTS_LB_REG_BIOP_IMM_RB_COM_IMM.to_string()) });
                         }
                     }
-                    | Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
+                    Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
                         if tokens.len() < 8 {
                             return Err(
                                 CompileError::InvalidInstruction {  //
@@ -467,6 +467,46 @@ impl ParseWithConstMap for Instruction {
                                 }
                             }                           
                             next_token_num = 4;
+                        }
+                    }
+                    Opcode::Be | Opcode::Le => {
+                        if tokens.len() < 4 {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
+                        }
+                        let (value, advance_token_num) = inline_and_fold_constant(tokens, const_map, 3);
+                        if let Some(value) = value {
+                            match (
+                                &tokens[1],
+                                &tokens[2],
+                                // Third operand is folded to an immediate value
+                            ) {
+                                (
+                                    Token::Register(_, _),
+                                    Token::Comma(_),
+                                    // Third operand is folded to an immediate value
+                                ) => {
+                                    operands.push(tokens[1].clone());
+                                    operands.push(Token::ImmediateValue(value, span.clone()));
+                                }
+                                _ => {
+                                    return Err(
+                                        CompileError::InvalidInstruction {  //
+                                            instruction: opcode.to_string() //
+                                            , span: span.clone()            //
+                                            , custom_label: Some(EXPECTS_REG_COM_IMM.to_string()) });
+                                }
+                            } 
+                            next_token_num = advance_token_num; 
+                        } else {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_REG_COM_IMM.to_string()) });
                         }
                     }
                     Opcode::Jeq | Opcode::Jgt | Opcode::Jge
@@ -667,6 +707,28 @@ impl ParseWithConstMap for Instruction {
                         }
                         match &tokens[1] {
                             Token::Identifier(_, _) => {
+                                operands.push(tokens[1].clone());
+                            }
+                            _ => {
+                                return Err(
+                                    CompileError::InvalidInstruction {  //
+                                        instruction: opcode.to_string() //
+                                        , span: span.clone()            //
+                                        , custom_label: Some(EXPECTS_IDEN.to_string()) });
+                            }
+                        }
+                        next_token_num = 2;
+                    }
+                    Opcode::Callx => {
+                        if tokens.len() < 2 {
+                            return Err(
+                                CompileError::InvalidInstruction {  //
+                                    instruction: opcode.to_string() //
+                                    , span: span.clone()            //
+                                    , custom_label: Some(EXPECTS_MORE_OPERAND.to_string()) });
+                        }
+                        match &tokens[1] {
+                            Token::Register(_, _) => {
                                 operands.push(tokens[1].clone());
                             }
                             _ => {

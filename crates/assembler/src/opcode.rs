@@ -604,7 +604,8 @@ impl Opcode {
             Opcode::Jsge | Opcode::JsgeImm | Opcode::JsgeReg => "jsge",
             Opcode::Jslt | Opcode::JsltImm | Opcode::JsltReg => "jslt",
             Opcode::Jsle | Opcode::JsleImm | Opcode::JsleReg => "jsle",
-            Opcode::Call | Opcode::Callx => "call",
+            Opcode::Call => "call",
+            Opcode::Callx => "callx",
             Opcode::Exit => "exit",
         }
     }
