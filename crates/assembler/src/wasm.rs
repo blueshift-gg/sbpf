@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_wasm_bindgen::to_value;
 use std::ops::Range;
 use crate::lexer::tokenize;
-use crate::parser::Parser;
+use crate::parser::parse_tokens;
 use crate::program::Program;
 
 #[derive(Serialize)]
@@ -51,8 +51,8 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
             return Err(to_value(&compile_errors).unwrap());
         }
     };
-    let mut parser = Parser::new(tokens);
-    let parse_result = match parser.parse() {
+
+    let parse_result = match parse_tokens(&tokens) {
         Ok(program) => program,
         Err(errors) => {
             let compile_errors : Vec<CompileErrorInfo> = errors.iter().map(|e| {
