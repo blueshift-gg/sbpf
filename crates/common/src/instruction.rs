@@ -1,15 +1,16 @@
 use crate::opcode::Opcode;
 
-use std::ops::Range;
+use core::fmt;
+use core::ops::Range;
 
 #[derive(Debug, Clone)]
 pub struct Register {
     pub n: u8,
 }
 
-impl Register {
-    pub fn to_string(&self) -> String {
-        format!("r{}", self.n)
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "r{}", self.n)
     }
 }
 

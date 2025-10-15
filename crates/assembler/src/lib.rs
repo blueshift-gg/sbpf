@@ -1,13 +1,12 @@
 use anyhow::Result;
 
 // Tokenizer and parser
-pub mod parser;
 pub mod lexer;
-pub mod opcode;
+pub mod parser;
 
 // Error handling and diagnostics
-pub mod macros;
 pub mod errors;
+pub mod macros;
 pub mod messages;
 
 // Intermediate Representation
@@ -29,15 +28,10 @@ pub mod debuginfo;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
-pub use self::{
-    errors::CompileError,
-    parser::parse_tokens,
-    program::Program,
-    lexer::tokenize,
-};
+pub use self::{errors::CompileError, lexer::tokenize, parser::parse_tokens, program::Program};
 
-pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>>{
-    let tokens = match tokenize(&source) {
+pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
+    let tokens = match tokenize(source) {
         Ok(tokens) => tokens,
         Err(errors) => {
             return Err(errors);
@@ -52,5 +46,4 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>>{
     let program = Program::from_parse_result(parse_result);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
-    
 }

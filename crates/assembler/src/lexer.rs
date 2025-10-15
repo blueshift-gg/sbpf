@@ -1,7 +1,6 @@
-use crate::bug;
 use crate::errors::CompileError;
-use crate::opcode::Opcode;
-use std::ops::Range;
+use sbpf_common::opcode::Opcode;
+use std::{ops::Range, str::FromStr as _};
 
 #[derive(Debug, Clone)]
 pub enum Op {
@@ -92,7 +91,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
     let mut errors = Vec::new();
     let mut byte_offset = 0;
 
-    let mut paren_stack : Vec<Token> = Vec::new();
+    let mut paren_stack: Vec<Token> = Vec::new();
 
     for line in source.lines() {
         if line.is_empty() {
@@ -107,12 +106,20 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     let mut number = String::new();
                     let mut is_addr = false;
                     while let Some((_, c)) = chars.peek() {
-                        if c.is_digit(10) {
+                        if c.is_ascii_digit() {
                             number.push(chars.next().unwrap().1);
                         } else if number == "0" && *c == 'x' {
                             chars.next();
-                            is_addr = true; /*  */ number = String::new();
-                        } else if is_addr && (*c == 'a' || *c == 'b' || *c == 'c' || *c == 'd' || *c == 'e' || *c == 'f') {
+                            is_addr = true; /*  */
+                            number = String::new();
+                        } else if is_addr
+                            && (*c == 'a'
+                                || *c == 'b'
+                                || *c == 'c'
+                                || *c == 'd'
+                                || *c == 'e'
+                                || *c == 'f')
+                        {
                             number.push(chars.next().unwrap().1);
                         } else {
                             break;
@@ -122,23 +129,35 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     if is_addr {
                         if let Ok(value) = u64::from_str_radix(&number, 16) {
                             let value = value as i64;
-                            tokens.push(Token::ImmediateValue(ImmediateValue::Addr(value), span.clone()));
+                            tokens.push(Token::ImmediateValue(
+                                ImmediateValue::Addr(value),
+                                span.clone(),
+                            ));
                         } else {
-                            errors.push(CompileError::InvalidNumber { number, span: span.clone(), custom_label: None });
+                            errors.push(CompileError::InvalidNumber {
+                                number,
+                                span: span.clone(),
+                                custom_label: None,
+                            });
                         }
+                    } else if let Ok(value) = number.parse::<i64>() {
+                        tokens.push(Token::ImmediateValue(
+                            ImmediateValue::Int(value),
+                            span.clone(),
+                        ));
                     } else {
-                        if let Ok(value) = number.parse::<i64>() {
-                            tokens.push(Token::ImmediateValue(ImmediateValue::Int(value), span.clone()));
-                        } else {
-                            errors.push(CompileError::InvalidNumber { number, span: span.clone(), custom_label: None });
-                        }
-                    }      
+                        errors.push(CompileError::InvalidNumber {
+                            number,
+                            span: span.clone(),
+                            custom_label: None,
+                        });
+                    }
                 }
 
                 c if c.is_ascii_alphanumeric() || *c == '_' => {
                     let mut identifier = String::new();
                     while let Some((_, c)) = chars.peek() {
-                        if *c == '_' || *c == ':' || *c == '.' || c.is_ascii_alphanumeric() { 
+                        if *c == '_' || *c == ':' || *c == '.' || c.is_ascii_alphanumeric() {
                             identifier.push(chars.next().unwrap().1);
                         } else {
                             break;
@@ -148,12 +167,18 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     if identifier.ends_with(':') {
                         let label_name = identifier.trim_end_matches(':').to_string();
                         tokens.push(Token::Label(label_name, span));
-                    } else if identifier.starts_with('r') && identifier[1..].chars().all(|c| c.is_ascii_digit()) {
+                    } else if identifier.starts_with('r')
+                        && identifier[1..].chars().all(|c| c.is_ascii_digit())
+                    {
                         // TODO: label name can be "r"
                         if let Ok(value) = identifier[1..].parse::<u8>() {
                             tokens.push(Token::Register(value, span.clone()));
                         } else {
-                            errors.push(CompileError::InvalidRegister { register: identifier, span: span.clone(), custom_label: None });
+                            errors.push(CompileError::InvalidRegister {
+                                register: identifier,
+                                span: span.clone(),
+                                custom_label: None,
+                            });
                         }
                     } else if let Ok(opcode) = Opcode::from_str(&identifier) {
                         tokens.push(Token::Opcode(opcode, span));
@@ -181,7 +206,8 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                 }
                 '.' => {
                     chars.next();
-                    let directive: String = chars.by_ref()
+                    let directive: String = chars
+                        .by_ref()
                         .take_while(|(_, c)| c.is_ascii_alphanumeric() || *c == '_')
                         .map(|(_, c)| c)
                         .collect();
@@ -198,7 +224,10 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                             tokens.push(Token::StringLiteral(string_literal, span));
                             break;
                         } else if *c == '\n' {
-                            errors.push(CompileError::UnterminatedStringLiteral { span: token_start..token_start + 1, custom_label: None });
+                            errors.push(CompileError::UnterminatedStringLiteral {
+                                span: token_start..token_start + 1,
+                                custom_label: None,
+                            });
                         }
                         string_literal.push(chars.next().unwrap().1);
                     }
@@ -249,7 +278,11 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                 }
                 _ => {
                     let span = token_start..token_start + 1;
-                    errors.push(CompileError::UnexpectedCharacter { character: *c, span, custom_label: None });
+                    errors.push(CompileError::UnexpectedCharacter {
+                        character: *c,
+                        span,
+                        custom_label: None,
+                    });
                     chars.next();
                 }
             }
@@ -259,13 +292,13 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
         byte_offset += 1;
     }
 
-    while !paren_stack.is_empty() {
-        let Token::LeftParen(span) = paren_stack.pop().unwrap() else {
-            bug!("this stack should only contain left paren tokens")
-        };
-        errors.push(CompileError::UnmatchedParen { span, custom_label: None });
+    while let Some(Token::LeftParen(span)) = paren_stack.pop() {
+        errors.push(CompileError::UnmatchedParen {
+            span,
+            custom_label: None,
+        });
     }
-    
+
     if errors.is_empty() {
         Ok(tokens)
     } else {

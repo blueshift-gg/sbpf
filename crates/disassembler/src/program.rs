@@ -17,8 +17,8 @@ pub struct Program {
 
 impl Program {
     pub fn from_bytes(b: &[u8]) -> Result<Self, DisassemblerError> {
-        let elf_file =
-            ElfFile64::<Endianness>::parse(b).map_err(|_| DisassemblerError::NonStandardElfHeader)?;
+        let elf_file = ElfFile64::<Endianness>::parse(b)
+            .map_err(|_| DisassemblerError::NonStandardElfHeader)?;
 
         // Parse elf header.
         let elf_header = ELFHeader::from_elf_file(&elf_file)?;
@@ -30,7 +30,7 @@ impl Program {
         let (section_headers, section_header_entries) = SectionHeader::from_elf_file(&elf_file)?;
 
         Ok(Self {
-            elf_header: elf_header,
+            elf_header,
             program_headers,
             section_headers,
             section_header_entries,
