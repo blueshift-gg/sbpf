@@ -1,22 +1,22 @@
 use crate::astnode::ASTNode;
-use crate::header::SectionHeader;
+use crate::astnode::ROData;
+use crate::debuginfo::DebugInfo;
 use crate::dynsym::DynamicSymbol;
 use crate::dynsym::RelDyn;
+use crate::header::SectionHeader;
 use crate::lexer::Token;
-use crate::debuginfo::DebugInfo;
 use std::collections::HashMap;
-use crate::astnode::ROData;
 
 // Base Section trait
 pub trait Section {
     fn name(&self) -> &str {
-        ".unknown"  // Default section name
+        ".unknown" // Default section name
     }
-    
+
     fn bytecode(&self) -> Vec<u8> {
-        Vec::new()  // Default empty bytecode
+        Vec::new() // Default empty bytecode
     }
-    
+
     // fn get_size(&self) -> u64
     fn size(&self) -> u64 {
         self.bytecode().len() as u64
@@ -70,7 +70,6 @@ impl CodeSection {
         self.offset = offset;
     }
 
-
     pub fn section_header_bytecode(&self) -> Vec<u8> {
         let flags = SectionHeader::SHF_ALLOC | SectionHeader::SHF_EXECINSTR;
         SectionHeader::new(
@@ -83,8 +82,9 @@ impl CodeSection {
             0,
             0,
             4,
-            0
-        ).bytecode()
+            0,
+        )
+        .bytecode()
     }
 }
 
@@ -141,10 +141,14 @@ impl DataSection {
 
     pub fn rodata(&self) -> Vec<(String, usize, String)> {
         let mut ro_data_labels = Vec::new();
-        for node in &self.nodes {    
-            if let ASTNode::ROData { rodata: ROData { name, args, .. }, offset } = node {
+        for node in &self.nodes {
+            if let ASTNode::ROData {
+                rodata: ROData { name, args, .. },
+                offset,
+            } = node
+            {
                 if let Some(Token::StringLiteral(str_literal, _)) = args.get(1) {
-                    ro_data_labels.push((name.clone(), offset.clone() as usize, str_literal.clone()));
+                    ro_data_labels.push((name.clone(), *offset as usize, str_literal.clone()));
                 }
             }
         }
@@ -152,7 +156,7 @@ impl DataSection {
     }
 
     pub fn section_header_bytecode(&self) -> Vec<u8> {
-        let flags = SectionHeader::SHF_ALLOC;  // Read-only data
+        let flags = SectionHeader::SHF_ALLOC; // Read-only data
         SectionHeader::new(
             7,
             SectionHeader::SHT_PROGBITS,
@@ -163,8 +167,9 @@ impl DataSection {
             0,
             0,
             1,
-            0
-        ).bytecode()
+            0,
+        )
+        .bytecode()
     }
 }
 
@@ -193,7 +198,7 @@ impl Section for DataSection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct NullSection {
     name: String,
     offset: u64,
@@ -201,27 +206,12 @@ pub struct NullSection {
 
 impl NullSection {
     pub fn new() -> Self {
-        Self {
-            name: String::from(""),
-            offset: 0,
-        }
+        Self::default()
     }
 
     pub fn section_header_bytecode(&self) -> Vec<u8> {
-        SectionHeader::new(
-            0,
-            SectionHeader::SHT_NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0
-        ).bytecode()
+        SectionHeader::new(0, SectionHeader::SHT_NULL, 0, 0, 0, 0, 0, 0, 0, 0).bytecode()
     }
-
 }
 
 impl Section for NullSection {
@@ -265,10 +255,10 @@ impl ShStrTabSection {
             0,
             0,
             1,
-            0
-        ).bytecode()
+            0,
+        )
+        .bytecode()
     }
-
 }
 
 impl Section for ShStrTabSection {
@@ -280,7 +270,7 @@ impl Section for ShStrTabSection {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
-        
+
         // Add each non-empty section name with null terminator
         for name in &self.section_names {
             if !name.is_empty() {
@@ -293,14 +283,14 @@ impl Section for ShStrTabSection {
         while bytes.len() % 8 != 0 {
             bytes.push(0);
         }
-        
+
         bytes
     }
-    
+
     fn size(&self) -> u64 {
         // Calculate section header offset
         let mut section_name_size = 0;
-        
+
         for name in &self.section_names {
             if !name.is_empty() {
                 section_name_size += 1 + name.len();
@@ -308,8 +298,8 @@ impl Section for ShStrTabSection {
         }
 
         section_name_size += 1; // null section
-        
-        section_name_size as u64  // Return the calculated size
+
+        section_name_size as u64 // Return the calculated size
     }
 }
 
@@ -380,10 +370,10 @@ impl DynamicSection {
             5,
             0,
             8,
-            16
-        ).bytecode()
+            16,
+        )
+        .bytecode()
     }
-
 }
 
 impl Section for DynamicSection {
@@ -393,62 +383,58 @@ impl Section for DynamicSection {
 
     fn bytecode(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
-        
+
         // DT_FLAGS (DF_TEXTREL)
         bytes.extend_from_slice(&0x1e_u64.to_le_bytes());
         bytes.extend_from_slice(&0x04_u64.to_le_bytes());
-        
+
         // DT_REL
         bytes.extend_from_slice(&0x11_u64.to_le_bytes());
         bytes.extend_from_slice(&self.rel_offset.to_le_bytes());
-        
+
         // DT_RELSZ
         bytes.extend_from_slice(&0x12_u64.to_le_bytes());
         bytes.extend_from_slice(&self.rel_size.to_le_bytes());
-        
+
         // DT_RELENT
         bytes.extend_from_slice(&0x13_u64.to_le_bytes());
-        bytes.extend_from_slice(&0x10_u64.to_le_bytes());  // Constant: 16 bytes per entry
-        
+        bytes.extend_from_slice(&0x10_u64.to_le_bytes()); // Constant: 16 bytes per entry
+
         // DT_RELCOUNT: number of relative relocation entries
         if self.rel_count > 0 {
-            bytes.extend_from_slice(&0x6fffff_fa_u64.to_le_bytes());
+            bytes.extend_from_slice(&0x6fff_fffa_u64.to_le_bytes());
             bytes.extend_from_slice(&self.rel_count.to_le_bytes());
         }
-        
+
         // DT_SYMTAB
         bytes.extend_from_slice(&0x06_u64.to_le_bytes());
         bytes.extend_from_slice(&self.dynsym_offset.to_le_bytes());
-        
+
         // DT_SYMENT
         bytes.extend_from_slice(&0x0b_u64.to_le_bytes());
-        bytes.extend_from_slice(&0x18_u64.to_le_bytes());  // Constant: 24 bytes per symbol
-        
+        bytes.extend_from_slice(&0x18_u64.to_le_bytes()); // Constant: 24 bytes per symbol
+
         // DT_STRTAB
         bytes.extend_from_slice(&0x05_u64.to_le_bytes());
         bytes.extend_from_slice(&self.dynstr_offset.to_le_bytes());
-        
+
         // DT_STRSZ
         bytes.extend_from_slice(&0x0a_u64.to_le_bytes());
         bytes.extend_from_slice(&self.dynstr_size.to_le_bytes());
-        
+
         // DT_TEXTREL
         bytes.extend_from_slice(&0x16_u64.to_le_bytes());
         bytes.extend_from_slice(&0x00_u64.to_le_bytes());
-        
+
         // DT_NULL
         bytes.extend_from_slice(&0x00_u64.to_le_bytes());
         bytes.extend_from_slice(&0x00_u64.to_le_bytes());
-        
+
         bytes
     }
 
     fn size(&self) -> u64 {
-        if self.rel_count > 0 {
-            return 11 * 16;
-        } else {
-            return 10 * 16;
-        }
+        if self.rel_count > 0 { 11 * 16 } else { 10 * 16 }
     }
 }
 
@@ -478,17 +464,17 @@ impl DynStrSection {
         SectionHeader::new(
             self.name_offset,
             SectionHeader::SHT_STRTAB,
-            SectionHeader::SHF_ALLOC,  // Allocatable section
+            SectionHeader::SHF_ALLOC, // Allocatable section
             self.offset,
             self.offset,
             self.size(),
             0,
             0,
             1,
-            0
-        ).bytecode()
+            0,
+        )
+        .bytecode()
     }
-
 }
 
 impl Section for DynStrSection {
@@ -500,7 +486,7 @@ impl Section for DynStrSection {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
-        
+
         // Add each symbol name with null terminator
         for name in &self.symbol_names {
             bytes.extend(name.as_bytes());
@@ -512,10 +498,12 @@ impl Section for DynStrSection {
         }
         bytes
     }
-    
+
     fn size(&self) -> u64 {
         // Calculate total size: initial null byte + sum of (name lengths + null terminators)
-        let mut size = 1 + self.symbol_names.iter()
+        let mut size = 1 + self
+            .symbol_names
+            .iter()
             .map(|name| name.len() + 1)
             .sum::<usize>();
         // add padding to make size multiple of 8
@@ -560,10 +548,10 @@ impl DynSymSection {
             5,
             1,
             8,
-            24
-        ).bytecode()
+            24,
+        )
+        .bytecode()
     }
-
 }
 
 impl Section for DynSymSection {
@@ -583,8 +571,7 @@ impl Section for DynSymSection {
         }
         bytes
     }
-    
-}   
+}
 
 #[derive(Debug)]
 pub struct RelDynSection {
@@ -624,10 +611,10 @@ impl RelDynSection {
             4,
             0,
             8,
-            16
-        ).bytecode()
+            16,
+        )
+        .bytecode()
     }
-
 }
 
 impl Section for RelDynSection {
@@ -646,8 +633,6 @@ impl Section for RelDynSection {
         }
         bytes
     }
-
-
 }
 
 #[derive(Debug)]
@@ -741,5 +726,3 @@ impl SectionType {
         }
     }
 }
-
-

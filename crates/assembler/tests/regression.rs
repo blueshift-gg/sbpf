@@ -3,7 +3,6 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use blake3;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]

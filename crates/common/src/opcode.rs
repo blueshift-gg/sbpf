@@ -1,3 +1,6 @@
+use core::fmt;
+use core::str::FromStr;
+
 use num_derive::FromPrimitive;
 
 #[derive(Debug, Clone, Copy, PartialEq, FromPrimitive)]
@@ -168,8 +171,10 @@ pub enum Opcode {
     Exit,
 }
 
-impl Opcode {
-    pub fn from_str(s: &str) -> Result<Self, &'static str> {
+impl FromStr for Opcode {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "lddw" => Ok(Opcode::Lddw),
             "ldxb" => Ok(Opcode::Ldxb),
@@ -243,7 +248,15 @@ impl Opcode {
             _ => Err("Invalid opcode"),
         }
     }
+}
 
+impl fmt::Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_str())
+    }
+}
+
+impl Opcode {
     pub fn from_u8(u: u8) -> Option<Self> {
         match u {
             0x18 => Some(Opcode::Lddw),
@@ -606,8 +619,5 @@ impl Opcode {
             Opcode::Call | Opcode::Callx => "call",
             Opcode::Exit => "exit",
         }
-    }
-    pub fn to_string(&self) -> String {
-        self.to_str().to_string()
     }
 }

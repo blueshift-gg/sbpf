@@ -2,17 +2,24 @@ use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub struct DynamicSymbol {
-    name: u32,      // index into .dynstr section
-    info: u8,       // symbol binding and type
-    other: u8,      // symbol visibility
-    shndx: u16,     // section index
-    value: u64,     // symbol value
-    size: u64,      // symbol size
+    name: u32,  // index into .dynstr section
+    info: u8,   // symbol binding and type
+    other: u8,  // symbol visibility
+    shndx: u16, // section index
+    value: u64, // symbol value
+    size: u64,  // symbol size
 }
 
 impl DynamicSymbol {
     pub fn new(name: u32, info: u8, other: u8, shndx: u16, value: u64, size: u64) -> Self {
-        Self { name, info, other, shndx, value, size }
+        Self {
+            name,
+            info,
+            other,
+            shndx,
+            value,
+            size,
+        }
     }
 
     pub fn bytecode(&self) -> Vec<u8> {
@@ -37,31 +44,24 @@ pub enum SymbolKind {
     CallTarget,
 }
 
-
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DynamicSymbolMap {
     symbols: BTreeMap<String, Vec<(SymbolKind, u64)>>,
 }
 
 impl DynamicSymbolMap {
     pub fn new() -> Self {
-        Self {
-            symbols: BTreeMap::new(),
-        }
+        Self::default()
     }
 
     pub fn copy(&self) -> Self {
         Self {
-            symbols: self.symbols.clone()
+            symbols: self.symbols.clone(),
         }
     }
 
     pub fn add_symbol(&mut self, name: String, kind: SymbolKind, offset: u64) {
-        self.symbols
-            .entry(name)
-            .or_default()
-            .push((kind, offset));
+        self.symbols.entry(name).or_default().push((kind, offset));
     }
 
     pub fn add_entry_point(&mut self, name: String, offset: u64) {
@@ -81,9 +81,15 @@ impl DynamicSymbolMap {
     }
 
     fn get_symbols_by_kind(&self, kind: SymbolKind) -> Vec<(String, u64)> {
-        self.symbols.iter()
+        self.symbols
+            .iter()
             .filter(|(_, symbols)| symbols.iter().any(|(k, _)| *k == kind))
-            .map(|(name, symbols)| (name.clone(), symbols.iter().find(|(k, _)| *k == kind).unwrap().1))
+            .map(|(name, symbols)| {
+                (
+                    name.clone(),
+                    symbols.iter().find(|(k, _)| *k == kind).unwrap().1,
+                )
+            })
             .collect()
     }
 
@@ -108,11 +114,15 @@ pub struct RelDyn {
     offset: u64,
     rel_type: u64,
     dynstr_offset: u64,
-}  
+}
 
 impl RelDyn {
     pub fn new(offset: u64, rel_type: u64, dynstr_offset: u64) -> Self {
-        Self { offset, rel_type, dynstr_offset }
+        Self {
+            offset,
+            rel_type,
+            dynstr_offset,
+        }
     }
 
     pub fn bytecode(&self) -> Vec<u8> {
@@ -133,29 +143,37 @@ impl RelDyn {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RelDynMap {
     rel_dyns: BTreeMap<u64, Vec<(RelocationType, String)>>,
 }
 
 impl RelDynMap {
     pub fn new() -> Self {
-        Self { rel_dyns: BTreeMap::new() }
+        Self::default()
     }
 
     pub fn add_rel_dyn(&mut self, offset: u64, rel_type: RelocationType, name: String) {
-        self.rel_dyns.entry(offset).or_default().push((rel_type, name));
+        self.rel_dyns
+            .entry(offset)
+            .or_default()
+            .push((rel_type, name));
     }
 
     pub fn get_rel_dyns(&self) -> Vec<(u64, RelocationType, String)> {
-        self.rel_dyns.iter()
+        self.rel_dyns
+            .iter()
             .flat_map(|(offset, rel_types)| {
-                rel_types.iter().map(move |(rel_type, name)| (*offset, *rel_type, name.clone()))
+                rel_types
+                    .iter()
+                    .map(move |(rel_type, name)| (*offset, *rel_type, name.clone()))
             })
             .collect()
     }
 
     pub fn copy(&self) -> Self {
-        Self { rel_dyns: self.rel_dyns.clone() }
+        Self {
+            rel_dyns: self.rel_dyns.clone(),
+        }
     }
 }

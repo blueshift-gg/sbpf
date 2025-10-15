@@ -18,6 +18,7 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 object = { workspace = true }
+sbpf-common = { workspace = true }
 phf = "0.13.1"
 phf_macros = "0.13.1"
 

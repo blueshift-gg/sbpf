@@ -1,13 +1,16 @@
 ## Table of Contents
 
--   [sbpf](#sbpf)
--   [Dependencies](#dependencies)
--   [Installation](#installation)
--   [Usage](#usage)
--   [Command Details](#command-details)
--   [Examples](#examples)
--   [Advanced Usage](#advanced-usage)
--   [Contributing](#contributing)
+- [sbpf](#sbpf)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Command Details](#command-details)
+      - [Initialize a Project](#initialize-a-project)
+        - [Examples](#examples)
+          - [Create a new project with Rust tests (default)](#create-a-new-project-with-rust-tests-default)
+          - [Create a new project with TypeScript tests](#create-a-new-project-with-typescript-tests)
+    - [Advanced Usage](#advanced-usage)
+    - [License](#license)
+    - [Contributing](#contributing)
 
 # sbpf
 
@@ -93,6 +96,15 @@ You can override the default linker with a [custom linker file](https://github.c
 src/example/example.s
 src/example/example.ld
 ```
+
+### License
+
+Licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
 
 ### Contributing
 

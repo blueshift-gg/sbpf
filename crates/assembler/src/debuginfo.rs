@@ -40,8 +40,9 @@ pub struct DebugInfo {
 
 impl DebugInfo {
     pub fn new(code_span: Range<usize>) -> Self {
-        Self { code_span, register_hint: RegisterHint::default() }
+        Self {
+            code_span,
+            register_hint: RegisterHint::default(),
+        }
     }
 }
-
-

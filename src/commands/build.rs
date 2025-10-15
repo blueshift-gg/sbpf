@@ -6,12 +6,12 @@ use rand::rngs::OsRng;
 use std::fs;
 
 use anyhow::{Error, Result};
-use std::path::Path;
-use std::time::Instant;
-use std::fs::create_dir_all;
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 use codespan_reporting::files::SimpleFile;
 use codespan_reporting::term;
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use std::fs::create_dir_all;
+use std::path::Path;
+use std::time::Instant;
 use termcolor::{ColorChoice, StandardStream};
 
 pub trait AsDiagnostic {
@@ -23,17 +23,21 @@ impl AsDiagnostic for CompileError {
     fn to_diagnostic(&self) -> Diagnostic<()> {
         match self {
             // Show both the redefinition and the original definition
-            CompileError::DuplicateLabel { span, original_span, .. } => {
-                Diagnostic::error()
-                    .with_message(self.to_string())
-                    .with_labels(vec![
-                        Label::primary((), span.start..span.end).with_message(self.label()),
-                        Label::secondary((), original_span.start..original_span.end).with_message("previous definition is here"),
-                    ])
-            }
+            CompileError::DuplicateLabel {
+                span,
+                original_span,
+                ..
+            } => Diagnostic::error()
+                .with_message(self.to_string())
+                .with_labels(vec![
+                    Label::primary((), span.start..span.end).with_message(self.label()),
+                    Label::secondary((), original_span.start..original_span.end)
+                        .with_message("previous definition is here"),
+                ]),
             _ => Diagnostic::error()
                 .with_message(self.to_string())
-                .with_labels(vec![Label::primary((), self.span().start..self.span().end).with_message(self.label())]),
+                .with_labels(vec![Label::primary((), self.span().start..self.span().end)
+                    .with_message(self.label())]),
         }
     }
 }
@@ -50,8 +54,8 @@ pub fn build() -> Result<()> {
     fn compile_assembly(src: &str, deploy: &str) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let file = SimpleFile::new(src.to_string(), source_code.clone());
-        
-        // assemble <filename>.s to bytecode 
+
+        // assemble <filename>.s to bytecode
         let bytecode = match assemble(&source_code) {
             Ok(bytecode) => bytecode,
             Err(errors) => {
@@ -64,15 +68,16 @@ pub fn build() -> Result<()> {
                 return Err(Error::msg("Compilation failed"));
             }
         };
-        
+
         // write bytecode to <filename>.so
-        let output_path = Path::new(deploy)
-            .join(Path::new(src)
+        let output_path = Path::new(deploy).join(
+            Path::new(src)
                 .file_name()
                 .unwrap()
                 .to_str()
                 .unwrap()
-                .replace(".s", ".so"));
+                .replace(".s", ".so"),
+        );
 
         std::fs::write(output_path, bytecode)?;
         Ok(())

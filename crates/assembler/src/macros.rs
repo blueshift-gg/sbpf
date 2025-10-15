@@ -50,5 +50,3 @@ macro_rules! bug {
         panic!("{}", format!("Internal error: {}\n", format!($($arg)*)));
     }};
 }
-
-
