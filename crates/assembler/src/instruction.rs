@@ -103,7 +103,7 @@ impl Instruction {
 
             Opcode::Callx => {
                 // callx source register is encoded in the imm field
-                operands.push(Token::Register(imm as u8, 1..2));
+                operands.push(Token::Register(src, 1..2));
             }
         
             Opcode::Ja => {
