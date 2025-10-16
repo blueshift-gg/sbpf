@@ -1,6 +1,7 @@
 use crate::dynsym::RelocationType;
 use crate::lexer::{ImmediateValue, Token};
 use crate::syscall::SYSCALLS;
+use crate::errors::CompileError;
 use sbpf_common::opcode::Opcode;
 
 use std::ops::Range;
@@ -76,7 +77,7 @@ impl Instruction {
         }
     }
     //
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, CompileError> {
         let mut operands = Vec::new();
         let span = 0..bytes.len();
 
@@ -97,24 +98,59 @@ impl Instruction {
 
         match opcode {
             Opcode::Lddw => {
+                if src != 0 || off != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Lddw instruction expects src and off to be 0, but got src: {}, off: {}", src, off),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..12));
             }
 
             Opcode::Call => {
                 if let Some(name) = SYSCALLS.get(&(imm as u32)) {
+                    if reg != 0 || off != 0 {
+                        return Err(CompileError::BytecodeError {
+                            error: format!("Call instruction with syscall expects reg and off to be 0, but got reg: {}, off: {}", reg, off),
+                            span: span.clone(),
+                            custom_label: None,
+                        });
+                    }
                     operands.push(Token::Identifier(name.to_string(), 4..8));
                 } else {
+                    if reg != 16 || off != 0 {
+                        return Err(CompileError::BytecodeError {
+                            error: format!("Call instruction with immediate expects reg to be 16 and off to be 0, but got reg: {}, off: {}", reg, off),
+                            span: span.clone(),
+                            custom_label: None,
+                        });
+                    }
                     operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..8));
                 }
             }
 
             Opcode::Callx => {
-                // callx source register is encoded in the src field
-                operands.push(Token::Register(src, 1..2));
+                if src != 0 || off != 0 || imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Callx instruction expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}", src, off, imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
+                // callx destination register is encoded in the dst field
+                operands.push(Token::Register(dst, 1..2));
             }
 
             Opcode::Ja => {
+                if reg != 0 || imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Ja instruction expects reg and imm to be 0, but got reg: {}, imm: {}", reg, imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
             }
 
@@ -129,6 +165,13 @@ impl Instruction {
             | Opcode::JsgeImm
             | Opcode::JsltImm
             | Opcode::JsleImm => {
+                if src != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Jump instruction with immediate expects src to be 0, but got src: {}", src),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..8));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
@@ -145,6 +188,13 @@ impl Instruction {
             | Opcode::JsgeReg
             | Opcode::JsltReg
             | Opcode::JsleReg => {
+                if imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Jump instruction with register expects imm to be 0, but got imm: {}", imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::Register(src, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
@@ -190,6 +240,13 @@ impl Instruction {
             | Opcode::Srem64Imm
             | Opcode::Be
             | Opcode::Le => {
+                if src != 0 || off != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Arithmetic instruction with immediate expects src and off to be 0, but got src: {}, off: {}", src, off),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..8));
             }
@@ -231,23 +288,51 @@ impl Instruction {
             | Opcode::Shmul64Reg
             | Opcode::Sdiv64Reg
             | Opcode::Srem64Reg => {
+                if off != 0 || imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Arithmetic instruction with register expects off and imm to be 0, but got off: {}, imm: {}", off, imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::Register(src, 1..2));
             }
 
             Opcode::Ldxw | Opcode::Ldxh | Opcode::Ldxb | Opcode::Ldxdw => {
+                if imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Load instruction expects imm to be 0, but got imm: {}", imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::Register(src, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
             }
 
             Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw => {
+                if src != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Store instruction expects src to be 0, but got src: {}", src),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(imm), 4..8));
             }
 
             Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
+                if imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Store instruction with register expects imm to be 0, but got imm: {}", imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
                 operands.push(Token::Register(src, 1..2));
                 operands.push(Token::ImmediateValue(ImmediateValue::Int(off as i64), 2..4));
@@ -255,15 +340,26 @@ impl Instruction {
 
             // Unary operations
             Opcode::Neg32 | Opcode::Neg64 | Opcode::Exit => {
+                if src != 0 || off != 0 || imm != 0 {
+                    return Err(CompileError::BytecodeError {
+                        error: format!("Unary operation expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}", src, off, imm),
+                        span: span.clone(),
+                        custom_label: None,
+                    });
+                }
                 operands.push(Token::Register(dst, 1..2));
             }
 
             _ => {
-                return None;
+                return Err(CompileError::BytecodeError {
+                    error: format!("Unsupported opcode: {:?}", opcode),
+                    span: span.clone(),
+                    custom_label: None,
+                });
             }
         }
 
-        Some(Instruction {
+        Ok(Instruction {
             opcode,
             operands,
             span,

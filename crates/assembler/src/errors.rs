@@ -87,4 +87,9 @@ define_compile_errors! {
         label = "Label redefined",
         fields = { label: String, span: Range<usize>, original_span: Range<usize> }
     },
+    BytecodeError {
+        error = "Bytecode error: {error}",
+        label = "Bytecode error",
+        fields = { error: String, span: Range<usize> }
+    },
 }
