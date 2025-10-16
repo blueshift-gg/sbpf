@@ -4,3 +4,4 @@ Cargo.lock
 .sbpf
 test-ledger
 deploy
+*.sh
