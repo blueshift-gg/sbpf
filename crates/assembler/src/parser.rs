@@ -854,7 +854,7 @@ impl ParseWithConstMap for Instruction {
                         next_token_num = 1;
                     }
                     _ => {
-                        bug!("invalid opcode: {}", opcode.to_str());
+                        bug!("invalid opcode: {}", opcode);
                     }
                 }
                 Ok((

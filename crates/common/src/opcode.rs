@@ -252,7 +252,7 @@ impl FromStr for Opcode {
 
 impl fmt::Display for Opcode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_str())
+        write!(f, "{}", self.to_bytecode())
     }
 }
 
@@ -546,78 +546,6 @@ impl Opcode {
             Opcode::Exit => 0x95,
 
             _ => 0x00,
-        }
-    }
-
-    pub fn to_str(&self) -> &'static str {
-        match self {
-            Opcode::Lddw => "lddw",
-            Opcode::Ldxb => "ldxb",
-            Opcode::Ldxh => "ldxh",
-            Opcode::Ldxw => "ldxw",
-            Opcode::Ldxdw => "ldxdw",
-            Opcode::Stb => "stb",
-            Opcode::Sth => "sth",
-            Opcode::Stw => "stw",
-            Opcode::Stdw => "stdw",
-            Opcode::Stxb => "stxb",
-            Opcode::Stxh => "stxh",
-            Opcode::Stxw => "stxw",
-            Opcode::Stxdw => "stxdw",
-            Opcode::Add32 | Opcode::Add32Imm | Opcode::Add32Reg => "add32",
-            Opcode::Sub32 | Opcode::Sub32Imm | Opcode::Sub32Reg => "sub32",
-            Opcode::Mul32 | Opcode::Mul32Imm | Opcode::Mul32Reg => "mul32",
-            Opcode::Div32 | Opcode::Div32Imm | Opcode::Div32Reg => "div32",
-            Opcode::Or32 | Opcode::Or32Imm | Opcode::Or32Reg => "or32",
-            Opcode::And32 | Opcode::And32Imm | Opcode::And32Reg => "and32",
-            Opcode::Lsh32 | Opcode::Lsh32Imm | Opcode::Lsh32Reg => "lsh32",
-            Opcode::Rsh32 | Opcode::Rsh32Imm | Opcode::Rsh32Reg => "rsh32",
-            Opcode::Neg32 => "neg32",
-            Opcode::Mod32 | Opcode::Mod32Imm | Opcode::Mod32Reg => "mod32",
-            Opcode::Xor32 | Opcode::Xor32Imm | Opcode::Xor32Reg => "xor32",
-            Opcode::Mov32 | Opcode::Mov32Imm | Opcode::Mov32Reg => "mov32",
-            Opcode::Arsh32 | Opcode::Arsh32Imm | Opcode::Arsh32Reg => "arsh32",
-            Opcode::Lmul32 | Opcode::Lmul32Imm | Opcode::Lmul32Reg => "lmul32",
-            Opcode::Udiv32 | Opcode::Udiv32Imm | Opcode::Udiv32Reg => "udiv32",
-            Opcode::Urem32 | Opcode::Urem32Imm | Opcode::Urem32Reg => "urem32",
-            Opcode::Sdiv32 | Opcode::Sdiv32Imm | Opcode::Sdiv32Reg => "sdiv32",
-            Opcode::Srem32 | Opcode::Srem32Imm | Opcode::Srem32Reg => "srem32",
-            Opcode::Le => "le",
-            Opcode::Be => "be",
-            Opcode::Add64 | Opcode::Add64Imm | Opcode::Add64Reg => "add64",
-            Opcode::Sub64 | Opcode::Sub64Imm | Opcode::Sub64Reg => "sub64",
-            Opcode::Mul64 | Opcode::Mul64Imm | Opcode::Mul64Reg => "mul64",
-            Opcode::Div64 | Opcode::Div64Imm | Opcode::Div64Reg => "div64",
-            Opcode::Or64 | Opcode::Or64Imm | Opcode::Or64Reg => "or64",
-            Opcode::And64 | Opcode::And64Imm | Opcode::And64Reg => "and64",
-            Opcode::Lsh64 | Opcode::Lsh64Imm | Opcode::Lsh64Reg => "lsh64",
-            Opcode::Rsh64 | Opcode::Rsh64Imm | Opcode::Rsh64Reg => "rsh64",
-            Opcode::Neg64 => "neg64",
-            Opcode::Mod64 | Opcode::Mod64Imm | Opcode::Mod64Reg => "mod64",
-            Opcode::Xor64 | Opcode::Xor64Imm | Opcode::Xor64Reg => "xor64",
-            Opcode::Mov64 | Opcode::Mov64Imm | Opcode::Mov64Reg => "mov64",
-            Opcode::Arsh64 | Opcode::Arsh64Imm | Opcode::Arsh64Reg => "arsh64",
-            Opcode::Hor64Imm => "hor64",
-            Opcode::Lmul64 | Opcode::Lmul64Imm | Opcode::Lmul64Reg => "lmul64",
-            Opcode::Uhmul64 | Opcode::Uhmul64Imm | Opcode::Uhmul64Reg => "uhmul64",
-            Opcode::Udiv64 | Opcode::Udiv64Imm | Opcode::Udiv64Reg => "udiv64",
-            Opcode::Urem64 | Opcode::Urem64Imm | Opcode::Urem64Reg => "urem64",
-            Opcode::Shmul64 | Opcode::Shmul64Imm | Opcode::Shmul64Reg => "shmul64",
-            Opcode::Sdiv64 | Opcode::Sdiv64Imm | Opcode::Sdiv64Reg => "sdiv64",
-            Opcode::Srem64 | Opcode::Srem64Imm | Opcode::Srem64Reg => "srem64",
-            Opcode::Ja | Opcode::Jeq | Opcode::JeqImm | Opcode::JeqReg => "jeq",
-            Opcode::Jgt | Opcode::JgtImm | Opcode::JgtReg => "jgt",
-            Opcode::Jge | Opcode::JgeImm | Opcode::JgeReg => "jge",
-            Opcode::Jlt | Opcode::JltImm | Opcode::JltReg => "jlt",
-            Opcode::Jle | Opcode::JleImm | Opcode::JleReg => "jle",
-            Opcode::Jset | Opcode::JsetImm | Opcode::JsetReg => "jset",
-            Opcode::Jne | Opcode::JneImm | Opcode::JneReg => "jne",
-            Opcode::Jsgt | Opcode::JsgtImm | Opcode::JsgtReg => "jsgt",
-            Opcode::Jsge | Opcode::JsgeImm | Opcode::JsgeReg => "jsge",
-            Opcode::Jslt | Opcode::JsltImm | Opcode::JsltReg => "jslt",
-            Opcode::Jsle | Opcode::JsleImm | Opcode::JsleReg => "jsle",
-            Opcode::Call | Opcode::Callx => "call",
-            Opcode::Exit => "exit",
         }
     }
 }
