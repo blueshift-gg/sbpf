@@ -4,8 +4,9 @@ use crate::syscall::SYSCALLS;
 
 use core::fmt;
 use core::ops::Range;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Register {
     pub n: u8,
 }
@@ -16,7 +17,7 @@ impl fmt::Display for Register {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Number {
     Int(i64),
     Addr(i64),
@@ -31,7 +32,7 @@ impl fmt::Display for Number {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub dst: Option<Register>,
@@ -491,7 +492,11 @@ impl Instruction {
             Opcode::Lddw => {
                 match (&self.dst, &self.imm) {
                     (Some(dst), Some(imm)) => format!("{} r{}, {}", self.opcode, dst.n, imm),
-                    _ => format!("{} r0, 0", self.opcode),
+                    _ => return Err(SBPFError::BytecodeError {
+                        error: "Lddw instruction missing destination register or immediate value".to_string(),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // ldx - (load x) store a 8/16/32/64 bit (byte/half/word/double word)
@@ -502,7 +507,11 @@ impl Instruction {
             Opcode::Ldxdw => {
                 match &self.dst {
                     Some(dst) => format!("{} r{}, {}", self.opcode, dst.n, self.src_off()),
-                    None => format!("{} r0, {}", self.opcode, self.src_off()),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // stb - these instructions are deprecated
@@ -512,7 +521,11 @@ impl Instruction {
             Opcode::Stdw => {
                 match &self.imm {
                     Some(imm) => format!("{} {}, {}", self.opcode, self.dst_off(), imm),
-                    None => format!("{} {}, 0", self.opcode, self.dst_off()),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing immediate value", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // stx - store a 8/16/32/64 bit value from a source register into the offset
@@ -523,7 +536,11 @@ impl Instruction {
             Opcode::Stxdw => {
                 match &self.src {
                     Some(src) => format!("{} {}, r{}", self.opcode, self.dst_off(), src.n),
-                    None => format!("{} {}, r0", self.opcode, self.dst_off()),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing source register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // Math
@@ -531,7 +548,11 @@ impl Instruction {
             Opcode::Neg64 => {
                 match &self.dst {
                     Some(dst) => format!("{} r{}", self.opcode, dst.n),
-                    None => format!("{} r0", self.opcode),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // LE and BE OpCodes act a little differently to others. In assembly form, they are
@@ -542,7 +563,11 @@ impl Instruction {
             Opcode::Be => {
                 match &self.dst {
                     Some(dst) => format!("{}{}", self.op_imm_bits()?, dst.n),
-                    None => format!("{}0", self.op_imm_bits()?),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             }, // Docs for this seem wrong //DC01000010000000 DC01000020000000 DC01000040000000
             // Immedate
@@ -585,7 +610,11 @@ impl Instruction {
             Opcode::Srem64Imm => {
                 match (&self.dst, &self.imm) {
                     (Some(dst), Some(imm)) => format!("{} r{}, {}", self.opcode, dst.n, imm),
-                    _ => format!("{} r0, 0", self.opcode),
+                    _ => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination register or immediate value", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // Register
@@ -627,7 +656,11 @@ impl Instruction {
             Opcode::Srem64Reg => {
                 match (&self.dst, &self.src) {
                     (Some(dst), Some(src)) => format!("{} r{}, r{}", self.opcode, dst.n, src.n),
-                    _ => format!("{} r0, r0", self.opcode),
+                    _ => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination or source register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
 
@@ -648,7 +681,11 @@ impl Instruction {
             Opcode::JsleImm => {
                 match (&self.dst, &self.imm) {
                     (Some(dst), Some(imm)) => format!("{} r{}, {}, {}", self.opcode, dst.n, imm, self.off_str()),
-                    _ => format!("{} r0, 0, {}", self.opcode, self.off_str()),
+                    _ => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination register or immediate value", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             // Registers
@@ -665,7 +702,11 @@ impl Instruction {
             Opcode::JsleReg => {
                 match (&self.dst, &self.src) {
                     (Some(dst), Some(src)) => format!("{} r{}, r{}, {}", self.opcode, dst.n, src.n, self.off_str()),
-                    _ => format!("{} r0, r0, {}", self.opcode, self.off_str()),
+                    _ => return Err(SBPFError::BytecodeError {
+                        error: format!("{} instruction missing destination or source register", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
 
@@ -674,13 +715,21 @@ impl Instruction {
             Opcode::Call => {
                 match &self.imm {
                     Some(imm) => format!("call {}", imm),
-                    None => "call 0".to_string(),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: "Call instruction missing immediate value".to_string(),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             Opcode::Callx => {
                 match &self.src {
                     Some(src) => format!("call r{}", src.n),
-                    None => "call r0".to_string(),
+                    None => return Err(SBPFError::BytecodeError {
+                        error: "Callx instruction missing source register".to_string(),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    }),
                 }
             },
             Opcode::Exit => format!("{}", self.opcode),

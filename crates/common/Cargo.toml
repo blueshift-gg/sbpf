@@ -18,6 +18,8 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 phf = "0.13.1"
 phf_macros = "0.13.1"
+serde = { version = "1.0.228", features = ["derive"] }
+
 
 [dev-dependencies]
 hex-literal = "1.0.0"

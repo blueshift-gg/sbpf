@@ -16,6 +16,7 @@ name = "sbpf_disassembler"
 anyhow = { workspace = true }
 hex = "0.4.3"
 object = { workspace = true }
+sbpf-common = { workspace = true }
 thiserror = "2.0.17"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"

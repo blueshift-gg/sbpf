@@ -2,8 +2,9 @@ use core::fmt;
 use core::str::FromStr;
 
 use num_derive::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, FromPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Opcode {
     Lddw,
