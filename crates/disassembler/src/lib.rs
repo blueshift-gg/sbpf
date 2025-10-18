@@ -1,7 +1,5 @@
 pub mod elf_header;
 pub mod errors;
-pub mod instructions;
-pub mod opcodes;
 pub mod program;
 pub mod program_header;
 pub mod section_header;

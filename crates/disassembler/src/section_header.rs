@@ -27,7 +27,7 @@ pub enum SectionHeaderType {
     SHT_FINI_ARRAY = 0x0F,    // Array of destructors
     SHT_PREINIT_ARRAY = 0x10, // Array of pre-constructors
     SHT_GROUP = 0x11,         // Section group
-    SHT_SYMTAB_SHNDX = 0x12,  //	Extended section indices
+    SHT_SYMTAB_SHNDX = 0x12,  // Extended section indices
     SHT_NUM = 0x13,           // Number of defined types.
 }
 

@@ -1,3 +1,4 @@
+use sbpf_common::errors::SBPFError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -16,4 +17,14 @@ pub enum DisassemblerError {
     InvalidDataLength,
     #[error("Invalid string")]
     InvalidString,
+    #[error("Bytecode error: {0}")]
+    BytecodeError(String),
+}
+
+impl From<SBPFError> for DisassemblerError {
+    fn from(err: SBPFError) -> Self {
+        match err {
+            SBPFError::BytecodeError { error, .. } => DisassemblerError::BytecodeError(error),
+        }
+    }
 }
