@@ -2,7 +2,9 @@ use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::DisassemblerError, instructions::Ix};
+use crate::errors::DisassemblerError;
+use sbpf_common::instruction::Instruction;
+use sbpf_common::opcode::Opcode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionHeaderEntry {
@@ -10,7 +12,7 @@ pub struct SectionHeaderEntry {
     pub offset: usize,
     pub data: Vec<u8>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ixs: Vec<Ix>,
+    pub ixs: Vec<Instruction>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub utf8: String,
 }
@@ -39,11 +41,11 @@ impl SectionHeaderEntry {
         self.offset
     }
 
-    pub fn to_ixs(&self) -> Result<Vec<Ix>, DisassemblerError> {
+    pub fn to_ixs(&self) -> Result<Vec<Instruction>, DisassemblerError> {
         if self.data.len() % 8 != 0 {
             return Err(DisassemblerError::InvalidDataLength);
         }
-        let mut ixs: Vec<Ix> = vec![];
+        let mut ixs: Vec<Instruction> = vec![];
         let mut pos = 0;
 
         while pos < self.data.len() {
@@ -52,8 +54,8 @@ impl SectionHeaderEntry {
                 break;
             }
 
-            let ix = Ix::from_bytes(remaining)?;
-            if ix.op == crate::opcodes::OpCode::Lddw {
+            let ix = Instruction::from_bytes(remaining)?;
+            if ix.opcode == Opcode::Lddw {
                 pos += 16;
             } else {
                 pos += 8;
@@ -72,7 +74,9 @@ impl SectionHeaderEntry {
 
 #[cfg(test)]
 mod test {
-    use crate::{instructions::Ix, opcodes::OpCode, section_header_entry::SectionHeaderEntry};
+    use crate::section_header_entry::SectionHeaderEntry;
+    use sbpf_common::instruction::{Instruction, Number, Register};
+    use sbpf_common::opcode::Opcode;
 
     #[test]
     fn serialize_e2e() {
@@ -84,19 +88,21 @@ mod test {
         let h = SectionHeaderEntry::new(".text\0".to_string(), 128, data.clone()).unwrap();
 
         let ixs = vec![
-            Ix {
-                op: OpCode::Lddw,
-                dst: 1,
-                src: 0,
-                off: 0,
-                imm: 0,
+            Instruction {
+                opcode: Opcode::Lddw,
+                dst: Some(Register { n: 1 }),
+                src: None,
+                off: None,
+                imm: Some(Number::Int(0)),
+                span: 0..24,
             },
-            Ix {
-                op: OpCode::Exit,
-                dst: 0,
-                src: 0,
-                off: 0,
-                imm: 0,
+            Instruction {
+                opcode: Opcode::Exit,
+                dst: Some(Register { n: 0 }),
+                src: None,
+                off: None,
+                imm: None,
+                span: 0..8,
             },
         ];
         assert_eq!(ixs, h.to_ixs().unwrap());
