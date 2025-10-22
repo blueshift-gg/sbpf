@@ -1,18 +1,16 @@
-use sbpf_assembler::assemble;
-use sbpf_assembler::errors::CompileError;
-
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
-use std::fs;
-
-use anyhow::{Error, Result};
-use codespan_reporting::diagnostic::{Diagnostic, Label};
-use codespan_reporting::files::SimpleFile;
-use codespan_reporting::term;
-use std::fs::create_dir_all;
-use std::path::Path;
-use std::time::Instant;
-use termcolor::{ColorChoice, StandardStream};
+use {
+    anyhow::{Error, Result},
+    codespan_reporting::{
+        diagnostic::{Diagnostic, Label},
+        files::SimpleFile,
+        term,
+    },
+    ed25519_dalek::SigningKey,
+    rand::rngs::OsRng,
+    sbpf_assembler::{assemble, errors::CompileError},
+    std::{fs, fs::create_dir_all, path::Path, time::Instant},
+    termcolor::{ColorChoice, StandardStream},
+};
 
 pub trait AsDiagnostic {
     // currently only support single source file reporting
@@ -36,8 +34,10 @@ impl AsDiagnostic for CompileError {
                 ]),
             _ => Diagnostic::error()
                 .with_message(self.to_string())
-                .with_labels(vec![Label::primary((), self.span().start..self.span().end)
-                    .with_message(self.label())]),
+                .with_labels(vec![
+                    Label::primary((), self.span().start..self.span().end)
+                        .with_message(self.label()),
+                ]),
         }
     }
 }
@@ -122,20 +122,20 @@ pub fn build() -> Result<()> {
     for entry in src_path.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
-            if let Some(subdir) = path.file_name().and_then(|name| name.to_str()) {
-                let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
-                if Path::new(&asm_file).exists() {
-                    println!("⚡️ Building \"{}\"", subdir);
-                    let start = Instant::now();
-                    compile_assembly(&asm_file, deploy)?;
-                    let duration = start.elapsed();
-                    println!(
-                        "✅ \"{}\" built successfully in {}ms!",
-                        subdir,
-                        duration.as_micros() as f64 / 1000.0
-                    );
-                }
+        if path.is_dir()
+            && let Some(subdir) = path.file_name().and_then(|name| name.to_str())
+        {
+            let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
+            if Path::new(&asm_file).exists() {
+                println!("⚡️ Building \"{}\"", subdir);
+                let start = Instant::now();
+                compile_assembly(&asm_file, deploy)?;
+                let duration = start.elapsed();
+                println!(
+                    "✅ \"{}\" built successfully in {}ms!",
+                    subdir,
+                    duration.as_micros() as f64 / 1000.0
+                );
             }
         }
     }

@@ -1,10 +1,9 @@
-use std::str;
-
-use object::Endianness;
-use object::read::elf::ElfFile64;
-use serde::{Deserialize, Serialize, Serializer};
-
-use crate::errors::DisassemblerError;
+use {
+    crate::errors::DisassemblerError,
+    object::{Endianness, read::elf::ElfFile64},
+    serde::{Deserialize, Serialize, Serializer},
+    std::str,
+};
 
 pub const EI_MAGIC: [u8; 4] = *b"\x7fELF"; // ELF magic
 pub const EI_CLASS: u8 = 0x02; // 64-bit
@@ -139,13 +138,16 @@ impl ELFHeader {
 
 #[cfg(test)]
 mod tests {
-    use hex_literal::hex;
-
-    use crate::elf_header::{
-        E_MACHINE, E_MACHINE_SBPF, E_TYPE, E_VERSION, EI_ABIVERSION, EI_CLASS, EI_DATA, EI_MAGIC,
-        EI_OSABI, EI_PAD, EI_VERSION,
+    use {
+        crate::{
+            elf_header::{
+                E_MACHINE, E_MACHINE_SBPF, E_TYPE, E_VERSION, EI_ABIVERSION, EI_CLASS, EI_DATA,
+                EI_MAGIC, EI_OSABI, EI_PAD, EI_VERSION,
+            },
+            program::Program,
+        },
+        hex_literal::hex,
     };
-    use crate::program::Program;
 
     #[test]
     fn test_elf_header() {

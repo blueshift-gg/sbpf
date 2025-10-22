@@ -1,10 +1,8 @@
-use crate::errors::SBPFError;
-use crate::opcode::Opcode;
-use crate::syscall::SYSCALLS;
-
-use core::fmt;
-use core::ops::Range;
-use serde::{Deserialize, Serialize};
+use {
+    crate::{errors::SBPFError, opcode::Opcode, syscall::SYSCALLS},
+    core::{fmt, ops::Range},
+    serde::{Deserialize, Serialize},
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Register {
@@ -161,7 +159,8 @@ impl Instruction {
                 if src != 0 || off != 0 {
                     return Err(SBPFError::BytecodeError {
                         error: format!(
-                            "Lddw instruction expects src and off to be 0, but got src: {}, off: {}",
+                            "Lddw instruction expects src and off to be 0, but got src: {}, off: \
+                             {}",
                             src, off
                         ),
                         span: span.clone(),
@@ -177,7 +176,8 @@ impl Instruction {
                     if reg != 0 || off != 0 {
                         return Err(SBPFError::BytecodeError {
                             error: format!(
-                                "Call instruction with syscall expects reg and off to be 0, but got reg: {}, off: {}",
+                                "Call instruction with syscall expects reg and off to be 0, but \
+                                 got reg: {}, off: {}",
                                 reg, off
                             ),
                             span: span.clone(),
@@ -189,7 +189,8 @@ impl Instruction {
                     if reg != 16 || off != 0 {
                         return Err(SBPFError::BytecodeError {
                             error: format!(
-                                "Call instruction with immediate expects reg to be 16 and off to be 0, but got reg: {}, off: {}",
+                                "Call instruction with immediate expects reg to be 16 and off to \
+                                 be 0, but got reg: {}, off: {}",
                                 reg, off
                             ),
                             span: span.clone(),
@@ -204,7 +205,8 @@ impl Instruction {
                 if src != 0 || off != 0 || imm != 0 {
                     return Err(SBPFError::BytecodeError {
                         error: format!(
-                            "Callx instruction expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}",
+                            "Callx instruction expects src, off, and imm to be 0, but got src: \
+                             {}, off: {}, imm: {}",
                             src, off, imm
                         ),
                         span: span.clone(),
@@ -324,7 +326,8 @@ impl Instruction {
                 if src != 0 || off != 0 {
                     return Err(SBPFError::BytecodeError {
                         error: format!(
-                            "Arithmetic instruction with immediate expects src and off to be 0, but got src: {}, off: {}",
+                            "Arithmetic instruction with immediate expects src and off to be 0, \
+                             but got src: {}, off: {}",
                             src, off
                         ),
                         span: span.clone(),
@@ -375,7 +378,8 @@ impl Instruction {
                 if off != 0 || imm != 0 {
                     return Err(SBPFError::BytecodeError {
                         error: format!(
-                            "Arithmetic instruction with register expects off and imm to be 0, but got off: {}, imm: {}",
+                            "Arithmetic instruction with register expects off and imm to be 0, \
+                             but got off: {}, imm: {}",
                             off, imm
                         ),
                         span: span.clone(),
@@ -439,7 +443,8 @@ impl Instruction {
                 if src != 0 || off != 0 || imm != 0 {
                     return Err(SBPFError::BytecodeError {
                         error: format!(
-                            "Unary operation expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}",
+                            "Unary operation expects src, off, and imm to be 0, but got src: {}, \
+                             off: {}, imm: {}",
                             src, off, imm
                         ),
                         span: span.clone(),
@@ -749,10 +754,13 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use hex_literal::hex;
-
-    use crate::instruction::{Instruction, Register};
-    use crate::opcode::Opcode;
+    use {
+        crate::{
+            instruction::{Instruction, Register},
+            opcode::Opcode,
+        },
+        hex_literal::hex,
+    };
 
     #[test]
     fn serialize_e2e() {

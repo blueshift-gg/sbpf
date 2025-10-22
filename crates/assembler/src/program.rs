@@ -1,16 +1,16 @@
-use crate::debuginfo::DebugInfo;
-use crate::dynsym::{DynamicSymbol, RelDyn, RelocationType};
-use crate::header::ElfHeader;
-use crate::header::ProgramHeader;
-use crate::parser::ParseResult;
-use crate::section::{
-    DynStrSection, DynSymSection, DynamicSection, NullSection, RelDynSection, Section, SectionType,
-    ShStrTabSection,
+use {
+    crate::{
+        debuginfo::DebugInfo,
+        dynsym::{DynamicSymbol, RelDyn, RelocationType},
+        header::{ElfHeader, ProgramHeader},
+        parser::ParseResult,
+        section::{
+            DynStrSection, DynSymSection, DynamicSection, NullSection, RelDynSection, Section,
+            SectionType, ShStrTabSection,
+        },
+    },
+    std::{collections::HashMap, fs::File, io::Write, path::Path},
 };
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct Program {

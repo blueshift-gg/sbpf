@@ -1,6 +1,8 @@
-use crate::errors::CompileError;
-use sbpf_common::opcode::Opcode;
-use std::{ops::Range, str::FromStr as _};
+use {
+    crate::errors::CompileError,
+    sbpf_common::opcode::Opcode,
+    std::{ops::Range, str::FromStr as _},
+};
 
 #[derive(Debug, Clone)]
 pub enum Op {

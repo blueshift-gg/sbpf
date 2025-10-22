@@ -1,10 +1,9 @@
-use std::fmt::Debug;
-
-use object::Endianness;
-use object::read::elf::ElfFile64;
-use serde::{Deserialize, Serialize};
-
-use crate::errors::DisassemblerError;
+use {
+    crate::errors::DisassemblerError,
+    object::{Endianness, read::elf::ElfFile64},
+    serde::{Deserialize, Serialize},
+    std::fmt::Debug,
+};
 
 // Program Segment Flags
 pub const PF_X: u8 = 0x01;
@@ -160,9 +159,7 @@ impl ProgramHeader {
 
 #[cfg(test)]
 mod tests {
-    use hex_literal::hex;
-
-    use crate::program::Program;
+    use {crate::program::Program, hex_literal::hex};
 
     #[test]
     fn test_program_headers() {

@@ -1,10 +1,13 @@
-use crate::debuginfo::{DebugInfo, RegisterHint, RegisterType};
-use crate::errors::CompileError;
-use crate::instruction::Instruction;
-use crate::lexer::{ImmediateValue, Token};
-use sbpf_common::opcode::Opcode;
-use std::collections::HashMap;
-use std::ops::Range;
+use {
+    crate::{
+        debuginfo::{DebugInfo, RegisterHint, RegisterType},
+        errors::CompileError,
+        instruction::Instruction,
+        lexer::{ImmediateValue, Token},
+    },
+    sbpf_common::opcode::Opcode,
+    std::{collections::HashMap, ops::Range},
+};
 
 #[derive(Debug, Clone)]
 pub enum ASTNode {

@@ -1,7 +1,9 @@
 pub mod commands;
-use anyhow::Error;
-use clap::{Args, Parser, Subcommand};
-use commands::{build, clean, deploy, disassemble, init, test};
+use {
+    anyhow::Error,
+    clap::{Args, Parser, Subcommand},
+    commands::{build, clean, deploy, disassemble, init, test},
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

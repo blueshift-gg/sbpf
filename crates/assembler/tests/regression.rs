@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
-
-use serde::{Deserialize, Serialize};
+use {
+    serde::{Deserialize, Serialize},
+    std::{collections::BTreeMap, env, fs, path::PathBuf},
+};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Manifest {

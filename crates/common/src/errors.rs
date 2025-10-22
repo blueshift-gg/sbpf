@@ -1,5 +1,4 @@
-use std::ops::Range;
-use thiserror::Error;
+use {std::ops::Range, thiserror::Error};
 
 #[derive(Debug, Error)]
 pub enum SBPFError {

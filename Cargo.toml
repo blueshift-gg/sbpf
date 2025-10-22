@@ -1,14 +1,18 @@
 [package]
 name = "sbpf"
 version = "0.1.5"
-authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"]
-edition = "2021"
+authors = [
+    "Dean Little <dean@blueshift.gg>",
+    "Claire Fan <claire@blueshift.gg>",
+]
+edition.workspace = true
 description = "A complete toolchain for building and deploying Solana BPF programs"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/blueshift-gg/sbpf"
+license.workspace = true
+repository.workspace = true
 readme = "README.md"
 keywords = ["solana", "bpf", "blockchain", "assembler"]
 categories = ["development-tools", "command-line-utilities"]
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -30,10 +34,14 @@ exclude = ["examples"]
 
 [workspace.package]
 version = "0.1.5"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+rust-version = "1.90"
 
 [workspace.dependencies]
-num-derive    = "0.4"
-num-traits    = "0.2"
+num-derive = "0.4"
+num-traits = "0.2"
 thiserror = "2.0.12"
 anyhow = "1.0.86"
 object = "0.37.3"

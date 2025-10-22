@@ -1,7 +1,9 @@
-use crate::program::Program as EBPFProgram;
-use serde::{Deserialize, Serialize};
-use serde_wasm_bindgen::to_value;
-use wasm_bindgen::prelude::*;
+use {
+    crate::program::Program as EBPFProgram,
+    serde::{Deserialize, Serialize},
+    serde_wasm_bindgen::to_value,
+    wasm_bindgen::prelude::*,
+};
 
 #[wasm_bindgen]
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,5 +1,4 @@
-use phf::Map;
-use phf_macros::phf_map;
+use {phf::Map, phf_macros::phf_map};
 
 pub static SYSCALLS: Map<u32, &'static str> = phf_map! {
     0xb6fc1a11u32 => "abort",

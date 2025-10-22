@@ -1,10 +1,10 @@
-use object::Endianness;
-use object::read::elf::ElfFile64;
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    elf_header::ELFHeader, errors::DisassemblerError, program_header::ProgramHeader,
-    section_header::SectionHeader, section_header_entry::SectionHeaderEntry,
+use {
+    crate::{
+        elf_header::ELFHeader, errors::DisassemblerError, program_header::ProgramHeader,
+        section_header::SectionHeader, section_header_entry::SectionHeaderEntry,
+    },
+    object::{Endianness, read::elf::ElfFile64},
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,9 +40,7 @@ impl Program {
 
 #[cfg(test)]
 mod tests {
-    use hex_literal::hex;
-
-    use crate::program::Program;
+    use {crate::program::Program, hex_literal::hex};
 
     #[test]
     fn try_deserialize_program() {

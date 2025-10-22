@@ -1,10 +1,9 @@
-use std::fmt::Debug;
-
-use serde::{Deserialize, Serialize};
-
-use crate::errors::DisassemblerError;
-use sbpf_common::instruction::Instruction;
-use sbpf_common::opcode::Opcode;
+use {
+    crate::errors::DisassemblerError,
+    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    serde::{Deserialize, Serialize},
+    std::fmt::Debug,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionHeaderEntry {
@@ -42,7 +41,7 @@ impl SectionHeaderEntry {
     }
 
     pub fn to_ixs(&self) -> Result<Vec<Instruction>, DisassemblerError> {
-        if self.data.len() % 8 != 0 {
+        if !self.data.len().is_multiple_of(8) {
             return Err(DisassemblerError::InvalidDataLength);
         }
         let mut ixs: Vec<Instruction> = vec![];
@@ -74,9 +73,13 @@ impl SectionHeaderEntry {
 
 #[cfg(test)]
 mod test {
-    use crate::section_header_entry::SectionHeaderEntry;
-    use sbpf_common::instruction::{Instruction, Number, Register};
-    use sbpf_common::opcode::Opcode;
+    use {
+        crate::section_header_entry::SectionHeaderEntry,
+        sbpf_common::{
+            instruction::{Instruction, Number, Register},
+            opcode::Opcode,
+        },
+    };
 
     #[test]
     fn serialize_e2e() {
