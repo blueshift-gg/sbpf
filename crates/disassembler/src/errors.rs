@@ -1,5 +1,4 @@
-use sbpf_common::errors::SBPFError;
-use thiserror::Error;
+use {sbpf_common::errors::SBPFError, thiserror::Error};
 
 #[derive(Debug, Error)]
 pub enum DisassemblerError {

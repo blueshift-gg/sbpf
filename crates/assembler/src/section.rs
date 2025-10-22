@@ -1,11 +1,13 @@
-use crate::astnode::ASTNode;
-use crate::astnode::ROData;
-use crate::debuginfo::DebugInfo;
-use crate::dynsym::DynamicSymbol;
-use crate::dynsym::RelDyn;
-use crate::header::SectionHeader;
-use crate::lexer::Token;
-use std::collections::HashMap;
+use {
+    crate::{
+        astnode::{ASTNode, ROData},
+        debuginfo::DebugInfo,
+        dynsym::{DynamicSymbol, RelDyn},
+        header::SectionHeader,
+        lexer::Token,
+    },
+    std::collections::HashMap,
+};
 
 // Base Section trait
 pub trait Section {
@@ -146,10 +148,9 @@ impl DataSection {
                 rodata: ROData { name, args, .. },
                 offset,
             } = node
+                && let Some(Token::StringLiteral(str_literal, _)) = args.get(1)
             {
-                if let Some(Token::StringLiteral(str_literal, _)) = args.get(1) {
-                    ro_data_labels.push((name.clone(), *offset as usize, str_literal.clone()));
-                }
+                ro_data_labels.push((name.clone(), *offset as usize, str_literal.clone()));
             }
         }
         ro_data_labels

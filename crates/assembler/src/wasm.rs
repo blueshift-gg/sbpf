@@ -1,10 +1,10 @@
-use crate::lexer::tokenize;
-use crate::parser::parse_tokens;
-use crate::program::Program;
-use serde::Serialize;
-use serde_wasm_bindgen::to_value;
-use std::ops::Range;
-use wasm_bindgen::prelude::*;
+use {
+    crate::{lexer::tokenize, parser::parse_tokens, program::Program},
+    serde::Serialize,
+    serde_wasm_bindgen::to_value,
+    std::ops::Range,
+    wasm_bindgen::prelude::*,
+};
 
 #[derive(Serialize)]
 struct CompileErrorInfo {

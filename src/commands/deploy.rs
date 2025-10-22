@@ -1,8 +1,7 @@
-use std::io;
-use std::path::Path;
-use std::process::Command;
-
-use anyhow::{Error, Result};
+use {
+    anyhow::{Error, Result},
+    std::{io, path::Path, process::Command},
+};
 
 fn deploy_program(program_name: &str, url: &str) -> Result<(), Error> {
     let program_id_file = format!("./deploy/{}-keypair.json", program_name);
@@ -23,10 +22,7 @@ fn deploy_program(program_name: &str, url: &str) -> Result<(), Error> {
 
         if !status.success() {
             eprintln!("Failed to deploy program for {}", program_name);
-            return Err(Error::new(io::Error::new(
-                io::ErrorKind::Other,
-                "❌ Deployment failed",
-            )));
+            return Err(Error::new(io::Error::other("❌ Deployment failed")));
         }
 
         println!("✅ \"{}\" deployed successfully!", program_name);
@@ -47,10 +43,11 @@ fn deploy_all_programs(url: &str) -> Result<(), Error> {
     for entry in deploy_path.read_dir()? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("so") {
-            if let Some(filename) = path.file_stem().and_then(|name| name.to_str()) {
-                deploy_program(filename, url)?;
-            }
+        if path.is_file()
+            && path.extension().and_then(|ext| ext.to_str()) == Some("so")
+            && let Some(filename) = path.file_stem().and_then(|name| name.to_str())
+        {
+            deploy_program(filename, url)?;
         }
     }
 
