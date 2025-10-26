@@ -75,7 +75,11 @@ impl SectionHeaderEntry {
 #[cfg(test)]
 mod test {
     use crate::section_header_entry::SectionHeaderEntry;
-    use sbpf_common::instruction::{Instruction, Number, Register};
+    use sbpf_common::inst_param::{
+        Number,
+        Register
+    };
+    use sbpf_common::instruction::Instruction;
     use sbpf_common::opcode::Opcode;
 
     #[test]
@@ -94,11 +98,11 @@ mod test {
                 src: None,
                 off: None,
                 imm: Some(Number::Int(0)),
-                span: 0..24,
+                span: 0..16,
             },
             Instruction {
                 opcode: Opcode::Exit,
-                dst: Some(Register { n: 0 }),
+                dst: None,
                 src: None,
                 off: None,
                 imm: None,
