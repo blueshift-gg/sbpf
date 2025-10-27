@@ -1,16 +1,13 @@
-use crate::dynsym::RelocationType;
-use crate::lexer::{ImmediateValue, Token};
-use crate::syscall::SYSCALLS;
-use crate::errors::CompileError;
-
-use sbpf_common::opcode::{
-    Opcode,
-    JUMP_OPS,
-    JUMP_IMM_OPS,
-    JUMP_REG_OPS,
+use {
+    crate::{
+        dynsym::RelocationType,
+        errors::CompileError,
+        lexer::{ImmediateValue, Token},
+        syscall::SYSCALLS,
+    },
+    sbpf_common::opcode::Opcode,
+    std::ops::Range,
 };
-
-use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub struct Instruction {
@@ -83,7 +80,11 @@ impl Instruction {
             Opcode::Lddw => {
                 if src != 0 || off != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Lddw instruction expects src and off to be 0, but got src: {}, off: {}", src, off),
+                        error: format!(
+                            "Lddw instruction expects src and off to be 0, but got src: {}, off: \
+                             {}",
+                            src, off
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -96,7 +97,11 @@ impl Instruction {
                 if let Some(name) = SYSCALLS.get(&(imm as u32)) {
                     if reg != 0 || off != 0 {
                         return Err(CompileError::BytecodeError {
-                            error: format!("Call instruction with syscall expects reg and off to be 0, but got reg: {}, off: {}", reg, off),
+                            error: format!(
+                                "Call instruction with syscall expects reg and off to be 0, but \
+                                 got reg: {}, off: {}",
+                                reg, off
+                            ),
                             span: span.clone(),
                             custom_label: None,
                         });
@@ -105,7 +110,11 @@ impl Instruction {
                 } else {
                     if reg != 16 || off != 0 {
                         return Err(CompileError::BytecodeError {
-                            error: format!("Call instruction with immediate expects reg to be 16 and off to be 0, but got reg: {}, off: {}", reg, off),
+                            error: format!(
+                                "Call instruction with immediate expects reg to be 16 and off to \
+                                 be 0, but got reg: {}, off: {}",
+                                reg, off
+                            ),
                             span: span.clone(),
                             custom_label: None,
                         });
@@ -117,7 +126,11 @@ impl Instruction {
             Opcode::Callx => {
                 if src != 0 || off != 0 || imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Callx instruction expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}", src, off, imm),
+                        error: format!(
+                            "Callx instruction expects src, off, and imm to be 0, but got src: \
+                             {}, off: {}, imm: {}",
+                            src, off, imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -129,7 +142,10 @@ impl Instruction {
             Opcode::Ja => {
                 if reg != 0 || imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Ja instruction expects reg and imm to be 0, but got reg: {}, imm: {}", reg, imm),
+                        error: format!(
+                            "Ja instruction expects reg and imm to be 0, but got reg: {}, imm: {}",
+                            reg, imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -150,7 +166,10 @@ impl Instruction {
             | Opcode::JsleImm => {
                 if src != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Jump instruction with immediate expects src to be 0, but got src: {}", src),
+                        error: format!(
+                            "Jump instruction with immediate expects src to be 0, but got src: {}",
+                            src
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -173,7 +192,10 @@ impl Instruction {
             | Opcode::JsleReg => {
                 if imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Jump instruction with register expects imm to be 0, but got imm: {}", imm),
+                        error: format!(
+                            "Jump instruction with register expects imm to be 0, but got imm: {}",
+                            imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -225,7 +247,11 @@ impl Instruction {
             | Opcode::Le => {
                 if src != 0 || off != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Arithmetic instruction with immediate expects src and off to be 0, but got src: {}, off: {}", src, off),
+                        error: format!(
+                            "Arithmetic instruction with immediate expects src and off to be 0, \
+                             but got src: {}, off: {}",
+                            src, off
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -273,7 +299,11 @@ impl Instruction {
             | Opcode::Srem64Reg => {
                 if off != 0 || imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Arithmetic instruction with register expects off and imm to be 0, but got off: {}, imm: {}", off, imm),
+                        error: format!(
+                            "Arithmetic instruction with register expects off and imm to be 0, \
+                             but got off: {}, imm: {}",
+                            off, imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -285,7 +315,10 @@ impl Instruction {
             Opcode::Ldxw | Opcode::Ldxh | Opcode::Ldxb | Opcode::Ldxdw => {
                 if imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Load instruction expects imm to be 0, but got imm: {}", imm),
+                        error: format!(
+                            "Load instruction expects imm to be 0, but got imm: {}",
+                            imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -298,7 +331,10 @@ impl Instruction {
             Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw => {
                 if src != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Store instruction expects src to be 0, but got src: {}", src),
+                        error: format!(
+                            "Store instruction expects src to be 0, but got src: {}",
+                            src
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -311,7 +347,10 @@ impl Instruction {
             Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
                 if imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Store instruction with register expects imm to be 0, but got imm: {}", imm),
+                        error: format!(
+                            "Store instruction with register expects imm to be 0, but got imm: {}",
+                            imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });
@@ -325,7 +364,11 @@ impl Instruction {
             Opcode::Neg32 | Opcode::Neg64 | Opcode::Exit => {
                 if src != 0 || off != 0 || imm != 0 {
                     return Err(CompileError::BytecodeError {
-                        error: format!("Unary operation expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}", src, off, imm),
+                        error: format!(
+                            "Unary operation expects src, off, and imm to be 0, but got src: {}, \
+                             off: {}, imm: {}",
+                            src, off, imm
+                        ),
                         span: span.clone(),
                         custom_label: None,
                     });

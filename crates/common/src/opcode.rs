@@ -1,8 +1,8 @@
-use core::fmt;
-use core::str::FromStr;
-
-use num_derive::FromPrimitive;
-use serde::{Deserialize, Serialize};
+use {
+    core::{fmt, str::FromStr},
+    num_derive::FromPrimitive,
+    serde::{Deserialize, Serialize},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum OperationType {

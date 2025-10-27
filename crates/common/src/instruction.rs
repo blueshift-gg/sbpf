@@ -1,3 +1,21 @@
+use {
+    crate::{
+      errors::SBPFError, 
+      inst_param::{
+        Number,
+        Register,
+      },
+      opcode::Opcode, 
+      syscall::SYSCALLS,
+    },
+    core::{fmt, ops::Range},
+    serde::{Deserialize, Serialize},
+};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Register {
+    pub n: u8,
+}
 use crate::errors::SBPFError;
 
 use crate::inst_param::{
@@ -386,10 +404,13 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use hex_literal::hex;
-
-    use crate::instruction::{Instruction, Register};
-    use crate::opcode::Opcode;
+    use {
+        crate::{
+            instruction::{Instruction, Register},
+            opcode::Opcode,
+        },
+        hex_literal::hex,
+    };
 
     #[test]
     fn serialize_e2e() {

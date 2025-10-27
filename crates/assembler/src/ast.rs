@@ -1,13 +1,16 @@
-use crate::CompileError;
-use crate::astnode::{ASTNode, ROData};
-use crate::dynsym::{DynamicSymbolMap, RelDynMap, RelocationType};
-use crate::instruction::Instruction;
-use crate::lexer::{ImmediateValue, Token};
-use crate::parser::ParseResult;
-use crate::section::{CodeSection, DataSection};
-use sbpf_common::opcode::Opcode;
-
-use std::collections::HashMap;
+use {
+    crate::{
+        CompileError,
+        astnode::{ASTNode, ROData},
+        dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
+        instruction::Instruction,
+        lexer::{ImmediateValue, Token},
+        parser::ParseResult,
+        section::{CodeSection, DataSection},
+    },
+    sbpf_common::opcode::Opcode,
+    std::collections::HashMap,
+};
 
 #[derive(Default)]
 pub struct AST {
@@ -105,25 +108,23 @@ impl AST {
             } = node
             {
                 // For jump/call instructions, replace label with relative offsets
-                if inst.is_jump() || inst.opcode == Opcode::Call {
-                    if let Some(Token::Identifier(label, span)) = inst.operands.last() {
-                        let label = label.clone();
-                        if let Some(target_offset) = label_offset_map.get(&label) {
-                            let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
-                            let last_idx = inst.operands.len() - 1;
-                            inst.operands[last_idx] = Token::ImmediateValue(
-                                ImmediateValue::Int(rel_offset),
-                                span.clone(),
-                            );
-                        } else if inst.is_jump() {
-                            // only error out unresolved jump labels, since call
-                            // labels could exist externally
-                            errors.push(CompileError::UndefinedLabel {
-                                label: label.clone(),
-                                span: span.clone(),
-                                custom_label: None,
-                            });
-                        }
+                if (inst.is_jump() || inst.opcode == Opcode::Call)
+                    && let Some(Token::Identifier(label, span)) = inst.operands.last()
+                {
+                    let label = label.clone();
+                    if let Some(target_offset) = label_offset_map.get(&label) {
+                        let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
+                        let last_idx = inst.operands.len() - 1;
+                        inst.operands[last_idx] =
+                            Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
+                    } else if inst.is_jump() {
+                        // only error out unresolved jump labels, since call
+                        // labels could exist externally
+                        errors.push(CompileError::UndefinedLabel {
+                            label: label.clone(),
+                            span: span.clone(),
+                            custom_label: None,
+                        });
                     }
                 }
                 // This has to be done before resolving lddw labels since lddw
@@ -136,38 +137,36 @@ impl AST {
                         dynamic_symbols.add_call_target(label.clone(), *offset);
                     }
                 }
-                if inst.opcode == Opcode::Lddw {
-                    if let Some(Token::Identifier(name, span)) = inst.operands.last() {
-                        let label = name.clone();
-                        if let Some(target_offset) = label_offset_map.get(&label) {
-                            // actually lddw with label makes a program dynamic, so
-                            // we should be able to hard code ph_offset
-                            let ph_count = if program_is_static { 1 } else { 3 };
-                            let ph_offset = 64 + (ph_count as u64 * 56) as i64;
-                            let abs_offset = *target_offset as i64 + ph_offset;
-                            // Replace label with immediate value
-                            let last_idx = inst.operands.len() - 1;
-                            inst.operands[last_idx] = Token::ImmediateValue(
-                                ImmediateValue::Addr(abs_offset),
-                                span.clone(),
-                            );
-                        } else {
-                            errors.push(CompileError::UndefinedLabel {
-                                label: name.clone(),
-                                span: span.clone(),
-                                custom_label: None,
-                            });
-                        }
+                if inst.opcode == Opcode::Lddw
+                    && let Some(Token::Identifier(name, span)) = inst.operands.last()
+                {
+                    let label = name.clone();
+                    if let Some(target_offset) = label_offset_map.get(&label) {
+                        // actually lddw with label makes a program dynamic, so
+                        // we should be able to hard code ph_offset
+                        let ph_count = if program_is_static { 1 } else { 3 };
+                        let ph_offset = 64 + (ph_count as u64 * 56) as i64;
+                        let abs_offset = *target_offset as i64 + ph_offset;
+                        // Replace label with immediate value
+                        let last_idx = inst.operands.len() - 1;
+                        inst.operands[last_idx] =
+                            Token::ImmediateValue(ImmediateValue::Addr(abs_offset), span.clone());
+                    } else {
+                        errors.push(CompileError::UndefinedLabel {
+                            label: name.clone(),
+                            span: span.clone(),
+                            custom_label: None,
+                        });
                     }
                 }
             }
         }
 
         // Set entry point offset if an entry label was specified
-        if let Some(entry_label) = &self.entry_label {
-            if let Some(offset) = label_offset_map.get(entry_label) {
-                dynamic_symbols.add_entry_point(entry_label.clone(), *offset);
-            }
+        if let Some(entry_label) = &self.entry_label
+            && let Some(offset) = label_offset_map.get(entry_label)
+        {
+            dynamic_symbols.add_entry_point(entry_label.clone(), *offset);
         }
 
         if !errors.is_empty() {

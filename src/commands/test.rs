@@ -1,5 +1,7 @@
-use anyhow::{Error, Result};
-use std::{fs, io, path::Path, process::Command};
+use {
+    anyhow::{Error, Result},
+    std::{fs, io, path::Path, process::Command},
+};
 
 pub fn test() -> Result<(), Error> {
     println!("🧪 Running tests");
@@ -43,10 +45,7 @@ pub fn test() -> Result<(), Error> {
 
             if !output.success() {
                 eprintln!("Failed to run Rust tests");
-                return Err(Error::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "❌ Rust tests failed",
-                )));
+                return Err(Error::new(io::Error::other("❌ Rust tests failed")));
             }
         }
         (false, true) => {
@@ -56,10 +55,7 @@ pub fn test() -> Result<(), Error> {
 
             if !status.success() {
                 eprintln!("Failed to run tests");
-                return Err(Error::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "❌ Test failed",
-                )));
+                return Err(Error::new(io::Error::other("❌ Test failed")));
             }
         }
         (false, false) => {
