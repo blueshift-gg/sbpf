@@ -76,7 +76,11 @@ mod test {
     use {
         crate::section_header_entry::SectionHeaderEntry,
         sbpf_common::{
-            instruction::{Instruction, Number, Register},
+            inst_param::{
+                Number,
+                Register
+            };
+            instruction::Instruction,
             opcode::Opcode,
         },
     };
@@ -97,11 +101,11 @@ mod test {
                 src: None,
                 off: None,
                 imm: Some(Number::Int(0)),
-                span: 0..24,
+                span: 0..16,
             },
             Instruction {
                 opcode: Opcode::Exit,
-                dst: Some(Register { n: 0 }),
+                dst: None,
                 src: None,
                 off: None,
                 imm: None,

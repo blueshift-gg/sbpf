@@ -36,32 +36,9 @@ impl Instruction {
 
     //
     pub fn is_jump(&self) -> bool {
-        matches!(
-            self.opcode,
-            Opcode::Ja
-                | Opcode::JeqImm
-                | Opcode::JgtImm
-                | Opcode::JgeImm
-                | Opcode::JltImm
-                | Opcode::JleImm
-                | Opcode::JsetImm
-                | Opcode::JneImm
-                | Opcode::JsgtImm
-                | Opcode::JsgeImm
-                | Opcode::JsltImm
-                | Opcode::JsleImm
-                | Opcode::JeqReg
-                | Opcode::JgtReg
-                | Opcode::JgeReg
-                | Opcode::JltReg
-                | Opcode::JleReg
-                | Opcode::JsetReg
-                | Opcode::JneReg
-                | Opcode::JsgtReg
-                | Opcode::JsgeReg
-                | Opcode::JsltReg
-                | Opcode::JsleReg
-        )
+        JUMP_OPS.contains(&self.opcode) 
+            || JUMP_IMM_OPS.contains(&self.opcode) 
+            || JUMP_REG_OPS.contains(&self.opcode)
     }
     //
     pub fn get_relocation_info(&self) -> (RelocationType, String) {
