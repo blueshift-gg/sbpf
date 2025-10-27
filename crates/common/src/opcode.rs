@@ -1,5 +1,8 @@
 use {
-    crate::errors::SBPFError, core::{fmt, str::FromStr}, num_derive::FromPrimitive, serde::{Deserialize, Serialize}
+    crate::errors::SBPFError,
+    core::{fmt, str::FromStr},
+    num_derive::FromPrimitive,
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -492,17 +495,17 @@ impl TryFrom<u8> for Opcode {
             0x8d => Ok(Opcode::Callx),
             0x95 => Ok(Opcode::Exit),
             _ => Err(SBPFError::BytecodeError {
-                error: format!("no decode handler for opcode {}", opcode),
+                error: format!("no decode handler for opcode 0x{:02x}", opcode),
                 span: 0..1,
                 custom_label: Some("Invalid opcode".to_string()),
-            })
+            }),
         }
     }
 }
 
-impl Into<u8> for Opcode {
-    fn into(self) -> u8 {
-        match self {
+impl From<Opcode> for u8 {
+    fn from(opcode: Opcode) -> u8 {
+        match opcode {
             Opcode::Lddw => 0x18,
             Opcode::Ldxb => 0x71,
             Opcode::Ldxh => 0x69,

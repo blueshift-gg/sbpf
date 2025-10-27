@@ -1,4 +1,4 @@
-use crate::{murmur3_32, SyscallMap};
+use crate::{SyscallMap, murmur3_32};
 
 /// Runtime-mutable syscall map that owns its data
 /// This allows for dynamic updates at runtime
@@ -22,7 +22,8 @@ impl DynamicSyscallMap {
             if entries[i].0 == entries[i + 1].0 {
                 return Err(format!(
                     "Hash conflict detected between syscalls '{}' and '{}'",
-                    entries[i].1, entries[i + 1].1
+                    entries[i].1,
+                    entries[i + 1].1
                 ));
             }
         }
@@ -49,12 +50,10 @@ impl DynamicSyscallMap {
 
         // Check if it already exists or would conflict
         match self.entries.binary_search_by_key(&hash, |(h, _)| *h) {
-            Ok(_) => {
-                return Err(format!(
-                    "Hash conflict: '{}' conflicts with existing syscall",
-                    name
-                ));
-            }
+            Ok(_) => Err(format!(
+                "Hash conflict: '{}' conflicts with existing syscall",
+                name
+            )),
             Err(pos) => {
                 self.entries.insert(pos, (hash, name));
                 Ok(())
@@ -169,9 +168,7 @@ mod tests {
 
         // Verify we can add new syscalls to it
         let mut dynamic_mut = dynamic;
-        dynamic_mut
-            .add("my_custom_syscall".to_string())
-            .unwrap();
+        dynamic_mut.add("my_custom_syscall".to_string()).unwrap();
 
         assert_eq!(
             dynamic_mut.get(murmur3_32("my_custom_syscall")),

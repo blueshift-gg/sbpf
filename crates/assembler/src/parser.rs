@@ -534,7 +534,10 @@ impl ParseWithConstMap for Instruction {
                                     let new_opcode = Into::<u8>::into(opcode) | BPF_X;
                                     opcode = new_opcode.try_into().map_err(|e| {
                                         CompileError::BytecodeError {
-                                            error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                            error: format!(
+                                                "Invalid opcode 0x{:02x}: {}",
+                                                new_opcode, e
+                                            ),
                                             span: span.clone(),
                                             custom_label: None,
                                         }
@@ -707,7 +710,10 @@ impl ParseWithConstMap for Instruction {
                                         let new_opcode = Into::<u8>::into(opcode) | BPF_X;
                                         opcode = new_opcode.try_into().map_err(|e| {
                                             CompileError::BytecodeError {
-                                                error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                                error: format!(
+                                                    "Invalid opcode 0x{:02x}: {}",
+                                                    new_opcode, e
+                                                ),
                                                 span: span.clone(),
                                                 custom_label: None,
                                             }
@@ -742,7 +748,10 @@ impl ParseWithConstMap for Instruction {
                                         let new_opcode = Into::<u8>::into(opcode) | BPF_X;
                                         opcode = new_opcode.try_into().map_err(|e| {
                                             CompileError::BytecodeError {
-                                                error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                                error: format!(
+                                                    "Invalid opcode 0x{:02x}: {}",
+                                                    new_opcode, e
+                                                ),
                                                 span: span.clone(),
                                                 custom_label: None,
                                             }

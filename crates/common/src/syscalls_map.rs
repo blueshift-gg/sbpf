@@ -97,12 +97,10 @@ impl DynamicSyscallMap {
 
         // Check if it already exists or would conflict
         match self.entries.binary_search_by_key(&hash, |(h, _)| *h) {
-            Ok(_) => {
-                return Err(format!(
-                    "Hash conflict: '{}' conflicts with existing syscall",
-                    name
-                ));
-            }
+            Ok(_) => Err(format!(
+                "Hash conflict: '{}' conflicts with existing syscall",
+                name
+            )),
             Err(pos) => {
                 self.entries.insert(pos, (hash, name));
                 Ok(())
@@ -236,9 +234,10 @@ pub const fn murmur3_32(buf: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::syscalls::{REGISTERED_SYSCALLS, SYSCALLS};
-
-    use super::*;
+    use {
+        super::*,
+        crate::syscalls::{REGISTERED_SYSCALLS, SYSCALLS},
+    };
 
     #[test]
     fn test_syscall_lookup() {

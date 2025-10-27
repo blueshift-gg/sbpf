@@ -84,9 +84,7 @@ pub const fn compute_syscall_entries_const<'a, const N: usize>(
 ///
 /// The caller must own the string data (e.g., Vec<String>) and pass references.
 /// This function returns references to those owned strings.
-pub fn compute_syscall_entries<'a, T: AsRef<str>>(
-    syscalls: &'a [T],
-) -> Vec<(u32, &'a str)> {
+pub fn compute_syscall_entries<'a, T: AsRef<str>>(syscalls: &'a [T]) -> Vec<(u32, &'a str)> {
     let mut entries: Vec<(u32, &'a str)> = syscalls
         .iter()
         .map(|name| (murmur3_32(name.as_ref()), name.as_ref()))
@@ -99,7 +97,8 @@ pub fn compute_syscall_entries<'a, T: AsRef<str>>(
         if entries[i].0 == entries[i + 1].0 {
             panic!(
                 "Hash conflict detected between syscalls '{}' and '{}'",
-                entries[i].1, entries[i + 1].1
+                entries[i].1,
+                entries[i + 1].1
             );
         }
     }
