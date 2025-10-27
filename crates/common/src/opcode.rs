@@ -168,7 +168,6 @@ pub const CALL_REG_OPS: &[Opcode] = &[Opcode::Callx]; // OperationType::CallRegi
 pub const EXIT_OPS: &[Opcode] = &[Opcode::Exit]; // OperationType::Exit
 //
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, FromPrimitive, Serialize, Deserialize)]
-#[repr(u8)]
 pub enum Opcode {
     Lddw,
     Ldxb,
