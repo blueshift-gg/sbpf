@@ -1,6 +1,6 @@
 use crate::errors::SBPFError;
 use crate::opcode::Opcode;
-use crate::syscall::SYSCALLS;
+use crate::syscalls::SYSCALLS;
 
 use core::fmt;
 use core::ops::Range;
@@ -173,7 +173,7 @@ impl Instruction {
             }
 
             Opcode::Call => {
-                if SYSCALLS.get(&(imm as u32)).is_some() {
+                if SYSCALLS.get(imm as u32).is_some() {
                     if reg != 0 || off != 0 {
                         return Err(SBPFError::BytecodeError {
                             error: format!(

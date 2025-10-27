@@ -1,0 +1,16 @@
+[package]
+name = "sbpf-syscall-map"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Compile-time and runtime syscall mapping for SBPF"
+keywords = ["solana", "bpf", "syscall"]
+categories = ["development-tools"]
+
+[dependencies]
+
+[lib]
+name = "syscall_map"
+path = "src/lib.rs"

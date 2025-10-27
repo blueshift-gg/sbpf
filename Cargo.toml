@@ -2,9 +2,9 @@
 name = "sbpf"
 version = "0.1.5"
 authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"]
-edition = "2021"
+edition = "2024"
 description = "A complete toolchain for building and deploying Solana BPF programs"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/blueshift-gg/sbpf"
 readme = "README.md"
 keywords = ["solana", "bpf", "blockchain", "assembler"]
@@ -25,11 +25,15 @@ sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }
 
 [workspace]
-members = ["crates/assembler", "crates/common", "crates/disassembler"]
+members = ["crates/assembler", "crates/common", "crates/disassembler", "crates/sbpf-syscall-map"]
 exclude = ["examples"]
 
 [workspace.package]
 version = "0.1.5"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/blueshift-gg/sbpf"
+authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"]
 
 [workspace.dependencies]
 num-derive    = "0.4"
@@ -41,3 +45,4 @@ object = "0.37.3"
 sbpf-assembler = { path = "crates/assembler", version = "0.1.5" }
 sbpf-disassembler = { path = "crates/disassembler", version = "0.1.5" }
 sbpf-common = { path = "crates/common", version = "0.1.5" }
+sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.5" }

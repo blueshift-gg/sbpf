@@ -1,10 +1,11 @@
 [package]
 name = "sbpf-common"
 version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
 description = "Common types and utilities for SBPF (Solana BPF)"
-edition = "2024"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/blueshift-gg/sbpf"
 keywords = ["solana", "bpf", "blockchain"]
 categories = ["development-tools"]
 
@@ -16,9 +17,8 @@ name = "sbpf_common"
 num-derive = { workspace = true }
 num-traits = { workspace = true }
 thiserror = { workspace = true }
-phf = "0.13.1"
-phf_macros = "0.13.1"
 serde = { version = "1.0.228", features = ["derive"] }
+sbpf-syscall-map = { workspace = true }
 
 
 [dev-dependencies]

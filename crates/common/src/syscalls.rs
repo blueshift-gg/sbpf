@@ -1,0 +1,36 @@
+use crate::syscalls_map::{compute_syscall_entries_const, SyscallMap};
+
+pub const REGISTERED_SYSCALLS: &[&str] = &[
+    "abort",
+    "sol_panic_",
+    "sol_log_",
+    "sol_log_64_",
+    "sol_log_compute_units_",
+    "sol_log_pubkey",
+    "sol_create_program_address",
+    "sol_try_find_program_address",
+    "sol_sha256",
+    "sol_keccak256",
+    "sol_secp256k1_recover",
+    "sol_blake3",
+    "sol_curve_validate_point",
+    "sol_curve_group_op",
+    "sol_get_clock_sysvar",
+    "sol_get_epoch_schedule_sysvar",
+    "sol_get_fees_sysvar",
+    "sol_get_rent_sysvar",
+    "sol_memcpy_",
+    "sol_memmove_",
+    "sol_memcmp_",
+    "sol_memset_",
+    "sol_invoke_signed_c",
+    "sol_invoke_signed_rust",
+    "sol_alloc_free_",
+    "sol_set_return_data",
+    "sol_get_return_data",
+    "sol_log_data",
+    "sol_get_processed_sibling_instruction",
+    "sol_get_stack_height",
+];
+
+pub static SYSCALLS: SyscallMap<'static> = SyscallMap::from_entries(&compute_syscall_entries_const::<{REGISTERED_SYSCALLS.len()}>(REGISTERED_SYSCALLS));

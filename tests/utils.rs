@@ -8,7 +8,7 @@ impl EnvVarGuard {
     pub fn new<K: Into<String>, V: Into<String>>(key: K, value: V) -> Self {
         let key = key.into();
         let original = std::env::var(&key).ok();
-        std::env::set_var(&key, value.into());
+        unsafe { std::env::set_var(&key, value.into()) };
         Self { key, original }
     }
 }
@@ -16,9 +16,9 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         if let Some(ref val) = self.original {
-            std::env::set_var(&self.key, val);
+            unsafe { std::env::set_var(&self.key, val) };
         } else {
-            std::env::remove_var(&self.key);
+            unsafe { std::env::remove_var(&self.key) };
         }
     }
 }
