@@ -1,11 +1,8 @@
 use crate::errors::SBPFError;
-use crate::instruction::Instruction;
-use crate::inst_param::{
-    Register,
-    Number,
-};
+use crate::inst_param::{Number, Register};
+// use crate::instruction::{Instruction, Register};
 use crate::opcode::Opcode;
-use crate::syscall::SYSCALLS;
+use crate::syscalls::SYSCALLS;
 
 // TODO: passing span for error reporting (not sure if it's necessary)
 
@@ -30,8 +27,8 @@ pub fn decode_load_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 || off != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {}, off: {} supposed to be zero"
-                    , opcode, src, off
+                "{} instruction has src: {}, off: {} supposed to be zero",
+                opcode, src, off
             ),
             span: 0..16,
             custom_label: None,
@@ -55,7 +52,8 @@ pub fn decode_load_memory(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has imm: {} supposed to be zero" , opcode, imm
+                "{} instruction has imm: {} supposed to be zero",
+                opcode, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -77,7 +75,8 @@ pub fn decode_store_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {} supposed to be zero", opcode, src
+                "{} instruction has src: {} supposed to be zero",
+                opcode, src
             ),
             span: 0..8,
             custom_label: None,
@@ -99,7 +98,8 @@ pub fn decode_store_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has imm: {} supposed to be zero", opcode, imm
+                "{} instruction has imm: {} supposed to be zero",
+                opcode, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -121,8 +121,8 @@ pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 || off != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {}, off: {} supposed to be zeros"
-                    , opcode, src, off
+                "{} instruction has src: {}, off: {} supposed to be zeros",
+                opcode, src, off
             ),
             span: 0..8,
             custom_label: None,
@@ -144,8 +144,8 @@ pub fn decode_binary_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if off != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has off: {}, imm: {} supposed to be zeros"
-                    , opcode, off, imm
+                "{} instruction has off: {}, imm: {} supposed to be zeros",
+                opcode, off, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -167,8 +167,8 @@ pub fn decode_unary(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 || off != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {}, off: {}, imm: {} supposed to be zeros"
-                    , opcode, src, off, imm
+                "{} instruction has src: {}, off: {}, imm: {} supposed to be zeros",
+                opcode, src, off, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -187,11 +187,11 @@ pub fn decode_unary(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_jump(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    if  dst != 0 || src != 0 || imm != 0 {
+    if dst != 0 || src != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has dst: {}, src: {}, imm: {} supposed to be zeros"
-                    , opcode, dst, src, imm
+                "{} instruction has dst: {}, src: {}, imm: {} supposed to be zeros",
+                opcode, dst, src, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -213,7 +213,8 @@ pub fn decode_jump_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {} supposed to be zero", opcode, src
+                "{} instruction has src: {} supposed to be zero",
+                opcode, src
             ),
             span: 0..8,
             custom_label: None,
@@ -235,7 +236,8 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has imm: {} supposed to be zero", opcode, imm
+                "{} instruction has imm: {} supposed to be zero",
+                opcode, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -258,8 +260,8 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         if dst != 0 || src != 0 || off != 0 {
             return Err(SBPFError::BytecodeError {
                 error: format!(
-                    "{} instruction has dst: {}, src: {}, off: {} supposed to be zeros"
-                        , opcode, dst, src, off
+                    "{} instruction has dst: {}, src: {}, off: {} supposed to be zeros",
+                    opcode, dst, src, off
                 ),
                 span: 0..8,
                 custom_label: None,
@@ -270,7 +272,8 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
             return Err(SBPFError::BytecodeError {
                 error: format!(
                     "{} instruction has dst: {}, src: {}, off: {} 
-                        supposed to be sixteen and zero" , opcode, dst, src, off
+                        supposed to be sixteen and zero",
+                    opcode, dst, src, off
                 ),
                 span: 0..8,
                 custom_label: None,
@@ -294,8 +297,8 @@ pub fn decode_call_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if src != 0 || off != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {}, off: {}, imm: {} supposed to be zeros"
-                    , opcode, src, off, imm
+                "{} instruction has src: {}, off: {}, imm: {} supposed to be zeros",
+                opcode, src, off, imm
             ),
             span: 0..8,
             custom_label: None,
@@ -317,8 +320,8 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     if dst != 0 || src != 0 || off != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction dst: {}, src: {}, off: {}, imm: {} supposed to be zero"
-                    , opcode, dst, src, off, imm
+                "{} instruction dst: {}, src: {}, off: {}, imm: {} supposed to be zero",
+                opcode, dst, src, off, imm
             ),
             span: 0..8,
             custom_label: None,

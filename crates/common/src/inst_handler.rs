@@ -1,36 +1,14 @@
 use crate::decode::{
-    decode_load_immediate,
-    decode_load_memory,
-    decode_store_immediate,
-    decode_store_register,
-    decode_binary_immediate,
-    decode_binary_register,
-    decode_unary,
-    decode_jump,
-    decode_jump_immediate,
-    decode_jump_register,
-    decode_call_immediate,
-    decode_call_register,
-    decode_exit,
+    decode_binary_immediate, decode_binary_register, decode_call_immediate, decode_call_register,
+    decode_exit, decode_jump, decode_jump_immediate, decode_jump_register, decode_load_immediate,
+    decode_load_memory, decode_store_immediate, decode_store_register, decode_unary,
 };
 use crate::errors::SBPFError;
 use crate::instruction::Instruction;
 use crate::opcode::{
-    Opcode,
-    OperationType,
-    LOAD_IMM_OPS,
-    LOAD_MEMORY_OPS,
-    STORE_IMM_OPS,
-    STORE_REG_OPS,
-    BIN_IMM_OPS,
-    BIN_REG_OPS,
-    UNARY_OPS,
-    JUMP_OPS,
-    JUMP_IMM_OPS,
-    JUMP_REG_OPS,
-    CALL_IMM_OPS,
-    CALL_REG_OPS,
-    EXIT_OPS,
+    BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
+    JUMP_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode, OperationType, STORE_IMM_OPS,
+    STORE_REG_OPS, UNARY_OPS,
 };
 
 type DecodeFn = fn(&[u8]) -> Result<Instruction, SBPFError>;
@@ -42,19 +20,20 @@ pub struct InstructionHandler {
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-pub static OPCODE_TO_HANDLER: 
-    Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::new(|| {
+pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::new(|| {
     //
     let mut map = HashMap::new();
 
-    fn register_group(map: &mut HashMap<Opcode, InstructionHandler>
-                    , ops: &[Opcode]
-                    , decode: DecodeFn) {
+    fn register_group(
+        map: &mut HashMap<Opcode, InstructionHandler>,
+        ops: &[Opcode],
+        decode: DecodeFn,
+    ) {
         for &op in ops {
             map.insert(op, InstructionHandler { decode });
         }
     }
-    
+
     register_group(&mut map, LOAD_IMM_OPS, decode_load_immediate);
     register_group(&mut map, LOAD_MEMORY_OPS, decode_load_memory);
     register_group(&mut map, STORE_IMM_OPS, decode_store_immediate);
@@ -75,14 +54,16 @@ pub static OPCODE_TO_HANDLER:
 pub static OPCODE_TO_TYPE: Lazy<HashMap<Opcode, OperationType>> = Lazy::new(|| {
     let mut map = HashMap::new();
 
-    fn register_group(map: &mut HashMap<Opcode, OperationType>
-                    , ops: &[Opcode]
-                    , op_type: OperationType) {
+    fn register_group(
+        map: &mut HashMap<Opcode, OperationType>,
+        ops: &[Opcode],
+        op_type: OperationType,
+    ) {
         for &op in ops {
             map.insert(op, op_type);
         }
     }
-    
+
     register_group(&mut map, LOAD_IMM_OPS, OperationType::LoadImmediate);
     register_group(&mut map, LOAD_MEMORY_OPS, OperationType::LoadMemory);
     register_group(&mut map, STORE_IMM_OPS, OperationType::StoreImmediate);

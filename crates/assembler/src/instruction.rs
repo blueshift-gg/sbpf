@@ -36,8 +36,8 @@ impl Instruction {
 
     //
     pub fn is_jump(&self) -> bool {
-        JUMP_OPS.contains(&self.opcode) 
-            || JUMP_IMM_OPS.contains(&self.opcode) 
+        JUMP_OPS.contains(&self.opcode)
+            || JUMP_IMM_OPS.contains(&self.opcode)
             || JUMP_REG_OPS.contains(&self.opcode)
     }
     //

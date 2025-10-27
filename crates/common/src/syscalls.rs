@@ -1,4 +1,4 @@
-use crate::syscalls_map::{compute_syscall_entries_const, SyscallMap};
+use crate::syscalls_map::{SyscallMap, compute_syscall_entries_const};
 
 pub const REGISTERED_SYSCALLS: &[&str] = &[
     "abort",
@@ -33,4 +33,7 @@ pub const REGISTERED_SYSCALLS: &[&str] = &[
     "sol_get_stack_height",
 ];
 
-pub static SYSCALLS: SyscallMap<'static> = SyscallMap::from_entries(&compute_syscall_entries_const::<{REGISTERED_SYSCALLS.len()}>(REGISTERED_SYSCALLS));
+pub static SYSCALLS: SyscallMap<'static> =
+    SyscallMap::from_entries(&compute_syscall_entries_const::<
+        { REGISTERED_SYSCALLS.len() },
+    >(REGISTERED_SYSCALLS));

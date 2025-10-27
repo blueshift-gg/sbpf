@@ -69,7 +69,8 @@ impl DynamicSyscallMap {
             if entries[i].0 == entries[i + 1].0 {
                 return Err(format!(
                     "Hash conflict detected between syscalls '{}' and '{}'",
-                    entries[i].1, entries[i + 1].1
+                    entries[i].1,
+                    entries[i + 1].1
                 ));
             }
         }
@@ -121,7 +122,8 @@ impl DynamicSyscallMap {
 /// Convert a static SyscallMap to a dynamic one
 impl<'a> From<&SyscallMap<'a>> for DynamicSyscallMap {
     fn from(static_map: &SyscallMap<'a>) -> Self {
-        let entries = static_map.entries
+        let entries = static_map
+            .entries
             .iter()
             .map(|(hash, name)| (*hash, name.to_string()))
             .collect();
@@ -165,9 +167,7 @@ pub const fn compute_syscall_entries_const<'a, const N: usize>(
 ///
 /// The caller must own the string data (e.g., Vec<String>) and pass references.
 /// This function returns references to those owned strings.
-pub fn compute_syscall_entries<'a, T: AsRef<str>>(
-    syscalls: &'a [T],
-) -> Vec<(u32, &'a str)> {
+pub fn compute_syscall_entries<'a, T: AsRef<str>>(syscalls: &'a [T]) -> Vec<(u32, &'a str)> {
     let mut entries: Vec<(u32, &'a str)> = syscalls
         .iter()
         .map(|name| (murmur3_32(name.as_ref()), name.as_ref()))
@@ -180,7 +180,8 @@ pub fn compute_syscall_entries<'a, T: AsRef<str>>(
         if entries[i].0 == entries[i + 1].0 {
             panic!(
                 "Hash conflict detected between syscalls '{}' and '{}'",
-                entries[i].1, entries[i + 1].1
+                entries[i].1,
+                entries[i + 1].1
             );
         }
     }
@@ -381,7 +382,12 @@ mod tests {
         // Verify all static syscalls are present
         for &name in TEST_SYSCALLS.iter() {
             let hash = murmur3_32(name);
-            assert_eq!(dynamic.get(hash), Some(name), "Failed to find syscall: {}", name);
+            assert_eq!(
+                dynamic.get(hash),
+                Some(name),
+                "Failed to find syscall: {}",
+                name
+            );
         }
 
         // Verify we can add new syscalls to it
