@@ -1,8 +1,8 @@
 mod utils;
 
 use utils::{
-    init_project, run_build, update_assembly_file, verify_project_structure, verify_so_files,
-    TestEnv,
+    TestEnv, init_project, run_build, update_assembly_file, verify_project_structure,
+    verify_so_files,
 };
 
 #[test]

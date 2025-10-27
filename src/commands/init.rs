@@ -1,12 +1,16 @@
-use super::common::{
-    CARGO_TOML, GITIGNORE, PACKAGE_JSON, PROGRAM, README, RUST_TESTS, TSCONFIG, TS_TESTS,
+use {
+    super::common::{
+        CARGO_TOML, GITIGNORE, PACKAGE_JSON, PROGRAM, README, RUST_TESTS, TS_TESTS, TSCONFIG,
+    },
+    anyhow::{Error, Result},
+    ed25519_dalek::SigningKey,
+    rand::rngs::OsRng,
+    std::{
+        fs,
+        io::{self, Write},
+        process::Command,
+    },
 };
-use anyhow::{Error, Result};
-use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
-use std::fs;
-use std::io::{self, Write};
-use std::process::Command;
 
 pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
     let project_name = match name {

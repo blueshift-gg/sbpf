@@ -1,18 +1,19 @@
-use crate::ast::AST;
-use crate::astnode::{
-    ASTNode, Directive, EquDecl, ExternDecl, GlobalDecl, Label, ROData, RodataDecl,
+use {
+    crate::{
+        ast::AST,
+        astnode::{ASTNode, Directive, EquDecl, ExternDecl, GlobalDecl, Label, ROData, RodataDecl},
+        bug,
+        dynsym::{DynamicSymbolMap, RelDynMap},
+        errors::CompileError,
+        instruction::Instruction,
+        lexer::{ImmediateValue, Op, Token},
+        messages::*,
+        section::{CodeSection, DataSection},
+    },
+    num_traits::FromPrimitive,
+    sbpf_common::opcode::Opcode,
+    std::collections::HashMap,
 };
-use crate::bug;
-use crate::dynsym::{DynamicSymbolMap, RelDynMap};
-use crate::errors::CompileError;
-use crate::instruction::Instruction;
-use crate::lexer::Op;
-use crate::lexer::{ImmediateValue, Token};
-use crate::messages::*;
-use crate::section::{CodeSection, DataSection};
-use num_traits::FromPrimitive;
-use sbpf_common::opcode::Opcode;
-use std::collections::HashMap;
 
 pub struct ParseResult {
     // TODO: parse result is basically 1. static part 2. dynamic part of the program
@@ -944,12 +945,11 @@ fn inline_and_fold_constant_with_map(
                 expect_number = false;
 
                 // Immediately fold * / if top
-                if stack.len() > 2 {
-                    if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
-                        if matches!(op, Op::Mul | Op::Div) {
-                            fold_top(&mut stack);
-                        }
-                    }
+                if stack.len() > 2
+                    && let Token::BinaryOp(op, _) = &stack[stack.len() - 2]
+                    && matches!(op, Op::Mul | Op::Div)
+                {
+                    fold_top(&mut stack);
                 }
             }
 
@@ -959,12 +959,11 @@ fn inline_and_fold_constant_with_map(
                         stack.push(Token::ImmediateValue(val.clone(), span.clone()));
                         expect_number = false;
 
-                        if stack.len() > 2 {
-                            if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
-                                if matches!(op, Op::Mul | Op::Div) {
-                                    fold_top(&mut stack);
-                                }
-                            }
+                        if stack.len() > 2
+                            && let Token::BinaryOp(op, _) = &stack[stack.len() - 2]
+                            && matches!(op, Op::Mul | Op::Div)
+                        {
+                            fold_top(&mut stack);
                         }
                     } else {
                         return (None, idx);
@@ -998,12 +997,11 @@ fn inline_and_fold_constant_with_map(
                     stack.push(Token::ImmediateValue(v, span.clone()));
                     expect_number = false;
 
-                    if stack.len() > 2 {
-                        if let Token::BinaryOp(op, _) = &stack[stack.len() - 2] {
-                            if matches!(op, Op::Mul | Op::Div) {
-                                fold_top(&mut stack);
-                            }
-                        }
+                    if stack.len() > 2
+                        && let Token::BinaryOp(op, _) = &stack[stack.len() - 2]
+                        && matches!(op, Op::Mul | Op::Div)
+                    {
+                        fold_top(&mut stack);
                     }
                 } else {
                     return (None, idx);

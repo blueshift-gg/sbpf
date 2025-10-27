@@ -1,10 +1,156 @@
-use core::fmt;
-use core::str::FromStr;
+use {
+    core::{fmt, str::FromStr},
+    num_derive::FromPrimitive,
+    serde::{Deserialize, Serialize},
+};
 
-use num_derive::FromPrimitive;
-use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Copy)]
+pub enum OperationType {
+    LoadImmediate,
+    LoadMemory,
+    StoreImmediate,
+    StoreRegister,
+    BinaryImmediate,
+    BinaryRegister,
+    Unary,
+    Jump,
+    JumpImmediate,
+    JumpRegister,
+    CallImmediate,
+    CallRegister,
+    Exit,
+}
 
-#[derive(Debug, Clone, Copy, PartialEq, FromPrimitive, Serialize, Deserialize)]
+pub const LOAD_IMM_OPS: &[Opcode] = &[Opcode::Lddw];    // OperationType::LoadImmediate
+
+pub const LOAD_MEMORY_OPS: &[Opcode] = &[Opcode::Ldxb   // OperationType::LoadMemory
+                                , Opcode::Ldxh
+                                , Opcode::Ldxw
+                                , Opcode::Ldxdw];
+
+pub const STORE_IMM_OPS: &[Opcode] = &[Opcode::Stb      // OperationType::StoreImmediate
+                                , Opcode::Sth
+                                , Opcode::Stw
+                                , Opcode::Stdw]; 
+
+pub const STORE_REG_OPS: &[Opcode] = &[Opcode::Stxb     // OperationType::StoreRegister
+                                , Opcode::Stxh
+                                , Opcode::Stxw
+                                , Opcode::Stxdw];
+
+pub const BIN_IMM_OPS: &[Opcode] = &[Opcode::Add32Imm   // OperationType::BinaryImmediate
+                                , Opcode::Sub32Imm
+                                , Opcode::Mul32Imm
+                                , Opcode::Div32Imm
+                                , Opcode::Or32Imm
+                                , Opcode::And32Imm
+                                , Opcode::Lsh32Imm
+                                , Opcode::Rsh32Imm
+                                , Opcode::Mod32Imm
+                                , Opcode::Xor32Imm
+                                , Opcode::Mov32Imm
+                                , Opcode::Arsh32Imm
+                                , Opcode::Lmul32Imm
+                                , Opcode::Udiv32Imm
+                                , Opcode::Urem32Imm
+                                , Opcode::Sdiv32Imm
+                                , Opcode::Srem32Imm
+                                , Opcode::Le
+                                , Opcode::Be
+                                , Opcode::Add64Imm
+                                , Opcode::Sub64Imm
+                                , Opcode::Mul64Imm
+                                , Opcode::Div64Imm
+                                , Opcode::Or64Imm
+                                , Opcode::And64Imm
+                                , Opcode::Lsh64Imm
+                                , Opcode::Rsh64Imm
+                                , Opcode::Mod64Imm
+                                , Opcode::Xor64Imm
+                                , Opcode::Mov64Imm
+                                , Opcode::Arsh64Imm
+                                , Opcode::Hor64Imm
+                                , Opcode::Lmul64Imm
+                                , Opcode::Uhmul64Imm
+                                , Opcode::Udiv64Imm
+                                , Opcode::Urem64Imm
+                                , Opcode::Shmul64Imm
+                                , Opcode::Sdiv64Imm
+                                , Opcode::Srem64Imm];
+
+pub const BIN_REG_OPS: &[Opcode] = &[Opcode::Add32Reg   // OperationType::BinaryRegister
+                                , Opcode::Sub32Reg
+                                , Opcode::Mul32Reg
+                                , Opcode::Div32Reg
+                                , Opcode::Or32Reg
+                                , Opcode::And32Reg
+                                , Opcode::Lsh32Reg
+                                , Opcode::Rsh32Reg
+                                , Opcode::Mod32Reg
+                                , Opcode::Xor32Reg
+                                , Opcode::Mov32Reg
+                                , Opcode::Arsh32Reg
+                                , Opcode::Lmul32Reg
+                                , Opcode::Udiv32Reg 
+                                , Opcode::Urem32Reg
+                                , Opcode::Sdiv32Reg
+                                , Opcode::Srem32Reg
+                                , Opcode::Add64Reg
+                                , Opcode::Sub64Reg
+                                , Opcode::Mul64Reg
+                                , Opcode::Div64Reg
+                                , Opcode::Or64Reg
+                                , Opcode::And64Reg
+                                , Opcode::Lsh64Reg
+                                , Opcode::Rsh64Reg
+                                , Opcode::Mod64Reg
+                                , Opcode::Xor64Reg
+                                , Opcode::Mov64Reg
+                                , Opcode::Arsh64Reg
+                                , Opcode::Lmul64Reg
+                                , Opcode::Uhmul64Reg
+                                , Opcode::Udiv64Reg
+                                , Opcode::Urem64Reg
+                                , Opcode::Shmul64Reg
+                                , Opcode::Sdiv64Reg
+                                , Opcode::Srem64Reg];
+
+pub const UNARY_OPS: &[Opcode] = &[Opcode::Neg32        // OperationType::Unary
+                                , Opcode::Neg64];
+
+pub const JUMP_OPS: &[Opcode] = &[Opcode::Ja];          // OperationType::Jump
+
+pub const JUMP_IMM_OPS: &[Opcode] = &[Opcode::JeqImm    // OperationType::JumpImmediate
+                                , Opcode::JgtImm
+                                , Opcode::JgeImm
+                                , Opcode::JltImm
+                                , Opcode::JleImm
+                                , Opcode::JsetImm
+                                , Opcode::JneImm
+                                , Opcode::JsgtImm
+                                , Opcode::JsgeImm
+                                , Opcode::JsltImm
+                                , Opcode::JsleImm];
+
+pub const JUMP_REG_OPS: &[Opcode] = &[Opcode::JeqReg    // OperationType::JumpRegister
+                                , Opcode::JgtReg
+                                , Opcode::JgeReg
+                                , Opcode::JltReg
+                                , Opcode::JleReg
+                                , Opcode::JsetReg
+                                , Opcode::JneReg
+                                , Opcode::JsgtReg
+                                , Opcode::JsgeReg
+                                , Opcode::JsltReg
+                                , Opcode::JsleReg];
+
+pub const CALL_IMM_OPS: &[Opcode] = &[Opcode::Call];    // OperationType::CallImmediate
+
+pub const CALL_REG_OPS: &[Opcode] = &[Opcode::Callx];   // OperationType::CallRegister
+
+pub const EXIT_OPS: &[Opcode] = &[Opcode::Exit];        // OperationType::Exit
+//
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Opcode {
     Lddw,

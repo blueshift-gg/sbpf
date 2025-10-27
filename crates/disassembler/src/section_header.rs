@@ -1,11 +1,9 @@
-use std::{fmt::Debug, fmt::Display};
-
-use object::Endianness;
-use object::read::elf::ElfFile64;
-use serde::{Deserialize, Serialize};
-
-use crate::errors::DisassemblerError;
-use crate::section_header_entry::SectionHeaderEntry;
+use {
+    crate::{errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
+    object::{Endianness, read::elf::ElfFile64},
+    serde::{Deserialize, Serialize},
+    std::fmt::{Debug, Display},
+};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,9 +188,7 @@ impl SectionHeader {
 
 #[cfg(test)]
 mod tests {
-    use hex_literal::hex;
-
-    use crate::program::Program;
+    use {crate::program::Program, hex_literal::hex};
 
     #[test]
     fn test_section_headers() {

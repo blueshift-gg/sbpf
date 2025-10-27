@@ -1,8 +1,8 @@
-use std::fs::File;
-use std::io::Read;
-
-use anyhow::{Error, Result};
-use sbpf_disassembler::program::Program;
+use {
+    anyhow::{Error, Result},
+    sbpf_disassembler::program::Program,
+    std::{fs::File, io::Read},
+};
 
 pub fn disassemble(filename: String, asm: bool) -> Result<(), Error> {
     let mut file = File::open(filename)?;

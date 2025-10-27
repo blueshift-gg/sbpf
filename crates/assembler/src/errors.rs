@@ -1,5 +1,4 @@
-use crate::define_compile_errors;
-use std::ops::Range;
+use {crate::define_compile_errors, std::ops::Range};
 
 // labels could be overridden by passing a valid custom_label in the error variant
 // if not provided, the label will use default messages from below

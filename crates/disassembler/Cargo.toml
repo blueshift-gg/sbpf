@@ -8,6 +8,7 @@ authors.workspace = true
 description = "Disassembler for SBPF (Solana BPF) bytecode"
 keywords = ["solana", "bpf", "disassembler", "blockchain"]
 categories = ["development-tools"]
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]

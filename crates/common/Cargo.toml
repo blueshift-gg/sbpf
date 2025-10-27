@@ -8,6 +8,7 @@ authors.workspace = true
 description = "Common types and utilities for SBPF (Solana BPF)"
 keywords = ["solana", "bpf", "blockchain"]
 categories = ["development-tools"]
+rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -19,7 +20,7 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 sbpf-syscall-map = { workspace = true }
-
+once_cell = "1.21.3"
 
 [dev-dependencies]
 hex-literal = "1.0.0"
