@@ -5,7 +5,7 @@ use {
         lexer::{ImmediateValue, Token},
         syscall::SYSCALLS,
     },
-    sbpf_common::opcode::Opcode,
+    sbpf_common::opcode::{JUMP_IMM_OPS, JUMP_OPS, JUMP_REG_OPS, Opcode},
     std::ops::Range,
 };
 
@@ -36,8 +36,8 @@ impl Instruction {
 
     //
     pub fn is_jump(&self) -> bool {
-        JUMP_OPS.contains(&self.opcode) 
-            || JUMP_IMM_OPS.contains(&self.opcode) 
+        JUMP_OPS.contains(&self.opcode)
+            || JUMP_IMM_OPS.contains(&self.opcode)
             || JUMP_REG_OPS.contains(&self.opcode)
     }
     //

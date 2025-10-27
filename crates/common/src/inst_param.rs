@@ -1,6 +1,7 @@
-
-use core::fmt;
-use serde::{Deserialize, Serialize};
+use {
+    core::fmt,
+    serde::{Deserialize, Serialize},
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Register {

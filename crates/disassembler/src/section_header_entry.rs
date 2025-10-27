@@ -76,10 +76,7 @@ mod test {
     use {
         crate::section_header_entry::SectionHeaderEntry,
         sbpf_common::{
-            inst_param::{
-                Number,
-                Register
-            };
+            inst_param::{Number, Register},
             instruction::Instruction,
             opcode::Opcode,
         },

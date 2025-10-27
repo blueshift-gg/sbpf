@@ -1,33 +1,13 @@
 use {
     crate::{
-      errors::SBPFError, 
-      inst_param::{
-        Number,
-        Register,
-      },
-      opcode::Opcode, 
-      syscall::SYSCALLS,
+        errors::SBPFError,
+        inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
+        inst_param::{Number, Register},
+        opcode::{Opcode, OperationType},
     },
-    core::{fmt, ops::Range},
+    core::ops::Range,
     serde::{Deserialize, Serialize},
 };
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Register {
-    pub n: u8,
-}
-use crate::errors::SBPFError;
-
-use crate::inst_param::{
-    Register,
-    Number
-};
-
-use crate::opcode::{Opcode, OperationType};
-use crate::inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE};
-
-use core::ops::Range;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
@@ -46,17 +26,15 @@ impl Instruction {
             _ => 8,
         }
     }
-    
+
     fn get_opcode_type(&self) -> OperationType {
         *OPCODE_TO_TYPE.get(&self.opcode).unwrap()
     }
-    
+
     pub fn is_jump(&self) -> bool {
         matches!(
             self.get_opcode_type(),
-            OperationType::Jump 
-                | OperationType::JumpImmediate 
-                | OperationType::JumpRegister
+            OperationType::Jump | OperationType::JumpImmediate | OperationType::JumpRegister
         )
     }
 
