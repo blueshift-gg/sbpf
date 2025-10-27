@@ -1,36 +1,15 @@
 use crate::errors::SBPFError;
-use crate::opcode::Opcode;
-use crate::syscall::SYSCALLS;
 
-use core::fmt;
+use crate::inst_param::{
+    Register,
+    Number
+};
+
+use crate::opcode::{Opcode, OperationType};
+use crate::inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE};
+
 use core::ops::Range;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Register {
-    pub n: u8,
-}
-
-impl fmt::Display for Register {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "r{}", self.n)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum Number {
-    Int(i64),
-    Addr(i64),
-}
-
-impl fmt::Display for Number {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Number::Int(i) => write!(f, "{}", i),
-            Number::Addr(a) => write!(f, "{}", a),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
@@ -49,33 +28,17 @@ impl Instruction {
             _ => 8,
         }
     }
-
+    
+    fn get_opcode_type(&self) -> OperationType {
+        *OPCODE_TO_TYPE.get(&self.opcode).unwrap()
+    }
+    
     pub fn is_jump(&self) -> bool {
         matches!(
-            self.opcode,
-            Opcode::Ja
-                | Opcode::JeqImm
-                | Opcode::JgtImm
-                | Opcode::JgeImm
-                | Opcode::JltImm
-                | Opcode::JleImm
-                | Opcode::JsetImm
-                | Opcode::JneImm
-                | Opcode::JsgtImm
-                | Opcode::JsgeImm
-                | Opcode::JsltImm
-                | Opcode::JsleImm
-                | Opcode::JeqReg
-                | Opcode::JgtReg
-                | Opcode::JgeReg
-                | Opcode::JltReg
-                | Opcode::JleReg
-                | Opcode::JsetReg
-                | Opcode::JneReg
-                | Opcode::JsgtReg
-                | Opcode::JsgeReg
-                | Opcode::JsltReg
-                | Opcode::JsleReg
+            self.get_opcode_type(),
+            OperationType::Jump 
+                | OperationType::JumpImmediate 
+                | OperationType::JumpRegister
         )
     }
 
@@ -105,7 +68,7 @@ impl Instruction {
             None => format!("[r0{}]", self.off_str()),
         }
     }
-
+    // only used for be/le
     pub fn op_imm_bits(&self) -> Result<String, SBPFError> {
         match &self.imm {
             Some(Number::Int(imm)) => match *imm {
@@ -130,342 +93,16 @@ impl Instruction {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SBPFError> {
-        let span = 0..bytes.len();
-
-        let opcode = Opcode::from_u8(bytes[0]).ok_or(SBPFError::BytecodeError {
-            error: format!("Invalid opcode: {:?}", bytes[0]),
-            span: span.clone(),
-            custom_label: None,
-        })?;
-        let reg = bytes[1];
-        let src = reg >> 4;
-        let dst = reg & 0x0f;
-        let off = i16::from_le_bytes([bytes[2], bytes[3]]);
-        let imm = match opcode {
-            Opcode::Lddw => {
-                let imm_low = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-                let imm_high = i32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
-
-                ((imm_high as i64) << 32) | (imm_low as u32 as i64)
-            }
-            _ => i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as i64,
-        };
-
-        let mut out_dst: Option<Register> = None;
-        let mut out_src: Option<Register> = None;
-        let mut out_off: Option<i16> = None;
-        let mut out_imm: Option<Number> = None;
-
-        match opcode {
-            Opcode::Lddw => {
-                if src != 0 || off != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Lddw instruction expects src and off to be 0, but got src: {}, off: {}",
-                            src, off
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_imm = Some(Number::Int(imm));
-            }
-
-            Opcode::Call => {
-                if SYSCALLS.get(&(imm as u32)).is_some() {
-                    if reg != 0 || off != 0 {
-                        return Err(SBPFError::BytecodeError {
-                            error: format!(
-                                "Call instruction with syscall expects reg and off to be 0, but got reg: {}, off: {}",
-                                reg, off
-                            ),
-                            span: span.clone(),
-                            custom_label: None,
-                        });
-                    }
-                    out_imm = Some(Number::Int(imm));
-                } else {
-                    if reg != 16 || off != 0 {
-                        return Err(SBPFError::BytecodeError {
-                            error: format!(
-                                "Call instruction with immediate expects reg to be 16 and off to be 0, but got reg: {}, off: {}",
-                                reg, off
-                            ),
-                            span: span.clone(),
-                            custom_label: None,
-                        });
-                    }
-                    out_imm = Some(Number::Int(imm));
-                }
-            }
-
-            Opcode::Callx => {
-                if src != 0 || off != 0 || imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Callx instruction expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}",
-                            src, off, imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                // callx destination register is encoded in the dst field
-                out_dst = Some(Register { n: dst });
-            }
-
-            Opcode::Ja => {
-                if reg != 0 || imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Ja instruction expects reg and imm to be 0, but got reg: {}, imm: {}",
-                            reg, imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_off = Some(off);
-            }
-
-            Opcode::JeqImm
-            | Opcode::JgtImm
-            | Opcode::JgeImm
-            | Opcode::JltImm
-            | Opcode::JleImm
-            | Opcode::JsetImm
-            | Opcode::JneImm
-            | Opcode::JsgtImm
-            | Opcode::JsgeImm
-            | Opcode::JsltImm
-            | Opcode::JsleImm => {
-                if src != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Jump instruction with immediate expects src to be 0, but got src: {}",
-                            src
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_imm = Some(Number::Int(imm));
-                out_off = Some(off);
-            }
-
-            Opcode::JeqReg
-            | Opcode::JgtReg
-            | Opcode::JgeReg
-            | Opcode::JltReg
-            | Opcode::JleReg
-            | Opcode::JsetReg
-            | Opcode::JneReg
-            | Opcode::JsgtReg
-            | Opcode::JsgeReg
-            | Opcode::JsltReg
-            | Opcode::JsleReg => {
-                if imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Jump instruction with register expects imm to be 0, but got imm: {}",
-                            imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_src = Some(Register { n: src });
-                out_off = Some(off);
-            }
-
-            // Arithmetic instructions with immediate values
-            Opcode::Add32Imm
-            | Opcode::Sub32Imm
-            | Opcode::Mul32Imm
-            | Opcode::Div32Imm
-            | Opcode::Or32Imm
-            | Opcode::And32Imm
-            | Opcode::Lsh32Imm
-            | Opcode::Rsh32Imm
-            | Opcode::Mod32Imm
-            | Opcode::Xor32Imm
-            | Opcode::Mov32Imm
-            | Opcode::Arsh32Imm
-            | Opcode::Lmul32Imm
-            | Opcode::Udiv32Imm
-            | Opcode::Urem32Imm
-            | Opcode::Sdiv32Imm
-            | Opcode::Srem32Imm
-            | Opcode::Add64Imm
-            | Opcode::Sub64Imm
-            | Opcode::Mul64Imm
-            | Opcode::Div64Imm
-            | Opcode::Or64Imm
-            | Opcode::And64Imm
-            | Opcode::Lsh64Imm
-            | Opcode::Rsh64Imm
-            | Opcode::Mod64Imm
-            | Opcode::Xor64Imm
-            | Opcode::Mov64Imm
-            | Opcode::Arsh64Imm
-            | Opcode::Hor64Imm
-            | Opcode::Lmul64Imm
-            | Opcode::Uhmul64Imm
-            | Opcode::Udiv64Imm
-            | Opcode::Urem64Imm
-            | Opcode::Shmul64Imm
-            | Opcode::Sdiv64Imm
-            | Opcode::Srem64Imm
-            | Opcode::Be
-            | Opcode::Le => {
-                if src != 0 || off != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Arithmetic instruction with immediate expects src and off to be 0, but got src: {}, off: {}",
-                            src, off
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_imm = Some(Number::Int(imm));
-            }
-
-            // Arithmetic instructions with register operands
-            Opcode::Add32Reg
-            | Opcode::Sub32Reg
-            | Opcode::Mul32Reg
-            | Opcode::Div32Reg
-            | Opcode::Or32Reg
-            | Opcode::And32Reg
-            | Opcode::Lsh32Reg
-            | Opcode::Rsh32Reg
-            | Opcode::Mod32Reg
-            | Opcode::Xor32Reg
-            | Opcode::Mov32Reg
-            | Opcode::Arsh32Reg
-            | Opcode::Lmul32Reg
-            | Opcode::Udiv32Reg
-            | Opcode::Urem32Reg
-            | Opcode::Sdiv32Reg
-            | Opcode::Srem32Reg
-            | Opcode::Add64Reg
-            | Opcode::Sub64Reg
-            | Opcode::Mul64Reg
-            | Opcode::Div64Reg
-            | Opcode::Or64Reg
-            | Opcode::And64Reg
-            | Opcode::Lsh64Reg
-            | Opcode::Rsh64Reg
-            | Opcode::Mod64Reg
-            | Opcode::Xor64Reg
-            | Opcode::Mov64Reg
-            | Opcode::Arsh64Reg
-            | Opcode::Lmul64Reg
-            | Opcode::Uhmul64Reg
-            | Opcode::Udiv64Reg
-            | Opcode::Urem64Reg
-            | Opcode::Shmul64Reg
-            | Opcode::Sdiv64Reg
-            | Opcode::Srem64Reg => {
-                if off != 0 || imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Arithmetic instruction with register expects off and imm to be 0, but got off: {}, imm: {}",
-                            off, imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_src = Some(Register { n: src });
-            }
-
-            Opcode::Ldxw | Opcode::Ldxh | Opcode::Ldxb | Opcode::Ldxdw => {
-                if imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Load instruction expects imm to be 0, but got imm: {}",
-                            imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_src = Some(Register { n: src });
-                out_off = Some(off);
-            }
-
-            Opcode::Stw | Opcode::Sth | Opcode::Stb | Opcode::Stdw => {
-                if src != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Store instruction expects src to be 0, but got src: {}",
-                            src
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_off = Some(off);
-                out_imm = Some(Number::Int(imm));
-            }
-
-            Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
-                if imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Store instruction with register expects imm to be 0, but got imm: {}",
-                            imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-                out_src = Some(Register { n: src });
-                out_off = Some(off);
-            }
-
-            // Unary operations
-            Opcode::Neg32 | Opcode::Neg64 | Opcode::Exit => {
-                if src != 0 || off != 0 || imm != 0 {
-                    return Err(SBPFError::BytecodeError {
-                        error: format!(
-                            "Unary operation expects src, off, and imm to be 0, but got src: {}, off: {}, imm: {}",
-                            src, off, imm
-                        ),
-                        span: span.clone(),
-                        custom_label: None,
-                    });
-                }
-                out_dst = Some(Register { n: dst });
-            }
-
-            _ => {
-                return Err(SBPFError::BytecodeError {
-                    error: format!("Unsupported opcode: {:?}", opcode),
-                    span: span.clone(),
-                    custom_label: None,
-                });
-            }
+        let opcode = Opcode::from_u8(bytes[0]).unwrap();
+        if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
+            (handler.decode)(bytes)
+        } else {
+            Err(SBPFError::BytecodeError {
+                error: format!("no decode handler for opcode {}", opcode),
+                span: 0..1,
+                custom_label: Some("Invalid opcode".to_string()),
+            })
         }
-
-        Ok(Instruction {
-            opcode,
-            dst: out_dst,
-            src: out_src,
-            off: out_off,
-            imm: out_imm,
-            span,
-        })
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
