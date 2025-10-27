@@ -380,13 +380,13 @@ impl Instruction {
                 operands.push(Token::Register(dst, 1..2));
             }
 
-            _ => {
-                return Err(CompileError::BytecodeError {
-                    error: format!("Unsupported opcode: {:?}", opcode),
-                    span: span.clone(),
-                    custom_label: None,
-                });
-            }
+            // _ => {
+            //     return Err(CompileError::BytecodeError {
+            //         error: format!("Unsupported opcode: {:?}", opcode),
+            //         span: span.clone(),
+            //         custom_label: None,
+            //     });
+            // }
         }
 
         Ok(Instruction {

@@ -637,8 +637,7 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         // Fifth operand is folded to an immediate value
                                     ) => {
-                                        opcode = (Into::<u8>::into(opcode) + 1).try_into()
-                                            .expect("Invalid opcode conversion");
+                                        // Opcode is already the Imm variant, no conversion needed
                                         operands.push(tokens[1].clone());
                                         operands.push(Token::ImmediateValue(value, span.clone()));
                                         operands
@@ -670,8 +669,7 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         Token::Identifier(_, _),
                                     ) => {
-                                        opcode = (Into::<u8>::into(opcode) + 1).try_into()
-                                            .expect("Invalid opcode conversion");
+                                        // Opcode is already the Imm variant, no conversion needed
                                         operands.push(tokens[1].clone());
                                         operands.push(Token::ImmediateValue(value, span.clone()));
                                         operands.push(tokens[advance_token_num + 1].clone());
@@ -705,9 +703,15 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         // Fifth operand is folded to an immediate value
                                     ) => {
-                                        // turn "invalid opcode" to a bug
-                                        opcode = (Into::<u8>::into(opcode) + 2).try_into()
-                                            .expect("Invalid opcode conversion");
+                                        // Convert Imm variant to Reg variant using BPF_X flag
+                                        let new_opcode = Into::<u8>::into(opcode) | BPF_X;
+                                        opcode = new_opcode.try_into().map_err(|e| {
+                                            CompileError::BytecodeError {
+                                                error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                                span: span.clone(),
+                                                custom_label: None,
+                                            }
+                                        })?;
                                         operands.push(tokens[1].clone());
                                         operands.push(tokens[3].clone());
                                         operands
@@ -734,9 +738,15 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         Token::Identifier(_, _),
                                     ) => {
-                                        // turn "invalid opcode" to a bug
-                                        opcode = (Into::<u8>::into(opcode) + 2).try_into()
-                                            .expect("Invalid opcode conversion");
+                                        // Convert Imm variant to Reg variant using BPF_X flag
+                                        let new_opcode = Into::<u8>::into(opcode) | BPF_X;
+                                        opcode = new_opcode.try_into().map_err(|e| {
+                                            CompileError::BytecodeError {
+                                                error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                                span: span.clone(),
+                                                custom_label: None,
+                                            }
+                                        })?;
                                         operands.push(tokens[1].clone());
                                         operands.push(tokens[3].clone());
                                         operands.push(tokens[5].clone());

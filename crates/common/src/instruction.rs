@@ -370,12 +370,6 @@ impl Instruction {
                 }
             },
             Opcode::Exit => format!("{}", self.opcode),
-
-            _ => return Err(SBPFError::BytecodeError {
-                error: format!("Unsupported opcode: {:?}", self.opcode),
-                span: self.span.clone(),
-                custom_label: None,
-            })
         })
     }
 }
@@ -427,7 +421,7 @@ mod test {
         let b = hex!("05000a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes(), &b);
-        assert_eq!(i.to_asm().unwrap(), "jeq +10");
+        assert_eq!(i.to_asm().unwrap(), "ja +10");
     }
 
     #[test]
