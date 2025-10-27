@@ -10,10 +10,12 @@ use {
         messages::*,
         section::{CodeSection, DataSection},
     },
-    num_traits::FromPrimitive,
     sbpf_common::opcode::Opcode,
     std::collections::HashMap,
 };
+
+// BPF_X flag: Converts immediate variant opcodes to register variant opcodes
+const BPF_X: u8 = 0x08;
 
 pub struct ParseResult {
     // TODO: parse result is basically 1. static part 2. dynamic part of the program
@@ -455,41 +457,41 @@ impl ParseWithConstMap for Instruction {
                             });
                         }
                     }
-                    Opcode::Add32
-                    | Opcode::Sub32
-                    | Opcode::Mul32
-                    | Opcode::Div32
-                    | Opcode::Or32
-                    | Opcode::And32
-                    | Opcode::Lsh32
-                    | Opcode::Rsh32
-                    | Opcode::Mod32
-                    | Opcode::Xor32
-                    | Opcode::Mov32
-                    | Opcode::Arsh32
-                    | Opcode::Lmul32
-                    | Opcode::Udiv32
-                    | Opcode::Urem32
-                    | Opcode::Sdiv32
-                    | Opcode::Srem32
-                    | Opcode::Add64
-                    | Opcode::Sub64
-                    | Opcode::Mul64
-                    | Opcode::Div64
-                    | Opcode::Or64
-                    | Opcode::And64
-                    | Opcode::Lsh64
-                    | Opcode::Rsh64
-                    | Opcode::Mod64
-                    | Opcode::Xor64
-                    | Opcode::Mov64
-                    | Opcode::Arsh64
-                    | Opcode::Lmul64
-                    | Opcode::Uhmul64
-                    | Opcode::Udiv64
-                    | Opcode::Urem64
-                    | Opcode::Sdiv64
-                    | Opcode::Srem64 => {
+                    Opcode::Add32Imm
+                    | Opcode::Sub32Imm
+                    | Opcode::Mul32Imm
+                    | Opcode::Div32Imm
+                    | Opcode::Or32Imm
+                    | Opcode::And32Imm
+                    | Opcode::Lsh32Imm
+                    | Opcode::Rsh32Imm
+                    | Opcode::Mod32Imm
+                    | Opcode::Xor32Imm
+                    | Opcode::Mov32Imm
+                    | Opcode::Arsh32Imm
+                    | Opcode::Lmul32Imm
+                    | Opcode::Udiv32Imm
+                    | Opcode::Urem32Imm
+                    | Opcode::Sdiv32Imm
+                    | Opcode::Srem32Imm
+                    | Opcode::Add64Imm
+                    | Opcode::Sub64Imm
+                    | Opcode::Mul64Imm
+                    | Opcode::Div64Imm
+                    | Opcode::Or64Imm
+                    | Opcode::And64Imm
+                    | Opcode::Lsh64Imm
+                    | Opcode::Rsh64Imm
+                    | Opcode::Mod64Imm
+                    | Opcode::Xor64Imm
+                    | Opcode::Mov64Imm
+                    | Opcode::Arsh64Imm
+                    | Opcode::Lmul64Imm
+                    | Opcode::Uhmul64Imm
+                    | Opcode::Udiv64Imm
+                    | Opcode::Urem64Imm
+                    | Opcode::Sdiv64Imm
+                    | Opcode::Srem64Imm => {
                         if tokens.len() < 4 {
                             return Err(CompileError::InvalidInstruction {
                                 //
@@ -511,8 +513,7 @@ impl ParseWithConstMap for Instruction {
                                     Token::Comma(_),
                                     // Third operand is folded to an immediate value
                                 ) => {
-                                    opcode = FromPrimitive::from_u8((opcode as u8) + 1)
-                                        .expect("Invalid opcode conversion");
+                                    // Opcode already represents the immediate variant (no conversion needed)
                                     operands.push(tokens[1].clone());
                                     operands.push(Token::ImmediateValue(value, span.clone()));
                                 }
@@ -529,8 +530,15 @@ impl ParseWithConstMap for Instruction {
                         } else {
                             match (&tokens[1], &tokens[2], &tokens[3]) {
                                 (Token::Register(_, _), Token::Comma(_), Token::Register(_, _)) => {
-                                    opcode = FromPrimitive::from_u8((opcode as u8) + 2)
-                                        .expect("Invalid opcode conversion");
+                                    // Convert immediate variant to register variant using BPF_X flag
+                                    let new_opcode = Into::<u8>::into(opcode) | BPF_X;
+                                    opcode = new_opcode.try_into().map_err(|e| {
+                                        CompileError::BytecodeError {
+                                            error: format!("Invalid opcode 0x{:02x}: {}", new_opcode, e),
+                                            span: span.clone(),
+                                            custom_label: None,
+                                        }
+                                    })?;
                                     operands.push(tokens[1].clone());
                                     operands.push(tokens[3].clone());
                                 }
@@ -590,17 +598,17 @@ impl ParseWithConstMap for Instruction {
                             });
                         }
                     }
-                    Opcode::Jeq
-                    | Opcode::Jgt
-                    | Opcode::Jge
-                    | Opcode::Jlt
-                    | Opcode::Jle
-                    | Opcode::Jset
-                    | Opcode::Jne
-                    | Opcode::Jsgt
-                    | Opcode::Jsge
-                    | Opcode::Jslt
-                    | Opcode::Jsle => {
+                    Opcode::JeqImm
+                    | Opcode::JgtImm
+                    | Opcode::JgeImm
+                    | Opcode::JltImm
+                    | Opcode::JleImm
+                    | Opcode::JsetImm
+                    | Opcode::JneImm
+                    | Opcode::JsgtImm
+                    | Opcode::JsgeImm
+                    | Opcode::JsltImm
+                    | Opcode::JsleImm => {
                         if tokens.len() < 6 {
                             return Err(CompileError::InvalidInstruction {
                                 //
@@ -629,7 +637,7 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         // Fifth operand is folded to an immediate value
                                     ) => {
-                                        opcode = FromPrimitive::from_u8((opcode as u8) + 1)
+                                        opcode = (Into::<u8>::into(opcode) + 1).try_into()
                                             .expect("Invalid opcode conversion");
                                         operands.push(tokens[1].clone());
                                         operands.push(Token::ImmediateValue(value, span.clone()));
@@ -662,7 +670,7 @@ impl ParseWithConstMap for Instruction {
                                         Token::Comma(_),
                                         Token::Identifier(_, _),
                                     ) => {
-                                        opcode = FromPrimitive::from_u8((opcode as u8) + 1)
+                                        opcode = (Into::<u8>::into(opcode) + 1).try_into()
                                             .expect("Invalid opcode conversion");
                                         operands.push(tokens[1].clone());
                                         operands.push(Token::ImmediateValue(value, span.clone()));
@@ -698,7 +706,7 @@ impl ParseWithConstMap for Instruction {
                                         // Fifth operand is folded to an immediate value
                                     ) => {
                                         // turn "invalid opcode" to a bug
-                                        opcode = FromPrimitive::from_u8((opcode as u8) + 2)
+                                        opcode = (Into::<u8>::into(opcode) + 2).try_into()
                                             .expect("Invalid opcode conversion");
                                         operands.push(tokens[1].clone());
                                         operands.push(tokens[3].clone());
@@ -727,7 +735,7 @@ impl ParseWithConstMap for Instruction {
                                         Token::Identifier(_, _),
                                     ) => {
                                         // turn "invalid opcode" to a bug
-                                        opcode = FromPrimitive::from_u8((opcode as u8) + 2)
+                                        opcode = (Into::<u8>::into(opcode) + 2).try_into()
                                             .expect("Invalid opcode conversion");
                                         operands.push(tokens[1].clone());
                                         operands.push(tokens[3].clone());

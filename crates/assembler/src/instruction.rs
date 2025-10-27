@@ -5,7 +5,7 @@ use {
         lexer::{ImmediateValue, Token},
         syscall::SYSCALLS,
     },
-    sbpf_common::opcode::Opcode,
+    sbpf_common::{opcode::{JUMP_IMM_OPS, JUMP_OPS, JUMP_REG_OPS, Opcode}},
     std::ops::Range,
 };
 
@@ -61,7 +61,11 @@ impl Instruction {
         let mut operands = Vec::new();
         let span = 0..bytes.len();
 
-        let opcode = Opcode::from_u8(bytes[0]).unwrap();
+        let opcode: Opcode = bytes[0].try_into().map_err(|e| CompileError::BytecodeError {
+            error: format!("Invalid opcode 0x{:02x}: {}", bytes[0], e),
+            span: 0..1,
+            custom_label: None,
+        })?;
         let reg = bytes[1];
         let src = reg >> 4;
         let dst = reg & 0x0f;

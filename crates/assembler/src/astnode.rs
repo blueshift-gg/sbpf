@@ -247,7 +247,7 @@ impl ASTNode {
                 let mut bytes = Vec::new();
                 let mut debug_map = HashMap::new();
                 let mut debug_info = DebugInfo::new(span.clone());
-                bytes.push(opcode.to_bytecode()); // 1 byte opcode
+                bytes.push(Into::<u8>::into(*opcode)); // 1 byte opcode
 
                 if *opcode == Opcode::Call {
                     bytes.extend_from_slice(&[0x10, 0x00, 0x00]);

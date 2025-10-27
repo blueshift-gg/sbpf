@@ -1,27 +1,13 @@
 use {
     crate::{
         errors::SBPFError,
+        inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
-        opcode::Opcode,
-        syscall::SYSCALLS,
+        opcode::{Opcode, OperationType},
     },
-    core::{fmt, ops::Range},
+    core::ops::Range,
     serde::{Deserialize, Serialize},
 };
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Register {
-    pub n: u8,
-}
-use crate::errors::SBPFError;
-
-use crate::inst_param::{Number, Register};
-
-use crate::inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE};
-use crate::opcode::{Opcode, OperationType};
-
-use core::ops::Range;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
@@ -103,7 +89,7 @@ impl Instruction {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SBPFError> {
-        let opcode = Opcode::from_u8(bytes[0]).unwrap();
+        let opcode: Opcode = bytes[0].try_into()?;
         if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
             (handler.decode)(bytes)
         } else {
@@ -124,7 +110,7 @@ impl Instruction {
             None => 0,
         };
 
-        let mut b = vec![self.opcode.to_bytecode(), src_val << 4 | dst_val];
+        let mut b = vec![self.opcode.into(), src_val << 4 | dst_val];
         b.extend_from_slice(&off_val.to_le_bytes());
         b.extend_from_slice(&(imm_val as i32).to_le_bytes());
         if self.opcode == Opcode::Lddw {

@@ -1,14 +1,17 @@
-use crate::decode::{
-    decode_binary_immediate, decode_binary_register, decode_call_immediate, decode_call_register,
-    decode_exit, decode_jump, decode_jump_immediate, decode_jump_register, decode_load_immediate,
-    decode_load_memory, decode_store_immediate, decode_store_register, decode_unary,
-};
-use crate::errors::SBPFError;
-use crate::instruction::Instruction;
-use crate::opcode::{
-    BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
-    JUMP_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode, OperationType, STORE_IMM_OPS,
-    STORE_REG_OPS, UNARY_OPS,
+use crate::{
+    decode::{
+        decode_binary_immediate, decode_binary_register, decode_call_immediate,
+        decode_call_register, decode_exit, decode_jump, decode_jump_immediate,
+        decode_jump_register, decode_load_immediate, decode_load_memory, decode_store_immediate,
+        decode_store_register, decode_unary,
+    },
+    errors::SBPFError,
+    instruction::Instruction,
+    opcode::{
+        BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
+        JUMP_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode, OperationType, STORE_IMM_OPS,
+        STORE_REG_OPS, UNARY_OPS,
+    },
 };
 
 type DecodeFn = fn(&[u8]) -> Result<Instruction, SBPFError>;
@@ -17,8 +20,7 @@ pub struct InstructionHandler {
     pub decode: DecodeFn,
 }
 
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use {once_cell::sync::Lazy, std::collections::HashMap};
 
 pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::new(|| {
     //

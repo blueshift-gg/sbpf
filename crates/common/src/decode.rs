@@ -1,18 +1,16 @@
-use crate::errors::SBPFError;
-use crate::inst_param::{Number, Register};
-// use crate::instruction::{Instruction, Register};
-use crate::opcode::Opcode;
-use crate::syscalls::SYSCALLS;
+use crate::{
+    errors::SBPFError,
+    inst_param::{Number, Register},
+    instruction::Instruction,
+    opcode::Opcode,
+    syscalls::SYSCALLS,
+};
 
 // TODO: passing span for error reporting (not sure if it's necessary)
 
 #[inline]
 fn parse_bytes(bytes: &[u8]) -> Result<(Opcode, u8, u8, i16, i32), SBPFError> {
-    let opcode = Opcode::from_u8(bytes[0]).ok_or(SBPFError::BytecodeError {
-        error: format!("Invalid opcode: {:?}", bytes[0]),
-        span: 0..bytes.len(),
-        custom_label: None,
-    })?;
+    let opcode: Opcode = bytes[0].try_into()?;
     let reg = bytes[1];
     let dst = reg & 0x0f;
     let src = reg >> 4;
@@ -37,11 +35,11 @@ pub fn decode_load_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     let imm_high = i32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);
     let imm = ((imm_high as i64) << 32) | (imm_low as u32 as i64);
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
-        imm: Some(Number::Int(imm.into())),
+        imm: Some(Number::Int(imm)),
         span: 0..16,
     })
 }
@@ -60,7 +58,7 @@ pub fn decode_load_memory(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
         off: Some(off),
@@ -83,7 +81,7 @@ pub fn decode_store_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: Some(off),
@@ -106,7 +104,7 @@ pub fn decode_store_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
         off: Some(off),
@@ -129,7 +127,7 @@ pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
@@ -152,7 +150,7 @@ pub fn decode_binary_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
         off: None,
@@ -175,7 +173,7 @@ pub fn decode_unary(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
@@ -198,7 +196,7 @@ pub fn decode_jump(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: None,
         src: None,
         off: Some(off),
@@ -221,7 +219,7 @@ pub fn decode_jump_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: Some(off),
@@ -244,7 +242,7 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
         off: Some(off),
@@ -256,7 +254,7 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    if SYSCALLS.get(&(imm as u32)).is_some() {
+    if SYSCALLS.get(imm as u32).is_some() {
         if dst != 0 || src != 0 || off != 0 {
             return Err(SBPFError::BytecodeError {
                 error: format!(
@@ -267,21 +265,19 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
                 custom_label: None,
             });
         }
-    } else {
-        if dst != 0 || src != 1 || off != 0 {
-            return Err(SBPFError::BytecodeError {
-                error: format!(
-                    "{} instruction has dst: {}, src: {}, off: {} 
+    } else if dst != 0 || src != 1 || off != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has dst: {}, src: {}, off: {} 
                         supposed to be sixteen and zero",
-                    opcode, dst, src, off
-                ),
-                span: 0..8,
-                custom_label: None,
-            });
-        }
+                opcode, dst, src, off
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: None,
         src: None,
         off: None,
@@ -305,7 +301,7 @@ pub fn decode_call_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
@@ -328,7 +324,7 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         });
     }
     Ok(Instruction {
-        opcode: opcode,
+        opcode,
         dst: None,
         src: None,
         off: None,
