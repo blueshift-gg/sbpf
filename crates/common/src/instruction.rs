@@ -7,6 +7,7 @@ use {
     },
     core::ops::Range,
     serde::{Deserialize, Serialize},
+    either::Either,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -14,8 +15,8 @@ pub struct Instruction {
     pub opcode: Opcode,
     pub dst: Option<Register>,
     pub src: Option<Register>,
-    pub off: Option<i16>,
-    pub imm: Option<Number>,
+    pub off: Option<Either<String, i16>>,
+    pub imm: Option<Either<String, Number>>,
     pub span: Range<usize>,
 }
 
@@ -38,36 +39,10 @@ impl Instruction {
         )
     }
 
-    pub fn off_str(&self) -> String {
-        match self.off {
-            Some(off) => {
-                if off.is_negative() {
-                    off.to_string()
-                } else {
-                    format!("+{}", off)
-                }
-            }
-            None => "0".to_string(),
-        }
-    }
-
-    pub fn dst_off(&self) -> String {
-        match &self.dst {
-            Some(dst) => format!("[r{}{}]", dst.n, self.off_str()),
-            None => format!("[r0{}]", self.off_str()),
-        }
-    }
-
-    pub fn src_off(&self) -> String {
-        match &self.src {
-            Some(src) => format!("[r{}{}]", src.n, self.off_str()),
-            None => format!("[r0{}]", self.off_str()),
-        }
-    }
     // only used for be/le
     pub fn op_imm_bits(&self) -> Result<String, SBPFError> {
         match &self.imm {
-            Some(Number::Int(imm)) => match *imm {
+            Some(Either::Right(Number::Int(imm))) => match *imm {
                 16 => Ok(format!("{}16", self.opcode)),
                 32 => Ok(format!("{}32", self.opcode)),
                 64 => Ok(format!("{}64", self.opcode)),
@@ -101,12 +76,17 @@ impl Instruction {
         }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
         let src_val = self.src.as_ref().map(|r| r.n).unwrap_or(0);
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
-        let off_val = self.off.unwrap_or(0);
+        let off_val = match &self.off {
+            Some(Either::Left(ident)) => unreachable!("Identifier '{}' should have been resolved earlier", ident),
+            Some(Either::Right(off)) => *off,
+            None => 0,
+        };
         let imm_val = match &self.imm {
-            Some(Number::Int(imm)) | Some(Number::Addr(imm)) => *imm,
+            Some(Either::Left(ident)) => unreachable!("Identifier '{}' should have been resolved earlier", ident),
+            Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
         };
 
@@ -117,15 +97,70 @@ impl Instruction {
             b.extend_from_slice(&[0; 4]);
             b.extend_from_slice(&((imm_val >> 32) as i32).to_le_bytes());
         }
-        b
+        Ok(b)
     }
 
     pub fn to_asm(&self) -> Result<String, SBPFError> {
         if let Some(handler) = OPCODE_TO_HANDLER.get(&self.opcode) {
-            (handler.encode)(self)
+            match (handler.validate)(self) {
+                Ok(()) => {
+                    let mut asm = format!("{}", self.opcode);
+                    let mut param = vec![];
+
+                    fn off_str(off: &Either<String, i16>) -> String {
+                        match off {
+                            Either::Left(ident) => ident.clone(),
+                            Either::Right(offset) => {
+                                if offset.is_negative() {
+                                    offset.to_string()
+                                } else {
+                                    format!("+{}", offset)
+                                }
+                            }
+                        }
+                    }
+
+                    fn mem_off(r: &Register, off: &Either<String, i16>) -> String {
+                        format!("[r{}{}]", r.n, off_str(off))
+                    }
+
+                    if self.get_opcode_type() == OperationType::LoadMemory {
+                        param.push(format!("r{}", self.dst.as_ref().unwrap().n));
+                        param.push(mem_off(&self.src.as_ref().unwrap(), &self.off.as_ref().unwrap()));
+                    } else if self.get_opcode_type() == OperationType::StoreImmediate
+                        || self.get_opcode_type() == OperationType::StoreRegister {
+                        param.push(mem_off(&self.dst.as_ref().unwrap(), &self.off.as_ref().unwrap()));
+                        param.push(format!("r{}", self.src.as_ref().unwrap().n));
+                    } else {
+                        if let Some(dst) = &self.dst {
+                            param.push(format!("r{}", dst.n));
+                        }
+                        if let Some(src) = &self.src {
+                            param.push(format!("r{}", src.n));
+                        }
+                        if let Some(imm) = &self.imm {
+                            if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
+                                todo!("handle le/be")
+                            } else {
+                                param.push(format!("{}", imm));                                
+                            }
+                        }
+                        if let Some(off) = &self.off {
+                            param.push(format!("{}", off_str(off)));
+                        }
+                        // param.join(", ");
+                    }
+                    if !param.is_empty() {
+                        asm.push(' ');
+                        asm.push_str(&param.join(", "));
+                    }
+                    Ok(asm)
+                },
+                Err(e) => Err(e),
+            }
         } else {
             Err(SBPFError::BytecodeError {
-                error: format!("no encode handler for opcode {}", self.opcode),
+                error: format!("no validate handler for opcode {}", self.opcode),
                 span: self.span.clone(),
                 custom_label: None,
             })
@@ -136,10 +171,7 @@ impl Instruction {
 #[cfg(test)]
 mod test {
     use {
-        crate::{
-            instruction::{Instruction, Register},
-            opcode::Opcode,
-        },
+        crate::instruction::Instruction,
         hex_literal::hex,
     };
 
@@ -147,7 +179,7 @@ mod test {
     fn serialize_e2e() {
         let b = hex!("9700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "mod64 r0, 0");
     }
 
@@ -155,7 +187,7 @@ mod test {
     fn serialize_e2e_lddw() {
         let b = hex!("18010000000000000000000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "lddw r1, 0");
     }
 
@@ -163,7 +195,7 @@ mod test {
     fn serialize_e2e_add64_imm() {
         let b = hex!("0701000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r1, 0");
     }
 
@@ -171,7 +203,7 @@ mod test {
     fn serialize_e2e_add64_reg() {
         let b = hex!("0f12000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r2, r1");
     }
 
@@ -179,7 +211,7 @@ mod test {
     fn serialize_e2e_ja() {
         let b = hex!("05000a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ja +10");
     }
 
@@ -187,7 +219,7 @@ mod test {
     fn serialize_e2e_jeq_imm() {
         let b = hex!("15030a0001000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r3, 1, +10");
     }
 
@@ -195,7 +227,7 @@ mod test {
     fn serialize_e2e_jeq_reg() {
         let b = hex!("1d210a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r1, r2, +10");
     }
 
@@ -203,7 +235,7 @@ mod test {
     fn serialize_e2e_ldxw() {
         let b = hex!("6112000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ldxw r2, [r1+0]");
     }
 
@@ -211,7 +243,7 @@ mod test {
     fn serialize_e2e_stxw() {
         let b = hex!("6312000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stxw [r2+0], r1");
     }
 
@@ -219,7 +251,7 @@ mod test {
     fn serialize_e2e_neg64() {
         let b = hex!("8700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "neg64 r0");
     }
 
@@ -248,55 +280,6 @@ mod test {
 
         let add64 = Instruction::from_bytes(&hex!("0701000000000000")).unwrap();
         assert!(!add64.is_jump());
-    }
-
-    #[test]
-    fn test_off_str() {
-        let pos_off = Instruction {
-            opcode: Opcode::Ja,
-            dst: None,
-            src: None,
-            off: Some(10),
-            imm: None,
-            span: 0..8,
-        };
-        assert_eq!(pos_off.off_str(), "+10");
-
-        let neg_off = Instruction {
-            opcode: Opcode::Ja,
-            dst: None,
-            src: None,
-            off: Some(-10),
-            imm: None,
-            span: 0..8,
-        };
-        assert_eq!(neg_off.off_str(), "-10");
-    }
-
-    #[test]
-    fn test_dst_off() {
-        let inst = Instruction {
-            opcode: Opcode::Ldxw,
-            dst: Some(Register { n: 1 }),
-            src: Some(Register { n: 2 }),
-            off: Some(10),
-            imm: None,
-            span: 0..8,
-        };
-        assert_eq!(inst.dst_off(), "[r1+10]");
-    }
-
-    #[test]
-    fn test_src_off() {
-        let inst = Instruction {
-            opcode: Opcode::Ldxw,
-            dst: Some(Register { n: 1 }),
-            src: Some(Register { n: 2 }),
-            off: Some(-5),
-            imm: None,
-            span: 0..8,
-        };
-        assert_eq!(inst.src_off(), "[r2-5]");
     }
 
     #[test]
