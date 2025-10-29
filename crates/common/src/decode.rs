@@ -1,12 +1,13 @@
-use crate::{
-    errors::SBPFError,
-    inst_param::{Number, Register},
-    instruction::Instruction,
-    opcode::Opcode,
-    syscalls::SYSCALLS,
+use {
+    crate::{
+        errors::SBPFError,
+        inst_param::{Number, Register},
+        instruction::Instruction,
+        opcode::Opcode,
+        syscalls::SYSCALLS,
+    },
+    either::Either,
 };
-
-use either::Either;
 
 // TODO: passing span for error reporting (not sure if it's necessary)
 

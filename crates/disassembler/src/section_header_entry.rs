@@ -75,12 +75,12 @@ impl SectionHeaderEntry {
 mod test {
     use {
         crate::section_header_entry::SectionHeaderEntry,
+        either::Either,
         sbpf_common::{
             inst_param::{Number, Register},
             instruction::Instruction,
             opcode::Opcode,
         },
-        either::Either,
     };
 
     #[test]

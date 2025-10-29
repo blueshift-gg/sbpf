@@ -6,8 +6,8 @@ use {
         opcode::{Opcode, OperationType},
     },
     core::ops::Range,
-    serde::{Deserialize, Serialize},
     either::Either,
+    serde::{Deserialize, Serialize},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -80,12 +80,16 @@ impl Instruction {
         let src_val = self.src.as_ref().map(|r| r.n).unwrap_or(0);
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let off_val = match &self.off {
-            Some(Either::Left(ident)) => unreachable!("Identifier '{}' should have been resolved earlier", ident),
+            Some(Either::Left(ident)) => {
+                unreachable!("Identifier '{}' should have been resolved earlier", ident)
+            }
             Some(Either::Right(off)) => *off,
             None => 0,
         };
         let imm_val = match &self.imm {
-            Some(Either::Left(ident)) => unreachable!("Identifier '{}' should have been resolved earlier", ident),
+            Some(Either::Left(ident)) => {
+                unreachable!("Identifier '{}' should have been resolved earlier", ident)
+            }
             Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
         };
@@ -126,10 +130,17 @@ impl Instruction {
 
                     if self.get_opcode_type() == OperationType::LoadMemory {
                         param.push(format!("r{}", self.dst.as_ref().unwrap().n));
-                        param.push(mem_off(&self.src.as_ref().unwrap(), &self.off.as_ref().unwrap()));
+                        param.push(mem_off(
+                            self.src.as_ref().unwrap(),
+                            self.off.as_ref().unwrap(),
+                        ));
                     } else if self.get_opcode_type() == OperationType::StoreImmediate
-                        || self.get_opcode_type() == OperationType::StoreRegister {
-                        param.push(mem_off(&self.dst.as_ref().unwrap(), &self.off.as_ref().unwrap()));
+                        || self.get_opcode_type() == OperationType::StoreRegister
+                    {
+                        param.push(mem_off(
+                            self.dst.as_ref().unwrap(),
+                            self.off.as_ref().unwrap(),
+                        ));
                         param.push(format!("r{}", self.src.as_ref().unwrap().n));
                     } else {
                         if let Some(dst) = &self.dst {
@@ -142,11 +153,11 @@ impl Instruction {
                             if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
                                 todo!("handle le/be")
                             } else {
-                                param.push(format!("{}", imm));                                
+                                param.push(format!("{}", imm));
                             }
                         }
                         if let Some(off) = &self.off {
-                            param.push(format!("{}", off_str(off)));
+                            param.push(format!("{}", off_str(off).to_string()));
                         }
                         // param.join(", ");
                     }
@@ -155,7 +166,7 @@ impl Instruction {
                         asm.push_str(&param.join(", "));
                     }
                     Ok(asm)
-                },
+                }
                 Err(e) => Err(e),
             }
         } else {
@@ -170,10 +181,7 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use {
-        crate::instruction::Instruction,
-        hex_literal::hex,
-    };
+    use {crate::instruction::Instruction, hex_literal::hex};
 
     #[test]
     fn serialize_e2e() {

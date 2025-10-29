@@ -5,18 +5,18 @@ use crate::{
         decode_jump_register, decode_load_immediate, decode_load_memory, decode_store_immediate,
         decode_store_register, decode_unary,
     },
-    validate::{
-        validate_binary_immediate, validate_binary_register, validate_call_immediate,
-        validate_call_register, validate_exit, validate_jump, validate_jump_immediate,
-        validate_jump_register, validate_load_immediate, validate_load_memory, validate_store_immediate,
-        validate_store_register, validate_unary,
-    },
     errors::SBPFError,
     instruction::Instruction,
     opcode::{
         BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
         JUMP_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode, OperationType, STORE_IMM_OPS,
         STORE_REG_OPS, UNARY_OPS,
+    },
+    validate::{
+        validate_binary_immediate, validate_binary_register, validate_call_immediate,
+        validate_call_register, validate_exit, validate_jump, validate_jump_immediate,
+        validate_jump_register, validate_load_immediate, validate_load_memory,
+        validate_store_immediate, validate_store_register, validate_unary,
     },
 };
 
