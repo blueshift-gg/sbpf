@@ -157,7 +157,7 @@ impl Instruction {
                             }
                         }
                         if let Some(off) = &self.off {
-                            param.push(format!("{}", off_str(off).to_string()));
+                            param.push(off_str(off).to_string());
                         }
                         // param.join(", ");
                     }
