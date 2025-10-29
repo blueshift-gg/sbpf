@@ -14,11 +14,6 @@ impl fmt::Display for Register {
     }
 }
 
-pub enum OperandValue {
-    Number(Number),
-    Ident(String),
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Number {
     Int(i64),

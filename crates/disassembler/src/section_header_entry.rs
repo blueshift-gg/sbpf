@@ -75,6 +75,7 @@ impl SectionHeaderEntry {
 mod test {
     use {
         crate::section_header_entry::SectionHeaderEntry,
+        either::Either,
         sbpf_common::{
             inst_param::{Number, Register},
             instruction::Instruction,
@@ -97,7 +98,7 @@ mod test {
                 dst: Some(Register { n: 1 }),
                 src: None,
                 off: None,
-                imm: Some(Number::Int(0)),
+                imm: Some(Either::Right(Number::Int(0))),
                 span: 0..16,
             },
             Instruction {
@@ -116,7 +117,7 @@ mod test {
             h.to_ixs()
                 .expect("Invalid IX")
                 .into_iter()
-                .flat_map(|i| i.to_bytes())
+                .flat_map(|i| i.to_bytes().unwrap())
                 .collect::<Vec<u8>>()
         )
     }

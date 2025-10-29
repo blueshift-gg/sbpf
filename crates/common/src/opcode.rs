@@ -5,7 +5,7 @@ use {
     serde::{Deserialize, Serialize},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OperationType {
     LoadImmediate,
     LoadMemory,

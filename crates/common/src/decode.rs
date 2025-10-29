@@ -1,9 +1,12 @@
-use crate::{
-    errors::SBPFError,
-    inst_param::{Number, Register},
-    instruction::Instruction,
-    opcode::Opcode,
-    syscalls::SYSCALLS,
+use {
+    crate::{
+        errors::SBPFError,
+        inst_param::{Number, Register},
+        instruction::Instruction,
+        opcode::Opcode,
+        syscalls::SYSCALLS,
+    },
+    either::Either,
 };
 
 // TODO: passing span for error reporting (not sure if it's necessary)
@@ -39,7 +42,7 @@ pub fn decode_load_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
-        imm: Some(Number::Int(imm)),
+        imm: Some(Either::Right(Number::Int(imm))),
         span: 0..16,
     })
 }
@@ -61,7 +64,7 @@ pub fn decode_load_memory(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
-        off: Some(off),
+        off: Some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })
@@ -84,8 +87,8 @@ pub fn decode_store_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: None,
-        off: Some(off),
-        imm: Some(Number::Int(imm.into())),
+        off: Some(Either::Right(off)),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
         span: 0..8,
     })
 }
@@ -107,7 +110,7 @@ pub fn decode_store_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
-        off: Some(off),
+        off: Some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })
@@ -131,7 +134,7 @@ pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         dst: Some(Register { n: dst }),
         src: None,
         off: None,
-        imm: Some(Number::Int(imm.into())),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
         span: 0..8,
     })
 }
@@ -199,7 +202,7 @@ pub fn decode_jump(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: None,
         src: None,
-        off: Some(off),
+        off: Some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })
@@ -222,8 +225,8 @@ pub fn decode_jump_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: None,
-        off: Some(off),
-        imm: Some(Number::Int(imm.into())),
+        off: Some(Either::Right(off)),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
         span: 0..8,
     })
 }
@@ -245,7 +248,7 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
-        off: Some(off),
+        off: Some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })
@@ -281,7 +284,7 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         dst: None,
         src: None,
         off: None,
-        imm: Some(Number::Int(imm.into())),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
         span: 0..8,
     })
 }
