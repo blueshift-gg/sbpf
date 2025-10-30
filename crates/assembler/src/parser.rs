@@ -5,12 +5,16 @@ use {
         bug,
         dynsym::{DynamicSymbolMap, RelDynMap},
         errors::CompileError,
-        instruction::Instruction,
-        lexer::{ImmediateValue, Op, Token},
+        lexer::{Op, Token},
         messages::*,
         section::{CodeSection, DataSection},
     },
-    sbpf_common::opcode::Opcode,
+    either::Either,
+    sbpf_common::{
+        inst_param::{Number, Register},
+        instruction::Instruction,
+        opcode::Opcode,
+    },
     std::collections::HashMap,
 };
 
@@ -42,7 +46,7 @@ pub trait Parse {
 pub trait ParseWithConstMap {
     fn parse_with_constmap<'a>(
         tokens: &'a [Token],
-        const_map: &HashMap<String, ImmediateValue>,
+        const_map: &HashMap<String, Number>,
     ) -> Result<(Self, &'a [Token]), CompileError>
     where
         Self: Sized;
@@ -78,7 +82,7 @@ impl Parse for GlobalDecl {
 impl ParseWithConstMap for EquDecl {
     fn parse_with_constmap<'a>(
         tokens: &'a [Token],
-        const_map: &HashMap<String, ImmediateValue>,
+        const_map: &HashMap<String, Number>,
     ) -> Result<(Self, &'a [Token]), CompileError> {
         let Token::Directive(_, span) = &tokens[0] else {
             bug!("EquDecl not a valid directive")
@@ -214,13 +218,17 @@ impl Parse for ROData {
 impl ParseWithConstMap for Instruction {
     fn parse_with_constmap<'a>(
         tokens: &'a [Token],
-        const_map: &HashMap<String, ImmediateValue>,
+        const_map: &HashMap<String, Number>,
     ) -> Result<(Self, &'a [Token]), CompileError> {
         let next_token_num;
         match &tokens[0] {
             Token::Opcode(opcode, span) => {
                 let mut opcode = *opcode;
-                let mut operands = Vec::new();
+                // let mut operands = Vec::new();
+                let mut dst = None;
+                let mut src = None;
+                let mut off = None;
+                let mut imm = None;
                 match opcode {
                     Opcode::Lddw => {
                         if tokens.len() < 4 {
@@ -240,12 +248,14 @@ impl ParseWithConstMap for Instruction {
                                 // Third operand is folded to an immediate value
                             ) {
                                 (
-                                    Token::Register(_, _),
+                                    Token::Register(r, _),
                                     Token::Comma(_),
                                     // Third operand is folded to an immediate value
                                 ) => {
-                                    operands.push(tokens[1].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
+                                    dst = Some(Register { n: *r });
+                                    // operands.push(tokens[1].clone());
+                                    imm = Some(Either::Right(value));
+                                    // operands.push(Token::ImmediateValue(value, span.clone()));
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -260,12 +270,14 @@ impl ParseWithConstMap for Instruction {
                         } else {
                             match (&tokens[1], &tokens[2], &tokens[3]) {
                                 (
-                                    Token::Register(_, _),
+                                    Token::Register(r, _),
                                     Token::Comma(_),
-                                    Token::Identifier(_, _),
+                                    Token::Identifier(ident, _),
                                 ) => {
-                                    operands.push(tokens[1].clone());
-                                    operands.push(tokens[3].clone());
+                                    dst = Some(Register { n: *r });
+                                    // operands.push(tokens[1].clone());
+                                    imm = Some(Either::Left(ident.clone()));
+                                    // operands.push(tokens[3].clone());
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -301,17 +313,20 @@ impl ParseWithConstMap for Instruction {
                                 &tokens[advance_token_num],
                             ) {
                                 (
-                                    Token::Register(_, _),
+                                    Token::Register(d, _),
                                     Token::Comma(_),
                                     Token::LeftBracket(_),
-                                    Token::Register(_, _),
+                                    Token::Register(s, _),
                                     Token::BinaryOp(_, _),
                                     // Sixth operand is folded to an immediate value
                                     Token::RightBracket(_),
                                 ) => {
-                                    operands.push(tokens[1].clone());
-                                    operands.push(tokens[4].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
+                                    dst = Some(Register { n: *d });
+                                    // operands.push(tokens[1].clone());
+                                    src = Some(Register { n: *s });
+                                    // operands.push(tokens[4].clone());
+                                    off = Some(Either::Right(value.to_i16()));
+                                    // operands.push(Token::ImmediateValue(value, span.clone()));
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -361,15 +376,19 @@ impl ParseWithConstMap for Instruction {
                                 ) {
                                     (
                                         Token::LeftBracket(_),
-                                        Token::Register(_, _),
+                                        Token::Register(r, _),
                                         Token::BinaryOp(_, _),
                                         // Fourth operand is folded to an immediate value
                                         Token::RightBracket(_),
                                         Token::Comma(_),
+                                        // Sixth operand is also folded to an immediate value
                                     ) => {
-                                        operands.push(tokens[2].clone());
-                                        operands.push(Token::ImmediateValue(value2, span.clone()));
-                                        operands.push(Token::ImmediateValue(value, span.clone()));
+                                        dst = Some(Register { n: *r });
+                                        off = Some(Either::Right(value.to_i16()));
+                                        imm = Some(Either::Right(value2));
+                                        // operands.push(tokens[2].clone());
+                                        // operands.push(Token::ImmediateValue(value2, span.clone()));
+                                        // operands.push(Token::ImmediateValue(value, span.clone()));
                                     }
                                     _ => {
                                         return Err(CompileError::InvalidInstruction {
@@ -425,16 +444,19 @@ impl ParseWithConstMap for Instruction {
                             ) {
                                 (
                                     Token::LeftBracket(_),
-                                    Token::Register(_, _),
+                                    Token::Register(d, _),
                                     Token::BinaryOp(_, _),
                                     // Fourth operand is folded to an immediate value
                                     Token::RightBracket(_),
                                     Token::Comma(_),
-                                    Token::Register(_, _),
+                                    Token::Register(s, _),
                                 ) => {
-                                    operands.push(tokens[2].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
-                                    operands.push(tokens[advance_token_num + 2].clone());
+                                    dst = Some(Register { n: *d });
+                                    src = Some(Register { n: *s });
+                                    // operands.push(tokens[2].clone());
+                                    off = Some(Either::Right(value.to_i16()));
+                                    // operands.push(Token::ImmediateValue(value, span.clone()));
+                                    // operands.push(tokens[advance_token_num + 2].clone());
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -509,13 +531,15 @@ impl ParseWithConstMap for Instruction {
                                 // Third operand is folded to an immediate value
                             ) {
                                 (
-                                    Token::Register(_, _),
+                                    Token::Register(r, _),
                                     Token::Comma(_),
                                     // Third operand is folded to an immediate value
                                 ) => {
                                     // Opcode already represents the immediate variant (no conversion needed)
-                                    operands.push(tokens[1].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
+                                    // operands.push(tokens[1].clone());
+                                    dst = Some(Register { n: *r });
+                                    imm = Some(Either::Right(value));
+                                    // operands.push(Token::ImmediateValue(value, span.clone()));
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -529,7 +553,7 @@ impl ParseWithConstMap for Instruction {
                             next_token_num = advance_token_num;
                         } else {
                             match (&tokens[1], &tokens[2], &tokens[3]) {
-                                (Token::Register(_, _), Token::Comma(_), Token::Register(_, _)) => {
+                                (Token::Register(d, _), Token::Comma(_), Token::Register(s, _)) => {
                                     // Convert immediate variant to register variant using BPF_X flag
                                     let new_opcode = Into::<u8>::into(opcode) | BPF_X;
                                     opcode = new_opcode.try_into().map_err(|e| {
@@ -542,8 +566,10 @@ impl ParseWithConstMap for Instruction {
                                             custom_label: None,
                                         }
                                     })?;
-                                    operands.push(tokens[1].clone());
-                                    operands.push(tokens[3].clone());
+                                    dst = Some(Register { n: *d });
+                                    src = Some(Register { n: *s });
+                                    // operands.push(tokens[1].clone());
+                                    // operands.push(tokens[3].clone());
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -575,12 +601,14 @@ impl ParseWithConstMap for Instruction {
                                 // Third operand is folded to an immediate value
                             ) {
                                 (
-                                    Token::Register(_, _),
+                                    Token::Register(r, _),
                                     Token::Comma(_),
                                     // Third operand is folded to an immediate value
                                 ) => {
-                                    operands.push(tokens[1].clone());
-                                    operands.push(Token::ImmediateValue(value, span.clone()));
+                                    dst = Some(Register { n: *r });
+                                    // operands.push(tokens[1].clone());
+                                    imm = Some(Either::Right(value));
+                                    // operands.push(Token::ImmediateValue(value, span.clone()));
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -634,17 +662,20 @@ impl ParseWithConstMap for Instruction {
                                     // Fifth operand is folded to an immediate value
                                 ) {
                                     (
-                                        Token::Register(_, _),
+                                        Token::Register(r, _),
                                         Token::Comma(_),
                                         // Third operand is folded to an immediate value
                                         Token::Comma(_),
                                         // Fifth operand is folded to an immediate value
                                     ) => {
                                         // Opcode is already the Imm variant, no conversion needed
-                                        operands.push(tokens[1].clone());
-                                        operands.push(Token::ImmediateValue(value, span.clone()));
-                                        operands
-                                            .push(Token::ImmediateValue(jump_val, span.clone()));
+                                        dst = Some(Register { n: *r });
+                                        // operands.push(tokens[1].clone());
+                                        imm = Some(Either::Right(value));
+                                        // operands.push(Token::ImmediateValue(value, span.clone()));
+                                        off = Some(Either::Right(jump_val.to_i16()));
+                                        // operands
+                                        //     .push(Token::ImmediateValue(jump_val, span.clone()));
                                     }
                                     _ => {
                                         return Err(CompileError::InvalidInstruction {
@@ -666,16 +697,19 @@ impl ParseWithConstMap for Instruction {
                                     &tokens[advance_token_num + 1],
                                 ) {
                                     (
-                                        Token::Register(_, _),
+                                        Token::Register(r, _),
                                         Token::Comma(_),
                                         // Third operand is folded to an immediate value
                                         Token::Comma(_),
-                                        Token::Identifier(_, _),
+                                        Token::Identifier(ident, _),
                                     ) => {
                                         // Opcode is already the Imm variant, no conversion needed
-                                        operands.push(tokens[1].clone());
-                                        operands.push(Token::ImmediateValue(value, span.clone()));
-                                        operands.push(tokens[advance_token_num + 1].clone());
+                                        // operands.push(tokens[1].clone());
+                                        dst = Some(Register { n: *r });
+                                        imm = Some(Either::Right(value));
+                                        off = Some(Either::Left(ident.clone()));
+                                        // operands.push(Token::ImmediateValue(value, span.clone()));
+                                        // operands.push(tokens[advance_token_num + 1].clone());
                                     }
                                     _ => {
                                         return Err(CompileError::InvalidInstruction {
@@ -700,9 +734,9 @@ impl ParseWithConstMap for Instruction {
                                     // Fifth operand is folded to an immediate value
                                 ) {
                                     (
-                                        Token::Register(_, _),
+                                        Token::Register(d, _),
                                         Token::Comma(_),
-                                        Token::Register(_, _),
+                                        Token::Register(s, _),
                                         Token::Comma(_),
                                         // Fifth operand is folded to an immediate value
                                     ) => {
@@ -718,10 +752,13 @@ impl ParseWithConstMap for Instruction {
                                                 custom_label: None,
                                             }
                                         })?;
-                                        operands.push(tokens[1].clone());
-                                        operands.push(tokens[3].clone());
-                                        operands
-                                            .push(Token::ImmediateValue(jump_val, span.clone()));
+                                        dst = Some(Register { n: *d });
+                                        src = Some(Register { n: *s });
+                                        // operands.push(tokens[1].clone());
+                                        // operands.push(tokens[3].clone());
+                                        off = Some(Either::Right(jump_val.to_i16()));
+                                        // operands
+                                        //     .push(Token::ImmediateValue(jump_val, span.clone()));
                                     }
                                     _ => {
                                         return Err(CompileError::InvalidInstruction {
@@ -738,11 +775,11 @@ impl ParseWithConstMap for Instruction {
                             } else {
                                 match (&tokens[1], &tokens[2], &tokens[3], &tokens[4], &tokens[5]) {
                                     (
-                                        Token::Register(_, _),
+                                        Token::Register(d, _),
                                         Token::Comma(_),
-                                        Token::Register(_, _),
+                                        Token::Register(s, _),
                                         Token::Comma(_),
-                                        Token::Identifier(_, _),
+                                        Token::Identifier(ident, _),
                                     ) => {
                                         // Convert Imm variant to Reg variant using BPF_X flag
                                         let new_opcode = Into::<u8>::into(opcode) | BPF_X;
@@ -756,9 +793,12 @@ impl ParseWithConstMap for Instruction {
                                                 custom_label: None,
                                             }
                                         })?;
-                                        operands.push(tokens[1].clone());
-                                        operands.push(tokens[3].clone());
-                                        operands.push(tokens[5].clone());
+                                        dst = Some(Register { n: *d });
+                                        src = Some(Register { n: *s });
+                                        off = Some(Either::Left(ident.clone()));
+                                        // operands.push(tokens[1].clone());
+                                        // operands.push(tokens[3].clone());
+                                        // operands.push(tokens[5].clone());
                                     }
                                     _ => {
                                         return Err(CompileError::InvalidInstruction {
@@ -785,8 +825,9 @@ impl ParseWithConstMap for Instruction {
                             });
                         }
                         match &tokens[1] {
-                            Token::Register(_, _) => {
-                                operands.push(tokens[1].clone());
+                            Token::Register(r, _) => {
+                                dst = Some(Register { n: *r });
+                                // operands.push(tokens[1].clone());
                             }
                             _ => {
                                 return Err(CompileError::InvalidInstruction {
@@ -811,12 +852,14 @@ impl ParseWithConstMap for Instruction {
                         let (value, advance_token_num) =
                             inline_and_fold_constant(tokens, const_map, 1);
                         if let Some(value) = value {
-                            operands.push(Token::ImmediateValue(value, span.clone()));
+                            off = Some(Either::Right(value.to_i16()));
+                            // operands.push(Token::ImmediateValue(value, span.clone()));
                             next_token_num = advance_token_num;
                         } else {
                             match &tokens[1] {
-                                Token::Identifier(_, _) => {
-                                    operands.push(tokens[1].clone());
+                                Token::Identifier(ident, _) => {
+                                    off = Some(Either::Left(ident.clone()));
+                                    // operands.push(tokens[1].clone());
                                 }
                                 _ => {
                                     return Err(CompileError::InvalidInstruction {
@@ -840,8 +883,9 @@ impl ParseWithConstMap for Instruction {
                             });
                         }
                         match &tokens[1] {
-                            Token::Identifier(_, _) => {
-                                operands.push(tokens[1].clone());
+                            Token::Identifier(ident, _) => {
+                                imm = Some(Either::Left(ident.clone()));
+                                // operands.push(tokens[1].clone());
                             }
                             _ => {
                                 return Err(CompileError::InvalidInstruction {
@@ -864,8 +908,9 @@ impl ParseWithConstMap for Instruction {
                             });
                         }
                         match &tokens[1] {
-                            Token::Register(_, _) => {
-                                operands.push(tokens[1].clone());
+                            Token::Register(r, _) => {
+                                dst = Some(Register { n: *r });
+                                // operands.push(tokens[1].clone());
                             }
                             _ => {
                                 return Err(CompileError::InvalidInstruction {
@@ -888,7 +933,10 @@ impl ParseWithConstMap for Instruction {
                 Ok((
                     Instruction {
                         opcode,
-                        operands,
+                        dst,
+                        src,
+                        off,
+                        imm,
                         span: span.clone(),
                     },
                     &tokens[next_token_num..],
@@ -901,11 +949,7 @@ impl ParseWithConstMap for Instruction {
     }
 }
 
-fn parse_vector_literal(
-    tokens: &[Token],
-    stack: &mut Vec<ImmediateValue>,
-    start_idx: usize,
-) -> usize {
+fn parse_vector_literal(tokens: &[Token], stack: &mut Vec<Number>, start_idx: usize) -> usize {
     let mut idx = start_idx;
     while idx < tokens.len() - 1 {
         match (&tokens[idx], &tokens[idx + 1]) {
@@ -950,17 +994,17 @@ fn fold_top(stack: &mut Vec<Token>) {
 
 fn inline_and_fold_constant(
     tokens: &[Token],
-    const_map: &std::collections::HashMap<String, ImmediateValue>,
+    const_map: &std::collections::HashMap<String, Number>,
     start_idx: usize,
-) -> (Option<ImmediateValue>, usize) {
+) -> (Option<Number>, usize) {
     inline_and_fold_constant_with_map(tokens, Some(const_map), start_idx)
 }
 
 fn inline_and_fold_constant_with_map(
     tokens: &[Token],
-    const_map: Option<&std::collections::HashMap<String, ImmediateValue>>,
+    const_map: Option<&std::collections::HashMap<String, Number>>,
     start_idx: usize,
-) -> (Option<ImmediateValue>, usize) {
+) -> (Option<Number>, usize) {
     let mut stack: Vec<Token> = Vec::new();
     let mut expect_number = true;
     let mut idx = start_idx;
@@ -1005,7 +1049,7 @@ fn inline_and_fold_constant_with_map(
                 match op {
                     Op::Sub if expect_number => {
                         // unary minus → 0 - expr
-                        stack.push(Token::ImmediateValue(ImmediateValue::Int(0), span.clone()));
+                        stack.push(Token::ImmediateValue(Number::Int(0), span.clone()));
                         stack.push(Token::BinaryOp(Op::Sub, span.clone()));
                     }
                     _ => {
@@ -1074,7 +1118,7 @@ pub fn parse_tokens(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileErro
     let mut rodata_phase = false;
     let mut accum_offset = 0;
     let mut rodata_accum_offset = 0;
-    let mut const_map = HashMap::<String, ImmediateValue>::new();
+    let mut const_map = HashMap::<String, Number>::new();
     let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
     let mut errors = Vec::new();
 

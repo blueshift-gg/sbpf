@@ -1,4 +1,8 @@
-use std::collections::BTreeMap;
+use {
+    either::Either,
+    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    std::collections::BTreeMap,
+};
 
 #[derive(Debug)]
 pub struct DynamicSymbol {
@@ -107,6 +111,22 @@ impl DynamicSymbolMap {
 pub enum RelocationType {
     RSbf64Relative = 0x08,
     RSbfSyscall = 0x0a,
+}
+
+pub fn get_relocation_info(inst: &Instruction) -> (RelocationType, String) {
+    match inst.opcode {
+        Opcode::Lddw => match &inst.imm {
+            Some(Either::Left(identifier)) => (RelocationType::RSbf64Relative, identifier.clone()),
+            _ => panic!("Expected label operand"),
+        },
+        _ => {
+            if let Some(Either::Left(identifier)) = &inst.imm {
+                (RelocationType::RSbfSyscall, identifier.clone())
+            } else {
+                panic!("Expected label operand")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

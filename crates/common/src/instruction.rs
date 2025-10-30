@@ -39,6 +39,15 @@ impl Instruction {
         )
     }
 
+    pub fn needs_relocation(&self) -> bool {
+        match self.opcode {
+            Opcode::Call | Opcode::Lddw => {
+                matches!(&self.imm, Some(Either::Left(_identifier)))
+            }
+            _ => false,
+        }
+    }
+
     // only used for be/le
     pub fn op_imm_bits(&self) -> Result<String, SBPFError> {
         match &self.imm {
@@ -77,8 +86,12 @@ impl Instruction {
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
-        let src_val = self.src.as_ref().map(|r| r.n).unwrap_or(0);
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
+        let src_val = if self.opcode == Opcode::Call {
+            1
+        } else {
+            self.src.as_ref().map(|r| r.n).unwrap_or(0)
+        };
         let off_val = match &self.off {
             Some(Either::Left(ident)) => {
                 unreachable!("Identifier '{}' should have been resolved earlier", ident)
@@ -88,10 +101,19 @@ impl Instruction {
         };
         let imm_val = match &self.imm {
             Some(Either::Left(ident)) => {
-                unreachable!("Identifier '{}' should have been resolved earlier", ident)
+                if self.opcode == Opcode::Call {
+                    -1i64 // FF FF FF FF
+                } else {
+                    unreachable!("Identifier '{}' should have been resolved earlier", ident)
+                }
             }
             Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
+        };
+        // fix callx encoding in sbpf
+        let (dst_val, imm_val) = match self.opcode {
+            Opcode::Callx => (0, dst_val as i64), // callx: dst register encoded in imm
+            _ => (dst_val, imm_val),
         };
 
         let mut b = vec![self.opcode.into(), src_val << 4 | dst_val];
@@ -159,7 +181,6 @@ impl Instruction {
                         if let Some(off) = &self.off {
                             param.push(off_str(off).to_string());
                         }
-                        // param.join(", ");
                     }
                     if !param.is_empty() {
                         asm.push(' ');

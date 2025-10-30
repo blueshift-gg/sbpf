@@ -13,7 +13,6 @@ pub mod messages;
 pub mod ast;
 pub mod astnode;
 pub mod dynsym;
-pub mod instruction;
 pub mod syscall;
 
 // ELF header, program, section

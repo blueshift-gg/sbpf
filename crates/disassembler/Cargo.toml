@@ -15,11 +15,11 @@ crate-type = ["cdylib", "lib"]
 name = "sbpf_disassembler"
 
 [dependencies]
+either = { workspace = true }
 object = { workspace = true }
 sbpf-common = { workspace = true }
 thiserror = "2.0.17"
 serde = { version = "1.0.228", features = ["derive"] }
-either = { version = "1.15.0", features = ["serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
