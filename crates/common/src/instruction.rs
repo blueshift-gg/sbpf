@@ -3,7 +3,7 @@ use {
         errors::SBPFError,
         inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
-        opcode::{Opcode, OperationType},
+        opcode::{Opcode, OperationType}, platform::BPFPlatform,
     },
     core::ops::Range,
     either::Either,
@@ -72,10 +72,28 @@ impl Instruction {
         }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SBPFError> {
+    pub fn from_bytes<Platform: BPFPlatform>(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode: Opcode = bytes[0].try_into()?;
         if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
-            (handler.decode)(bytes)
+            let mut inst = (handler.decode)(bytes)?;
+
+            // Apply platform-specific callx decoding to convert to standard BPF convention
+            if inst.opcode == Opcode::Callx {
+                let dst_val = inst.dst.as_ref().map(|r| r.n).unwrap_or(0);
+                let imm_val = match &inst.imm {
+                    Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm as i32,
+                    _ => 0,
+                };
+                let (new_dst, new_imm) = Platform::decode_callx(dst_val, imm_val);
+                inst.dst = if new_dst != 0 { Some(Register { n: new_dst }) } else { None };
+                inst.imm = if new_imm != 0 {
+                    Some(Either::Right(Number::Int(new_imm as i64)))
+                } else {
+                    None
+                };
+            }
+
+            Ok(inst)
         } else {
             Err(SBPFError::BytecodeError {
                 error: format!("no decode handler for opcode {}", opcode),
@@ -85,7 +103,7 @@ impl Instruction {
         }
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
+    pub fn to_bytes<Platform: BPFPlatform>(&self) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let src_val = if self.opcode == Opcode::Call {
             1
@@ -110,10 +128,12 @@ impl Instruction {
             Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
         };
-        // fix callx encoding in sbpf
-        let (dst_val, imm_val) = match self.opcode {
-            Opcode::Callx => (0, dst_val as i64), // callx: dst register encoded in imm
-            _ => (dst_val, imm_val),
+        // Apply platform-specific callx encoding
+        let (dst_val, imm_val) = if self.opcode == Opcode::Callx {
+            let (dst, imm) = Platform::encode_callx(dst_val, imm_val as i32);
+            (dst, imm as i64)
+        } else {
+            (dst_val, imm_val)
         };
 
         let mut b = vec![self.opcode.into(), src_val << 4 | dst_val];
@@ -202,124 +222,124 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use {crate::instruction::Instruction, hex_literal::hex};
+    use {crate::{instruction::Instruction, platform::SbpfV0}, hex_literal::hex};
 
     #[test]
     fn serialize_e2e() {
         let b = hex!("9700000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "mod64 r0, 0");
     }
 
     #[test]
     fn serialize_e2e_lddw() {
         let b = hex!("18010000000000000000000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "lddw r1, 0");
     }
 
     #[test]
     fn serialize_e2e_add64_imm() {
         let b = hex!("0701000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r1, 0");
     }
 
     #[test]
     fn serialize_e2e_add64_reg() {
         let b = hex!("0f12000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r2, r1");
     }
 
     #[test]
     fn serialize_e2e_ja() {
         let b = hex!("05000a0000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ja +10");
     }
 
     #[test]
     fn serialize_e2e_jeq_imm() {
         let b = hex!("15030a0001000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r3, 1, +10");
     }
 
     #[test]
     fn serialize_e2e_jeq_reg() {
         let b = hex!("1d210a0000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r1, r2, +10");
     }
 
     #[test]
     fn serialize_e2e_ldxw() {
         let b = hex!("6112000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ldxw r2, [r1+0]");
     }
 
     #[test]
     fn serialize_e2e_stxw() {
         let b = hex!("6312000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stxw [r2+0], r1");
     }
 
     #[test]
     fn serialize_e2e_neg64() {
         let b = hex!("8700000000000000");
-        let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes().unwrap(), &b);
+        let i = Instruction::from_bytes::<SbpfV0>(&b).unwrap();
+        assert_eq!(i.to_bytes::<SbpfV0>().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "neg64 r0");
     }
 
     #[test]
     fn test_instruction_size() {
-        let exit = Instruction::from_bytes(&hex!("9500000000000000")).unwrap();
+        let exit = Instruction::from_bytes::<SbpfV0>(&hex!("9500000000000000")).unwrap();
         assert_eq!(exit.get_size(), 8);
 
-        let lddw = Instruction::from_bytes(&hex!("18010000000000000000000000000000")).unwrap();
+        let lddw = Instruction::from_bytes::<SbpfV0>(&hex!("18010000000000000000000000000000")).unwrap();
         assert_eq!(lddw.get_size(), 16);
     }
 
     #[test]
     fn test_is_jump() {
-        let ja = Instruction::from_bytes(&hex!("0500000000000000")).unwrap();
+        let ja = Instruction::from_bytes::<SbpfV0>(&hex!("0500000000000000")).unwrap();
         assert!(ja.is_jump());
 
-        let jeq_imm = Instruction::from_bytes(&hex!("1502000000000000")).unwrap();
+        let jeq_imm = Instruction::from_bytes::<SbpfV0>(&hex!("1502000000000000")).unwrap();
         assert!(jeq_imm.is_jump());
 
-        let jeq_reg = Instruction::from_bytes(&hex!("1d12000000000000")).unwrap();
+        let jeq_reg = Instruction::from_bytes::<SbpfV0>(&hex!("1d12000000000000")).unwrap();
         assert!(jeq_reg.is_jump());
 
-        let exit = Instruction::from_bytes(&hex!("9500000000000000")).unwrap();
+        let exit = Instruction::from_bytes::<SbpfV0>(&hex!("9500000000000000")).unwrap();
         assert!(!exit.is_jump());
 
-        let add64 = Instruction::from_bytes(&hex!("0701000000000000")).unwrap();
+        let add64 = Instruction::from_bytes::<SbpfV0>(&hex!("0701000000000000")).unwrap();
         assert!(!add64.is_jump());
     }
 
     #[test]
     fn test_invalid_opcode() {
-        let result = Instruction::from_bytes(&hex!("ff00000000000000"));
+        let result = Instruction::from_bytes::<SbpfV0>(&hex!("ff00000000000000"));
         assert!(result.is_err());
     }
 
     #[test]
     fn test_unsupported_opcode() {
-        let add32 = Instruction::from_bytes(&hex!("1300000000000000"));
+        let add32 = Instruction::from_bytes::<SbpfV0>(&hex!("1300000000000000"));
         assert!(add32.is_err());
     }
 }

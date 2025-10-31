@@ -4,6 +4,7 @@ pub mod inst_handler;
 pub mod inst_param;
 pub mod instruction;
 pub mod opcode;
+pub mod platform;
 pub mod syscalls;
 pub mod syscalls_map;
 pub mod validate;
