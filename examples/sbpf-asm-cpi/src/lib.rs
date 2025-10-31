@@ -2,22 +2,22 @@
 mod tests {
     use mollusk_svm::program;
     use mollusk_svm::{result::Check, Mollusk};
-    use solana_sdk::account::Account;
-    use solana_sdk::instruction::{AccountMeta, Instruction};
-    use solana_sdk::native_token::LAMPORTS_PER_SOL;
-    use solana_sdk::program_error::ProgramError;
-    use solana_sdk::pubkey::Pubkey;
+    use solana_account::Account;
+    use solana_instruction::{AccountMeta, Instruction};
+    use solana_native_token::LAMPORTS_PER_SOL;
+    use solana_program_error::ProgramError;
+    use solana_address::Address;
 
     const BASE_LAMPORTS: u64 = 10 * LAMPORTS_PER_SOL;
     const DEPOSIT_AMOUNT: u64 = 1;
     const DEPOSIT_LAMPORTS: u64 = DEPOSIT_AMOUNT * LAMPORTS_PER_SOL;
 
-    pub fn get_program_id() -> Pubkey {
+    pub fn get_program_id() -> Address {
         let program_id_keypair_bytes = std::fs::read("deploy/sbpf-asm-cpi-keypair.json").unwrap()
             [..32]
             .try_into()
             .expect("slice with incorrect length");
-        Pubkey::new_from_array(program_id_keypair_bytes)
+        Address::new_from_array(program_id_keypair_bytes)
     }
 
     #[test]
@@ -26,9 +26,9 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-cpi");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let sender_pubkey = Pubkey::new_unique();
-        let receiver_pubkey = Pubkey::new_unique();
-        let extra_pubkey = Pubkey::new_unique();
+        let sender_pubkey = Address::new_unique();
+        let receiver_pubkey = Address::new_unique();
+        let extra_pubkey = Address::new_unique();
 
         // Less than 3 accounts.
         let instruction = Instruction::new_with_bytes(
@@ -83,7 +83,7 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-cpi");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let sender_pubkey = Pubkey::new_unique();
+        let sender_pubkey = Address::new_unique();
 
         let instruction = Instruction::new_with_bytes(
             program_id,
@@ -114,8 +114,8 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-cpi");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let sender_pubkey = Pubkey::new_unique();
-        let receiver_pubkey = Pubkey::new_unique();
+        let sender_pubkey = Address::new_unique();
+        let receiver_pubkey = Address::new_unique();
 
         let instruction = Instruction::new_with_bytes(
             program_id,
@@ -150,8 +150,8 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-cpi");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let sender_pubkey = Pubkey::new_unique();
-        let receiver_pubkey = Pubkey::new_unique();
+        let sender_pubkey = Address::new_unique();
+        let receiver_pubkey = Address::new_unique();
 
         let amount = 20 * LAMPORTS_PER_SOL;
         let instruction_data = amount.to_le_bytes();
@@ -187,8 +187,8 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-cpi");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let sender_pubkey = Pubkey::new_unique();
-        let receiver_pubkey = Pubkey::new_unique();
+        let sender_pubkey = Address::new_unique();
+        let receiver_pubkey = Address::new_unique();
 
         let instruction_data = DEPOSIT_LAMPORTS.to_le_bytes();
         let instruction = Instruction::new_with_bytes(

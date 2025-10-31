@@ -5,11 +5,9 @@ edition = "2021"
 
 [workspace]
 
-[dependencies]
-
 [dev-dependencies]
-mollusk-svm = "0.4.1"
-solana-sdk = "2.2.1"
-
-[features]
-test-sbf = []
+mollusk-svm = "0.7.0"
+solana-account = "3.0.0"
+solana-address = "1.0.0"
+solana-program-error = "3.0.0"
+solana-native-token = "3.0.0"
