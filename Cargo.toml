@@ -38,11 +38,12 @@ authors = ["Dean Little <dean@blueshift.gg>", "Claire Fan <claire@blueshift.gg>"
 rust-version = "1.90"
 
 [workspace.dependencies]
+anyhow = "1.0.86"
+either = { version = "1.15.0", features = ["serde"] }
 num-derive = "0.4"
 num-traits = "0.2"
-thiserror = "2.0.12"
-anyhow = "1.0.86"
 object = "0.37.3"
+thiserror = "2.0.12"
 
 sbpf-assembler = { path = "crates/assembler", version = "0.1.5" }
 sbpf-disassembler = { path = "crates/disassembler", version = "0.1.5" }

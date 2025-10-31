@@ -20,6 +20,15 @@ pub enum Number {
     Addr(i64),
 }
 
+impl Number {
+    pub fn to_i16(&self) -> i16 {
+        match self {
+            Number::Int(v) => *v as i16,
+            Number::Addr(a) => *a as i16,
+        }
+    }
+}
+
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

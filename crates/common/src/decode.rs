@@ -257,7 +257,8 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    if SYSCALLS.get(imm as u32).is_some() {
+    let mut callimm = Some(Either::Right(Number::Int(imm.into())));
+    if let Some(syscall) = SYSCALLS.get(imm as u32) {
         if dst != 0 || src != 0 || off != 0 {
             return Err(SBPFError::BytecodeError {
                 error: format!(
@@ -268,6 +269,7 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
                 custom_label: None,
             });
         }
+        callimm = Some(Either::Left(syscall.to_string()));
     } else if dst != 0 || src != 1 || off != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
@@ -284,7 +286,7 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         dst: None,
         src: None,
         off: None,
-        imm: Some(Either::Right(Number::Int(imm.into()))),
+        imm: callimm,
         span: 0..8,
     })
 }

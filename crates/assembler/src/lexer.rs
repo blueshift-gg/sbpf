@@ -1,6 +1,6 @@
 use {
     crate::errors::CompileError,
-    sbpf_common::opcode::Opcode,
+    sbpf_common::{inst_param::Number, opcode::Opcode},
     std::{ops::Range, str::FromStr as _},
 };
 
@@ -12,60 +12,6 @@ pub enum Op {
     Div,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ImmediateValue {
-    Int(i64),
-    Addr(i64),
-}
-
-impl std::ops::Add for ImmediateValue {
-    type Output = ImmediateValue;
-    fn add(self, other: Self) -> ImmediateValue {
-        match (self, other) {
-            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a + b),
-            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a + b),
-            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a + b),
-            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a + b),
-        }
-    }
-}
-
-impl std::ops::Sub for ImmediateValue {
-    type Output = ImmediateValue;
-    fn sub(self, other: Self) -> ImmediateValue {
-        match (self, other) {
-            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a - b),
-            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a - b),
-            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a - b),
-            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a - b),
-        }
-    }
-}
-
-impl std::ops::Mul for ImmediateValue {
-    type Output = ImmediateValue;
-    fn mul(self, other: Self) -> ImmediateValue {
-        match (self, other) {
-            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a * b),
-            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
-            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a * b),
-            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a * b),
-        }
-    }
-}
-
-impl std::ops::Div for ImmediateValue {
-    type Output = ImmediateValue;
-    fn div(self, other: Self) -> ImmediateValue {
-        match (self, other) {
-            (ImmediateValue::Int(a), ImmediateValue::Int(b)) => ImmediateValue::Int(a / b),
-            (ImmediateValue::Addr(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
-            (ImmediateValue::Int(a), ImmediateValue::Addr(b)) => ImmediateValue::Addr(a / b),
-            (ImmediateValue::Addr(a), ImmediateValue::Int(b)) => ImmediateValue::Addr(a / b),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Token {
     Directive(String, Range<usize>),
@@ -73,10 +19,10 @@ pub enum Token {
     Identifier(String, Range<usize>),
     Opcode(Opcode, Range<usize>),
     Register(u8, Range<usize>),
-    ImmediateValue(ImmediateValue, Range<usize>),
+    ImmediateValue(Number, Range<usize>),
     BinaryOp(Op, Range<usize>),
     StringLiteral(String, Range<usize>),
-    VectorLiteral(Vec<ImmediateValue>, Range<usize>),
+    VectorLiteral(Vec<Number>, Range<usize>),
 
     LeftBracket(Range<usize>),
     RightBracket(Range<usize>),
@@ -131,10 +77,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                     if is_addr {
                         if let Ok(value) = u64::from_str_radix(&number, 16) {
                             let value = value as i64;
-                            tokens.push(Token::ImmediateValue(
-                                ImmediateValue::Addr(value),
-                                span.clone(),
-                            ));
+                            tokens.push(Token::ImmediateValue(Number::Addr(value), span.clone()));
                         } else {
                             errors.push(CompileError::InvalidNumber {
                                 number,
@@ -143,10 +86,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Vec<CompileError>> {
                             });
                         }
                     } else if let Ok(value) = number.parse::<i64>() {
-                        tokens.push(Token::ImmediateValue(
-                            ImmediateValue::Int(value),
-                            span.clone(),
-                        ));
+                        tokens.push(Token::ImmediateValue(Number::Int(value), span.clone()));
                     } else {
                         errors.push(CompileError::InvalidNumber {
                             number,

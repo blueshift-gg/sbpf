@@ -2,13 +2,12 @@ use {
     crate::{
         CompileError,
         astnode::{ASTNode, ROData},
-        dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
-        instruction::Instruction,
-        lexer::{ImmediateValue, Token},
+        dynsym::{DynamicSymbolMap, RelDynMap, RelocationType, get_relocation_info},
         parser::ParseResult,
         section::{CodeSection, DataSection},
     },
-    sbpf_common::opcode::Opcode,
+    either::Either,
+    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
     std::collections::HashMap,
 };
 
@@ -94,7 +93,7 @@ impl AST {
         // 1. resolve labels in the intruction nodes for lddw and jump
         // 2. find relocation information
 
-        let mut program_is_static = true;
+        let program_is_static = !self.nodes.iter().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation()));
         let mut relocations = RelDynMap::new();
         let mut dynamic_symbols = DynamicSymbolMap::new();
 
@@ -108,53 +107,48 @@ impl AST {
             } = node
             {
                 // For jump/call instructions, replace label with relative offsets
-                if (inst.is_jump() || inst.opcode == Opcode::Call)
-                    && let Some(Token::Identifier(label, span)) = inst.operands.last()
+                if inst.is_jump()
+                    && let Some(Either::Left(label)) = &inst.off
                 {
-                    let label = label.clone();
-                    if let Some(target_offset) = label_offset_map.get(&label) {
+                    if let Some(target_offset) = label_offset_map.get(label) {
                         let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
-                        let last_idx = inst.operands.len() - 1;
-                        inst.operands[last_idx] =
-                            Token::ImmediateValue(ImmediateValue::Int(rel_offset), span.clone());
-                    } else if inst.is_jump() {
-                        // only error out unresolved jump labels, since call
-                        // labels could exist externally
+                        inst.off = Some(Either::Right(rel_offset as i16));
+                    } else {
                         errors.push(CompileError::UndefinedLabel {
                             label: label.clone(),
-                            span: span.clone(),
+                            span: inst.span.clone(),
                             custom_label: None,
                         });
                     }
+                } else if inst.opcode == Opcode::Call
+                    && let Some(Either::Left(label)) = &inst.imm
+                    && let Some(target_offset) = label_offset_map.get(label)
+                {
+                    let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
+                    inst.imm = Some(Either::Right(Number::Int(rel_offset)));
                 }
-                // This has to be done before resolving lddw labels since lddw
-                // operand needs to be absolute offset values
+
                 if inst.needs_relocation() {
-                    program_is_static = false;
-                    let (reloc_type, label) = inst.get_relocation_info();
+                    let (reloc_type, label) = get_relocation_info(inst);
                     relocations.add_rel_dyn(*offset, reloc_type, label.clone());
                     if reloc_type == RelocationType::RSbfSyscall {
                         dynamic_symbols.add_call_target(label.clone(), *offset);
                     }
                 }
                 if inst.opcode == Opcode::Lddw
-                    && let Some(Token::Identifier(name, span)) = inst.operands.last()
+                    && let Some(Either::Left(name)) = &inst.imm
                 {
                     let label = name.clone();
                     if let Some(target_offset) = label_offset_map.get(&label) {
-                        // actually lddw with label makes a program dynamic, so
-                        // we should be able to hard code ph_offset
                         let ph_count = if program_is_static { 1 } else { 3 };
                         let ph_offset = 64 + (ph_count as u64 * 56) as i64;
                         let abs_offset = *target_offset as i64 + ph_offset;
                         // Replace label with immediate value
-                        let last_idx = inst.operands.len() - 1;
-                        inst.operands[last_idx] =
-                            Token::ImmediateValue(ImmediateValue::Addr(abs_offset), span.clone());
+                        inst.imm = Some(Either::Right(Number::Addr(abs_offset)));
                     } else {
                         errors.push(CompileError::UndefinedLabel {
                             label: name.clone(),
-                            span: span.clone(),
+                            span: inst.span.clone(),
                             custom_label: None,
                         });
                     }

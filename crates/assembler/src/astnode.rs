@@ -1,17 +1,12 @@
 use {
-    crate::{
-        debuginfo::{DebugInfo, RegisterHint, RegisterType},
-        errors::CompileError,
-        instruction::Instruction,
-        lexer::{ImmediateValue, Token},
-    },
-    sbpf_common::opcode::Opcode,
+    crate::{debuginfo::DebugInfo, errors::CompileError, lexer::Token},
+    sbpf_common::{inst_param::Number, instruction::Instruction},
     std::{collections::HashMap, ops::Range},
 };
 
 #[derive(Debug, Clone)]
 pub enum ASTNode {
-    // only present in the AST
+    // only present in AST
     Directive {
         directive: Directive,
     },
@@ -31,7 +26,7 @@ pub enum ASTNode {
         label: Label,
         offset: u64,
     },
-    // present in the bytecode
+    // present in both AST and bytecode
     ROData {
         rodata: ROData,
         offset: u64,
@@ -72,7 +67,7 @@ impl EquDecl {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn get_val(&self) -> ImmediateValue {
+    pub fn get_val(&self) -> Number {
         match &self.value {
             Token::ImmediateValue(val, _) => val.clone(),
             _ => panic!("Invalid Equ declaration"),
@@ -107,13 +102,13 @@ pub struct ROData {
 impl ROData {
     /// Validates that an immediate value is within the specified range
     fn validate_immediate_range(
-        value: &ImmediateValue,
+        value: &Number,
         min: i64,
         max: i64,
         span: Range<usize>,
     ) -> Result<(), CompileError> {
         match value {
-            ImmediateValue::Int(val) => {
+            Number::Int(val) => {
                 if *val < min || *val > max {
                     return Err(CompileError::OutOfRangeLiteral {
                         span,
@@ -121,7 +116,7 @@ impl ROData {
                     });
                 }
             }
-            ImmediateValue::Addr(val) => {
+            Number::Addr(val) => {
                 if *val < min || *val > max {
                     return Err(CompileError::OutOfRangeLiteral {
                         span,
@@ -236,188 +231,16 @@ impl ASTNode {
     pub fn bytecode_with_debug_map(&self) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
         match self {
             ASTNode::Instruction {
-                instruction:
-                    Instruction {
-                        opcode,
-                        operands,
-                        span,
-                    },
+                instruction,
                 offset,
             } => {
-                let mut bytes = Vec::new();
+                // TODO: IMPLEMENT DEBUG INFO HANDLING AND DELETE THIS
                 let mut debug_map = HashMap::new();
-                let mut debug_info = DebugInfo::new(span.clone());
-                bytes.push(Into::<u8>::into(*opcode)); // 1 byte opcode
-
-                if *opcode == Opcode::Call {
-                    bytes.extend_from_slice(&[0x10, 0x00, 0x00]);
-                    if let Some(Token::ImmediateValue(imm, _)) = operands.last() {
-                        let imm32 = match imm {
-                            ImmediateValue::Int(val) => *val as i32,
-                            ImmediateValue::Addr(val) => *val as i32,
-                        };
-                        bytes.extend_from_slice(&imm32.to_le_bytes());
-                    } else {
-                        // external calls
-                        bytes.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF]);
-                    }
-                } else if *opcode == Opcode::Lddw {
-                    if let [Token::Register(reg, _), Token::ImmediateValue(imm, _)] = &operands[..]
-                    {
-                        // 1 byte register number (strip 'r' prefix)
-                        bytes.push(*reg);
-
-                        // 2 bytes of zeros (offset/reserved)
-                        bytes.extend_from_slice(&[0, 0]);
-
-                        // 8 bytes immediate value in little-endian
-                        let imm64 = match imm {
-                            ImmediateValue::Int(val) => *val,
-                            ImmediateValue::Addr(val) => *val,
-                        };
-                        bytes.extend_from_slice(&imm64.to_le_bytes()[..4]);
-                        bytes.extend_from_slice(&[0, 0, 0, 0]);
-                        bytes.extend_from_slice(&imm64.to_le_bytes()[4..8]);
-                    }
-                } else {
-                    match &operands[..] {
-                        [Token::ImmediateValue(imm, _)] => {
-                            // 1 byte of zeros (no register)
-                            bytes.push(0);
-
-                            if *opcode == Opcode::Ja {
-                                // 2 bytes immediate value in little-endian for 'ja'
-                                let imm16 = match imm {
-                                    ImmediateValue::Int(val) => *val as i16,
-                                    ImmediateValue::Addr(val) => *val as i16,
-                                };
-                                bytes.extend_from_slice(&imm16.to_le_bytes());
-                            } else {
-                                // 4 bytes immediate value in little-endian
-                                let imm32 = match imm {
-                                    ImmediateValue::Int(val) => *val as i32,
-                                    ImmediateValue::Addr(val) => *val as i32,
-                                };
-                                bytes.extend_from_slice(&imm32.to_le_bytes());
-                            }
-                        }
-
-                        [Token::Register(reg, _)] => {
-                            if *opcode == Opcode::Callx {
-                                bytes.push(0);
-                                bytes.extend_from_slice(&[0, 0]);
-                                bytes.extend_from_slice(&[*reg, 0, 0, 0]);
-                            } else {
-                                bytes.push(*reg);
-                                bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-                            }
-                        }
-
-                        [Token::Register(reg, _), Token::ImmediateValue(imm, _)] => {
-                            // 1 byte register number (strip 'r' prefix)
-                            bytes.push(*reg);
-
-                            // 2 bytes of zeros (offset/reserved)
-                            bytes.extend_from_slice(&[0, 0]);
-
-                            // 4 bytes immediate value in little-endian
-                            let imm32 = match imm {
-                                ImmediateValue::Int(val) => *val as i32,
-                                ImmediateValue::Addr(val) => {
-                                    debug_info.register_hint = RegisterHint {
-                                        register: *reg as usize,
-                                        register_type: RegisterType::Addr,
-                                    };
-                                    *val as i32
-                                }
-                            };
-                            bytes.extend_from_slice(&imm32.to_le_bytes());
-                        }
-
-                        [
-                            Token::Register(reg, _),
-                            Token::ImmediateValue(imm, _),
-                            Token::ImmediateValue(offset, _),
-                        ] => {
-                            // 1 byte register number (strip 'r' prefix)
-                            bytes.push(*reg);
-
-                            // 2 bytes of offset in little-endian
-                            let offset16 = match offset {
-                                ImmediateValue::Int(val) => *val as u16,
-                                ImmediateValue::Addr(val) => *val as u16,
-                            };
-                            bytes.extend_from_slice(&offset16.to_le_bytes());
-
-                            // 4 bytes immediate value in little-endianß
-                            let imm32 = match imm {
-                                ImmediateValue::Int(val) => *val as i32,
-                                ImmediateValue::Addr(val) => {
-                                    debug_info.register_hint = RegisterHint {
-                                        register: *reg as usize,
-                                        register_type: RegisterType::Addr,
-                                    };
-                                    *val as i32
-                                }
-                            };
-                            bytes.extend_from_slice(&imm32.to_le_bytes());
-                        }
-
-                        [Token::Register(dst, _), Token::Register(src, _)] => {
-                            // Convert register strings to numbers
-                            let dst_num = dst;
-                            let src_num = src;
-
-                            // Combine src and dst into a single byte (src in high nibble, dst in low nibble)
-                            let reg_byte = (src_num << 4) | dst_num;
-                            bytes.push(reg_byte);
-                        }
-                        [
-                            Token::Register(dst, _),
-                            Token::Register(reg, _),
-                            Token::ImmediateValue(offset, _),
-                        ] => {
-                            // Combine base register and destination register into a single byte
-                            let reg_byte = (reg << 4) | dst;
-                            bytes.push(reg_byte);
-
-                            // Add the offset as a 16-bit value in little-endian
-                            let offset16 = match offset {
-                                ImmediateValue::Int(val) => *val as u16,
-                                ImmediateValue::Addr(val) => *val as u16,
-                            };
-                            bytes.extend_from_slice(&offset16.to_le_bytes());
-                        }
-                        [
-                            Token::Register(reg, _),
-                            Token::ImmediateValue(offset, _),
-                            Token::Register(dst, _),
-                        ] => {
-                            // Combine base register and destination register into a single byte
-                            let reg_byte = (dst << 4) | reg;
-                            bytes.push(reg_byte);
-
-                            // Add the offset as a 16-bit value in little-endian
-                            let offset16 = match offset {
-                                ImmediateValue::Int(val) => *val as u16,
-                                ImmediateValue::Addr(val) => *val as u16,
-                            };
-                            bytes.extend_from_slice(&offset16.to_le_bytes());
-                        }
-
-                        _ => {}
-                    }
-                }
-
-                // Add padding to make it 8 or 16 bytes depending on opcode
-                let target_len = if *opcode == Opcode::Lddw { 16 } else { 8 };
-                while bytes.len() < target_len {
-                    bytes.push(0);
-                }
+                let debug_info = DebugInfo::new(instruction.span.clone());
 
                 debug_map.insert(*offset, debug_info);
 
-                Some((bytes, debug_map))
+                Some((instruction.to_bytes().unwrap(), debug_map))
             }
             ASTNode::ROData {
                 rodata: ROData { name: _, args, .. },
@@ -434,32 +257,32 @@ impl ASTNode {
                         if directive == "byte" {
                             for value in values {
                                 let imm8 = match value {
-                                    ImmediateValue::Int(val) => *val as i8,
-                                    ImmediateValue::Addr(val) => *val as i8,
+                                    Number::Int(val) => *val as i8,
+                                    Number::Addr(val) => *val as i8,
                                 };
                                 bytes.extend(imm8.to_le_bytes());
                             }
                         } else if directive == "short" {
                             for value in values {
                                 let imm16 = match value {
-                                    ImmediateValue::Int(val) => *val as i16,
-                                    ImmediateValue::Addr(val) => *val as i16,
+                                    Number::Int(val) => *val as i16,
+                                    Number::Addr(val) => *val as i16,
                                 };
                                 bytes.extend(imm16.to_le_bytes());
                             }
                         } else if directive == "int" || directive == "long" {
                             for value in values {
                                 let imm32 = match value {
-                                    ImmediateValue::Int(val) => *val as i32,
-                                    ImmediateValue::Addr(val) => *val as i32,
+                                    Number::Int(val) => *val as i32,
+                                    Number::Addr(val) => *val as i32,
                                 };
                                 bytes.extend(imm32.to_le_bytes());
                             }
                         } else if directive == "quad" {
                             for value in values {
                                 let imm64 = match value {
-                                    ImmediateValue::Int(val) => *val,
-                                    ImmediateValue::Addr(val) => *val,
+                                    Number::Int(val) => *val,
+                                    Number::Addr(val) => *val,
                                 };
                                 bytes.extend(imm64.to_le_bytes());
                             }
