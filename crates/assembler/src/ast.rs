@@ -93,7 +93,7 @@ impl AST {
         // 1. resolve labels in the intruction nodes for lddw and jump
         // 2. find relocation information
 
-        let program_is_static = !self.nodes.iter_mut().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation()));
+        let program_is_static = !self.nodes.iter().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation()));
         let mut relocations = RelDynMap::new();
         let mut dynamic_symbols = DynamicSymbolMap::new();
 
