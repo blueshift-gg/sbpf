@@ -2,22 +2,22 @@
 mod tests {
     use mollusk_svm::program;
     use mollusk_svm::{result::Check, Mollusk};
-    use solana_sdk::account::Account;
-    use solana_sdk::instruction::{AccountMeta, Instruction};
-    use solana_sdk::native_token::LAMPORTS_PER_SOL;
-    use solana_sdk::program_error::ProgramError;
-    use solana_sdk::pubkey::Pubkey;
+    use solana_account::Account;
+    use solana_instruction::{AccountMeta, Instruction};
+    use solana_native_token::LAMPORTS_PER_SOL;
+    use solana_program_error::ProgramError;
+    use solana_address::Address;
 
     const BASE_LAMPORTS: u64 = 10 * LAMPORTS_PER_SOL;
     const DEPOSIT_AMOUNT: u64 = 1;
     const DEPOSIT_LAMPORTS: u64 = DEPOSIT_AMOUNT * LAMPORTS_PER_SOL;
 
-    pub fn get_program_id() -> Pubkey {
+    pub fn get_program_id() -> Address {
         let program_id_keypair_bytes = std::fs::read("deploy/sbpf-asm-vault-keypair.json").unwrap()
             [..32]
             .try_into()
             .expect("slice with incorrect length");
-        Pubkey::new_from_array(program_id_keypair_bytes)
+        Address::new_from_array(program_id_keypair_bytes)
     }
 
     #[test]
@@ -26,12 +26,12 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-vault");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let owner_pubkey = Pubkey::new_unique();
+        let owner_pubkey = Address::new_unique();
         let owner_account = Account::new(BASE_LAMPORTS, 0, &system_program);
 
         // Incorrect vault PDA.
         let (vault_pda, vault_bump) =
-            Pubkey::find_program_address(&[b"wrong", &owner_pubkey.to_bytes()], &program_id);
+            Address::find_program_address(&[b"wrong", &owner_pubkey.to_bytes()], &program_id);
         let vault_account = Account::new(0, 0, &system_program);
         println!("Vault PDA: {}, Bump: {}", vault_pda, vault_bump);
 
@@ -65,11 +65,11 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-vault");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let owner_pubkey = Pubkey::new_unique();
+        let owner_pubkey = Address::new_unique();
         let owner_account = Account::new(BASE_LAMPORTS, 0, &system_program);
 
         let (vault_pda, vault_bump) =
-            Pubkey::find_program_address(&[b"vault", &owner_pubkey.to_bytes()], &program_id);
+            Address::find_program_address(&[b"vault", &owner_pubkey.to_bytes()], &program_id);
         let vault_account = Account::new(0, 0, &system_program);
 
         let mut instruction_data = vec![0]; // 0 -> Deposit
@@ -110,11 +110,11 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-vault");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let owner_pubkey = Pubkey::new_unique();
+        let owner_pubkey = Address::new_unique();
         let owner_account = Account::new(BASE_LAMPORTS, 0, &system_program);
 
         let (vault_pda, vault_bump) =
-            Pubkey::find_program_address(&[b"vault", &owner_pubkey.to_bytes()], &program_id);
+            Address::find_program_address(&[b"vault", &owner_pubkey.to_bytes()], &program_id);
         let vault_account = Account::new(DEPOSIT_LAMPORTS, 0, &system_program);
 
         let mut instruction_data = vec![1]; // 1 -> Withdraw

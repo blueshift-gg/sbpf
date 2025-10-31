@@ -2,20 +2,20 @@
 mod tests {
     use mollusk_svm::program;
     use mollusk_svm::{result::Check, Mollusk};
-    use solana_sdk::account::Account;
-    use solana_sdk::instruction::{AccountMeta, Instruction};
-    use solana_sdk::native_token::LAMPORTS_PER_SOL;
-    use solana_sdk::pubkey::Pubkey;
+    use solana_account::Account;
+    use solana_instruction::{AccountMeta, Instruction};
+    use solana_native_token::LAMPORTS_PER_SOL;
+    use solana_address::Address;
 
     const BASE_LAMPORTS: u64 = 10 * LAMPORTS_PER_SOL;
     const COUNTER_SIZE: usize = 9;
 
-    pub fn get_program_id() -> Pubkey {
+    pub fn get_program_id() -> Address {
         let program_id_keypair_bytes = std::fs::read("deploy/sbpf-asm-counter-keypair.json")
             .unwrap()[..32]
             .try_into()
             .expect("slice with incorrect length");
-        Pubkey::new_from_array(program_id_keypair_bytes)
+        Address::new_from_array(program_id_keypair_bytes)
     }
 
     #[test]
@@ -24,11 +24,11 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-counter");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let owner_pubkey = Pubkey::new_unique();
+        let owner_pubkey = Address::new_unique();
         let owner_account = Account::new(BASE_LAMPORTS, 0, &system_program);
 
         let (counter_pda, counter_bump) =
-            Pubkey::find_program_address(&[b"counter", &owner_pubkey.to_bytes()], &program_id);
+            Address::find_program_address(&[b"counter", &owner_pubkey.to_bytes()], &program_id);
         let counter_account = Account::new(0, 0, &system_program);
 
         let mut instruction_data = vec![0]; // 0 -> Initialize
@@ -75,11 +75,11 @@ mod tests {
         let mollusk = Mollusk::new(&program_id, "deploy/sbpf-asm-counter");
         let (system_program, system_account) = program::keyed_account_for_system_program();
 
-        let owner_pubkey = Pubkey::new_unique();
+        let owner_pubkey = Address::new_unique();
         let owner_account = Account::new(BASE_LAMPORTS, 0, &system_program);
 
         let (counter_pda, counter_bump) =
-            Pubkey::find_program_address(&[b"counter", &owner_pubkey.to_bytes()], &program_id);
+            Address::find_program_address(&[b"counter", &owner_pubkey.to_bytes()], &program_id);
         let mut counter_account = Account::new(
             mollusk.sysvars.rent.minimum_balance(COUNTER_SIZE),
             COUNTER_SIZE,
