@@ -294,12 +294,23 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_call_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    // TODO: sbpf encodes dst_reg in immediate
-    if src != 0 || off != 0 || imm != 0 {
+    // Note: Platform-specific callx decoding is handled in Instruction::from_bytes
+    // This function decodes the raw instruction format
+    if src != 0 || off != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has src: {}, off: {}, imm: {} supposed to be zeros",
-                opcode, src, off, imm
+                "{} instruction has src: {}, off: {} supposed to be zeros",
+                opcode, src, off
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+    if dst != 0 && imm != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has dst: {}, imm: {} cannot set both",
+                opcode, src, off
             ),
             span: 0..8,
             custom_label: None,
@@ -307,10 +318,10 @@ pub fn decode_call_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     }
     Ok(Instruction {
         opcode,
-        dst: Some(Register { n: dst }),
+        dst: if dst != 0 { Some(Register { n: dst }) } else { None },
         src: None,
         off: None,
-        imm: None,
+        imm: if imm != 0 { Some(Either::Right(Number::Int(imm.into()))) } else { None },
         span: 0..8,
     })
 }
