@@ -74,27 +74,22 @@ impl Instruction {
     }
 
     pub fn from_bytes<Platform: BpfPlatform>(bytes: &[u8]) -> Result<Self, SBPFError> {
-        let opcode: Opcode = bytes[0].try_into()?;
-        if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
-            let mut inst = (handler.decode)(bytes)?;
+        // Use platform-specific transformer to decode instruction
+        let (opcode, dst, src, off, imm) = Platform::decode_instruction(bytes)?;
 
-            // Apply platform-specific callx decoding to convert to standard BPF convention
-            if inst.opcode == Opcode::Callx {
-                let dst_val = inst.dst.as_ref().map(|r| r.n).unwrap_or(0);
-                let imm_val = match &inst.imm {
-                    Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm as i32,
-                    _ => 0,
-                };
-                let (new_dst, new_imm) = Platform::decode_callx(dst_val, imm_val);
-                inst.dst = if new_dst != 0 { Some(Register { n: new_dst }) } else { None };
-                inst.imm = if new_imm != 0 {
-                    Some(Either::Right(Number::Int(new_imm as i64)))
-                } else {
-                    None
-                };
+        if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
+            // Reconstruct bytes with transformed values for the handler
+            let mut transformed_bytes = vec![opcode.into(), src << 4 | dst];
+            transformed_bytes.extend_from_slice(&off.to_le_bytes());
+            transformed_bytes.extend_from_slice(&imm.to_le_bytes());
+
+            // For lddw, we need the full 16 bytes (include second half from original)
+            if opcode == Opcode::Lddw && bytes.len() >= 16 {
+                transformed_bytes.extend_from_slice(&bytes[8..16]);
             }
 
-            Ok(inst)
+            // Call the opcode-specific decoder with transformed bytes
+            (handler.decode)(&transformed_bytes)
         } else {
             Err(SBPFError::BytecodeError {
                 error: format!("no decode handler for opcode {}", opcode),
@@ -118,7 +113,7 @@ impl Instruction {
             Some(Either::Right(off)) => *off,
             None => 0,
         };
-        let imm_val = match &self.imm {
+        let imm_val_i64 = match &self.imm {
             Some(Either::Left(ident)) => {
                 if self.opcode == Opcode::Call {
                     -1i64 // FF FF FF FF
@@ -129,20 +124,17 @@ impl Instruction {
             Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
         };
-        // Apply platform-specific callx encoding
-        let (dst_val, imm_val) = if self.opcode == Opcode::Callx {
-            let (dst, imm) = Platform::encode_callx(dst_val, imm_val as i32);
-            (dst, imm as i64)
-        } else {
-            (dst_val, imm_val)
-        };
 
-        let mut b = vec![self.opcode.into(), src_val << 4 | dst_val];
+        // Apply platform-specific encoding transformation
+        let (raw_opcode, dst_val, src_val, off_val, imm_val) =
+            Platform::encode_instruction(self.opcode, dst_val, src_val, off_val, imm_val_i64 as i32);
+
+        let mut b = vec![raw_opcode, src_val << 4 | dst_val];
         b.extend_from_slice(&off_val.to_le_bytes());
-        b.extend_from_slice(&(imm_val as i32).to_le_bytes());
+        b.extend_from_slice(&imm_val.to_le_bytes());
         if self.opcode == Opcode::Lddw {
             b.extend_from_slice(&[0; 4]);
-            b.extend_from_slice(&((imm_val >> 32) as i32).to_le_bytes());
+            b.extend_from_slice(&((imm_val_i64 >> 32) as i32).to_le_bytes());
         }
         Ok(b)
     }
@@ -342,5 +334,67 @@ mod test {
     fn test_unsupported_opcode() {
         let add32 = Instruction::from_bytes::<SbpfV0>(&hex!("1300000000000000"));
         assert!(add32.is_err());
+    }
+
+    #[test]
+    fn test_sbpfv2_new_opcode_mappings() {
+        use crate::platform::SbpfV2;
+
+        // 0x8C -> ldxw
+        let b = hex!("8c12000000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Ldxw);
+        assert_eq!(inst.to_asm().unwrap(), "ldxw r2, [r1+0]");
+
+        // 0x8F -> stxw
+        let b = hex!("8f12000000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Stxw);
+        assert_eq!(inst.to_asm().unwrap(), "stxw [r2+0], r1");
+
+        // 0xF7 -> hor64
+        let b = hex!("f701000005000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Hor64Imm);
+        assert_eq!(inst.to_asm().unwrap(), "hor64 r1, 5");
+    }
+
+    #[test]
+    fn test_sbpfv2_opcode_translations() {
+        use crate::platform::SbpfV2;
+
+        // mul32 reg (0x2c) -> ldxb
+        let b = hex!("2c12050000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Ldxb);
+        assert_eq!(inst.dst.as_ref().unwrap().n, 2);
+        assert_eq!(inst.src.as_ref().unwrap().n, 1);
+
+        // div32 reg (0x3c) -> ldxh
+        let b = hex!("3c12080000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Ldxh);
+        assert_eq!(inst.dst.as_ref().unwrap().n, 2);
+        assert_eq!(inst.src.as_ref().unwrap().n, 1);
+
+        // mod32 reg (0x9c) -> ldxdw
+        let b = hex!("9c12100000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Ldxdw);
+        assert_eq!(inst.dst.as_ref().unwrap().n, 2);
+        assert_eq!(inst.src.as_ref().unwrap().n, 1);
+
+        // mul64 imm (0x27) -> stb
+        let b = hex!("2701050042000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Stb);
+        assert_eq!(inst.dst.as_ref().unwrap().n, 1);
+
+        // mul64 reg (0x2f) -> stxb
+        let b = hex!("2f12080000000000");
+        let inst = Instruction::from_bytes::<SbpfV2>(&b).unwrap();
+        assert_eq!(inst.opcode, crate::opcode::Opcode::Stxb);
+        assert_eq!(inst.dst.as_ref().unwrap().n, 2);
+        assert_eq!(inst.src.as_ref().unwrap().n, 1);
     }
 }
