@@ -9,7 +9,7 @@ use {
             SectionType, ShStrTabSection,
         },
     },
-    sbpf_common::platform::BPFPlatform,
+    sbpf_common::platform::BpfPlatform,
     std::{collections::HashMap, fs::File, io::Write, path::Path},
 };
 
@@ -235,7 +235,7 @@ impl Program {
         }
     }
 
-    pub fn emit_bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    pub fn emit_bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
         // Emit ELF Header bytes

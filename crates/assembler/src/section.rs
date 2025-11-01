@@ -6,7 +6,7 @@ use {
         header::SectionHeader,
         lexer::Token,
     },
-    sbpf_common::platform::BPFPlatform,
+    sbpf_common::platform::BpfPlatform,
     std::collections::HashMap,
 };
 
@@ -16,7 +16,7 @@ pub trait Section {
         ".unknown" // Default section name
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         Vec::new() // Default empty bytecode
     }
 
@@ -43,7 +43,7 @@ pub struct CodeSection {
 }
 
 impl CodeSection {
-    pub fn new<Platform: BPFPlatform>(nodes: Vec<ASTNode>, size: u64) -> Self {
+    pub fn new<Platform: BpfPlatform>(nodes: Vec<ASTNode>, size: u64) -> Self {
         let mut debug_map = HashMap::new();
         for node in &nodes {
             if let Some((_, node_debug_map)) = node.bytecode_with_debug_map::<Platform>() {
@@ -98,7 +98,7 @@ impl Section for CodeSection {
         &self.name
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
             if let Some(node_bytes) = node.bytecode::<Platform>() {
@@ -186,7 +186,7 @@ impl Section for DataSection {
         self.size
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
             if let Some(node_bytes) = node.bytecode::<Platform>() {
@@ -270,7 +270,7 @@ impl Section for ShStrTabSection {
         &self.name
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
@@ -385,7 +385,7 @@ impl Section for DynamicSection {
         &self.name
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
         // DT_FLAGS (DF_TEXTREL)
@@ -486,7 +486,7 @@ impl Section for DynStrSection {
         &self.name
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
@@ -568,7 +568,7 @@ impl Section for DynSymSection {
         (self.symbols.len() as u64) * 24
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         for symbol in &self.symbols {
             bytes.extend(symbol.bytecode());
@@ -630,7 +630,7 @@ impl Section for RelDynSection {
         self.size()
     }
 
-    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         for entry in &self.entries {
             bytes.extend(entry.bytecode());
@@ -665,7 +665,7 @@ impl SectionType {
         }
     }
 
-    pub fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
+    pub fn bytecode<Platform: BpfPlatform>(&self) -> Vec<u8> {
         match self {
             SectionType::Code(cs) => cs.bytecode::<Platform>(),
             SectionType::Data(ds) => ds.bytecode::<Platform>(),

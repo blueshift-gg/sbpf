@@ -11,7 +11,7 @@ use {
         inst_param::Number,
         instruction::Instruction,
         opcode::Opcode,
-        platform::BPFPlatform,
+        platform::BpfPlatform,
     },
     std::collections::HashMap,
 };
@@ -78,7 +78,7 @@ impl AST {
     }
 
     //
-    pub fn build_program<Platform: BPFPlatform>(&mut self) -> Result<ParseResult, Vec<CompileError>> {
+    pub fn build_program<Platform: BpfPlatform>(&mut self) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
 
         // iterate through text labels and rodata labels and find the pair

@@ -1,5 +1,5 @@
 /// Platform-specific BPF encoding/decoding
-pub trait BPFPlatform {
+pub trait BpfPlatform {
     /// Transform callx instruction when encoding for this platform
     /// Returns (dst, imm) values adjusted for platform conventions
     ///
@@ -21,9 +21,9 @@ pub trait BPFPlatform {
 }
 
 pub struct SbpfV0;
-pub struct BPF;
+pub struct Bpf;
 
-impl BPFPlatform for SbpfV0 {
+impl BpfPlatform for SbpfV0 {
     /// SBPF encodes callx with register in imm field, dst=0
     fn encode_callx(dst: u8, _imm: i32) -> (u8, i32) {
         (0, dst as i32)
@@ -35,6 +35,6 @@ impl BPFPlatform for SbpfV0 {
     }
 }
 
-impl BPFPlatform for BPF {
+impl BpfPlatform for Bpf {
     // Uses default implementation (standard BPF convention)
 }

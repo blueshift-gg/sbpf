@@ -4,7 +4,7 @@ use {
         inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
         opcode::{Opcode, OperationType},
-        platform::BPFPlatform,
+        platform::BpfPlatform,
     },
     core::ops::Range,
     either::Either,
@@ -73,7 +73,7 @@ impl Instruction {
         }
     }
 
-    pub fn from_bytes<Platform: BPFPlatform>(bytes: &[u8]) -> Result<Self, SBPFError> {
+    pub fn from_bytes<Platform: BpfPlatform>(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode: Opcode = bytes[0].try_into()?;
         if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
             let mut inst = (handler.decode)(bytes)?;
@@ -104,7 +104,7 @@ impl Instruction {
         }
     }
 
-    pub fn to_bytes<Platform: BPFPlatform>(&self) -> Result<Vec<u8>, SBPFError> {
+    pub fn to_bytes<Platform: BpfPlatform>(&self) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let src_val = if self.opcode == Opcode::Call {
             1

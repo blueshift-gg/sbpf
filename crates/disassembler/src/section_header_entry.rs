@@ -3,7 +3,7 @@ use {
     sbpf_common::{
         instruction::Instruction,
         opcode::Opcode,
-        platform::BPFPlatform,
+        platform::BpfPlatform
     },
     serde::{Deserialize, Serialize},
     std::fmt::Debug,
@@ -21,7 +21,7 @@ pub struct SectionHeaderEntry {
 }
 
 impl SectionHeaderEntry {
-    pub fn new<Platform: BPFPlatform>(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
+    pub fn new<Platform: BpfPlatform>(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
         let mut h = SectionHeaderEntry {
             label,
             offset,
@@ -44,7 +44,7 @@ impl SectionHeaderEntry {
         self.offset
     }
 
-    pub fn to_ixs<Platform: BPFPlatform>(&self) -> Result<Vec<Instruction>, DisassemblerError> {
+    pub fn to_ixs<Platform: BpfPlatform>(&self) -> Result<Vec<Instruction>, DisassemblerError> {
         if !self.data.len().is_multiple_of(8) {
             return Err(DisassemblerError::InvalidDataLength);
         }

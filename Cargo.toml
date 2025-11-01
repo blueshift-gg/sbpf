@@ -24,6 +24,7 @@ termcolor = "1.4"
 
 sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }
+sbpf-common = { workspace = true }
 
 [workspace]
 members = ["crates/assembler", "crates/common", "crates/disassembler", "crates/sbpf-syscall-map"]
