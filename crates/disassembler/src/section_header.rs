@@ -28,6 +28,8 @@ pub enum SectionHeaderType {
     SHT_GROUP = 0x11,         // Section group
     SHT_SYMTAB_SHNDX = 0x12,  // Extended section indices
     SHT_NUM = 0x13,           // Number of defined types.
+    SHT_GNU_HASH = 0x6ffffff6,
+    
 }
 
 impl TryFrom<u32> for SectionHeaderType {
@@ -53,6 +55,7 @@ impl TryFrom<u32> for SectionHeaderType {
             0x11 => Self::SHT_GROUP,
             0x12 => Self::SHT_SYMTAB_SHNDX,
             0x13 => Self::SHT_NUM,
+            0x6ffffff6 => Self::SHT_GNU_HASH,
             _ => return Err(DisassemblerError::InvalidSectionHeaderType),
         })
     }
@@ -85,6 +88,7 @@ impl From<SectionHeaderType> for &str {
             SectionHeaderType::SHT_GROUP => "SHT_GROUP",
             SectionHeaderType::SHT_SYMTAB_SHNDX => "SHT_SYMTAB_SHNDX",
             SectionHeaderType::SHT_NUM => "SHT_NUM",
+            SectionHeaderType::SHT_GNU_HASH => "SHT_GNU_HASH",
         }
     }
 }
