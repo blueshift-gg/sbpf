@@ -13,6 +13,7 @@ use {
     sbpf_common::{
         inst_param::{Number, Register},
         instruction::Instruction,
+        platform::BPFPlatform,
         opcode::Opcode,
     },
     std::collections::HashMap,
@@ -1112,7 +1113,7 @@ fn inline_and_fold_constant_with_map(
     }
 }
 
-pub fn parse_tokens(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileError>> {
+pub fn parse_tokens<Platform: BPFPlatform>(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileError>> {
     let mut ast = AST::new();
 
     let mut rodata_phase = false;
@@ -1269,7 +1270,7 @@ pub fn parse_tokens(mut tokens: &[Token]) -> Result<ParseResult, Vec<CompileErro
     ast.set_text_size(accum_offset);
     ast.set_rodata_size(rodata_accum_offset);
 
-    let parse_result = ast.build_program();
+    let parse_result = ast.build_program::<Platform>();
     if let Ok(parse_result) = parse_result {
         Ok(parse_result)
     } else {

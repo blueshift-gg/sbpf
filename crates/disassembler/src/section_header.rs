@@ -1,6 +1,7 @@
 use {
     crate::{errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
     object::{Endianness, read::elf::ElfFile64},
+    sbpf_common::platform::BPFPlatform,
     serde::{Deserialize, Serialize},
     std::fmt::{Debug, Display},
 };
@@ -103,7 +104,7 @@ pub struct SectionHeader {
 }
 
 impl SectionHeader {
-    pub fn from_elf_file(
+    pub fn from_elf_file<Platform: BPFPlatform>(
         elf_file: &ElfFile64<Endianness>,
     ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
         let endian = elf_file.endian();
@@ -164,7 +165,7 @@ impl SectionHeader {
                     [s.sh_offset as usize..s.sh_offset as usize + s.sh_size as usize]
                     .to_vec();
 
-                SectionHeaderEntry::new(label, s.sh_offset as usize, data)
+                SectionHeaderEntry::new::<Platform>(label, s.sh_offset as usize, data)
             })
             .collect::<Result<Vec<_>, _>>()?;
 

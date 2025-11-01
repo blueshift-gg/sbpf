@@ -9,6 +9,7 @@ use {
             SectionType, ShStrTabSection,
         },
     },
+    sbpf_common::platform::BPFPlatform,
     std::{collections::HashMap, fs::File, io::Write, path::Path},
 };
 
@@ -234,7 +235,7 @@ impl Program {
         }
     }
 
-    pub fn emit_bytecode(&self) -> Vec<u8> {
+    pub fn emit_bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
         // Emit ELF Header bytes
@@ -249,7 +250,7 @@ impl Program {
 
         // Emit sections
         for section in &self.sections {
-            bytes.extend(section.bytecode());
+            bytes.extend(section.bytecode::<Platform>());
         }
 
         // Emit section headers
@@ -298,7 +299,7 @@ impl Program {
         let output_path = format!("{}.so", file_stem);
 
         // Get the bytecode
-        let bytes = self.emit_bytecode();
+        let bytes = self.emit_bytecode::<sbpf_common::platform::SbpfV0>();
 
         // Write bytes to file
         let mut file = File::create(output_path)?;

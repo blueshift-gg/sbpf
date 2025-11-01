@@ -27,7 +27,7 @@ impl Program {
         let program_headers = ProgramHeader::from_elf_file(&elf_file)?;
 
         // Parse section headers and section header entries.
-        let (section_headers, section_header_entries) = SectionHeader::from_elf_file(&elf_file)?;
+        let (section_headers, section_header_entries) = SectionHeader::from_elf_file::<sbpf_common::platform::SbpfV0>(&elf_file)?;
 
         Ok(Self {
             elf_header,

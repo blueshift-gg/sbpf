@@ -1,6 +1,10 @@
 use {
     crate::{debuginfo::DebugInfo, errors::CompileError, lexer::Token},
-    sbpf_common::{inst_param::Number, instruction::Instruction},
+    sbpf_common::{
+        inst_param::Number,
+        instruction::Instruction,
+        platform::BPFPlatform,
+    },
     std::{collections::HashMap, ops::Range},
 };
 
@@ -228,7 +232,7 @@ impl ROData {
 }
 
 impl ASTNode {
-    pub fn bytecode_with_debug_map(&self) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
+    pub fn bytecode_with_debug_map<Platform: BPFPlatform>(&self) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
         match self {
             ASTNode::Instruction {
                 instruction,
@@ -240,7 +244,7 @@ impl ASTNode {
 
                 debug_map.insert(*offset, debug_info);
 
-                Some((instruction.to_bytes().unwrap(), debug_map))
+                Some((instruction.to_bytes::<Platform>().unwrap(), debug_map))
             }
             ASTNode::ROData {
                 rodata: ROData { name: _, args, .. },
@@ -300,7 +304,7 @@ impl ASTNode {
     }
 
     // Keep the old bytecode method for backward compatibility
-    pub fn bytecode(&self) -> Option<Vec<u8>> {
-        self.bytecode_with_debug_map().map(|(bytes, _)| bytes)
+    pub fn bytecode<Platform: BPFPlatform>(&self) -> Option<Vec<u8>> {
+        self.bytecode_with_debug_map::<Platform>().map(|(bytes, _)| bytes)
     }
 }

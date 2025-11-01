@@ -6,6 +6,7 @@ use {
         header::SectionHeader,
         lexer::Token,
     },
+    sbpf_common::platform::BPFPlatform,
     std::collections::HashMap,
 };
 
@@ -15,13 +16,15 @@ pub trait Section {
         ".unknown" // Default section name
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         Vec::new() // Default empty bytecode
     }
 
     // fn get_size(&self) -> u64
     fn size(&self) -> u64 {
-        self.bytecode().len() as u64
+        // Note: size cannot call bytecode() anymore since it's generic
+        // Implementations must override size() directly
+        0
     }
 
     // fn get_aligned_size(&self) -> u64
@@ -40,10 +43,10 @@ pub struct CodeSection {
 }
 
 impl CodeSection {
-    pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
+    pub fn new<Platform: BPFPlatform>(nodes: Vec<ASTNode>, size: u64) -> Self {
         let mut debug_map = HashMap::new();
         for node in &nodes {
-            if let Some((_, node_debug_map)) = node.bytecode_with_debug_map() {
+            if let Some((_, node_debug_map)) = node.bytecode_with_debug_map::<Platform>() {
                 debug_map.extend(node_debug_map);
             }
         }
@@ -95,10 +98,10 @@ impl Section for CodeSection {
         &self.name
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
-            if let Some(node_bytes) = node.bytecode() {
+            if let Some(node_bytes) = node.bytecode::<Platform>() {
                 bytecode.extend(node_bytes);
             }
         }
@@ -183,10 +186,10 @@ impl Section for DataSection {
         self.size
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
-            if let Some(node_bytes) = node.bytecode() {
+            if let Some(node_bytes) = node.bytecode::<Platform>() {
                 bytecode.extend(node_bytes);
             }
         }
@@ -267,7 +270,7 @@ impl Section for ShStrTabSection {
         &self.name
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
@@ -382,7 +385,7 @@ impl Section for DynamicSection {
         &self.name
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
         // DT_FLAGS (DF_TEXTREL)
@@ -483,7 +486,7 @@ impl Section for DynStrSection {
         &self.name
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         // First byte is null
         bytes.push(0);
@@ -565,7 +568,7 @@ impl Section for DynSymSection {
         (self.symbols.len() as u64) * 24
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         for symbol in &self.symbols {
             bytes.extend(symbol.bytecode());
@@ -627,7 +630,7 @@ impl Section for RelDynSection {
         self.size()
     }
 
-    fn bytecode(&self) -> Vec<u8> {
+    fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         for entry in &self.entries {
             bytes.extend(entry.bytecode());
@@ -662,16 +665,16 @@ impl SectionType {
         }
     }
 
-    pub fn bytecode(&self) -> Vec<u8> {
+    pub fn bytecode<Platform: BPFPlatform>(&self) -> Vec<u8> {
         match self {
-            SectionType::Code(cs) => cs.bytecode(),
-            SectionType::Data(ds) => ds.bytecode(),
-            SectionType::ShStrTab(ss) => ss.bytecode(),
-            SectionType::Dynamic(ds) => ds.bytecode(),
-            SectionType::DynStr(ds) => ds.bytecode(),
-            SectionType::DynSym(ds) => ds.bytecode(),
-            SectionType::Default(ds) => ds.bytecode(),
-            SectionType::RelDyn(ds) => ds.bytecode(),
+            SectionType::Code(cs) => cs.bytecode::<Platform>(),
+            SectionType::Data(ds) => ds.bytecode::<Platform>(),
+            SectionType::ShStrTab(ss) => ss.bytecode::<Platform>(),
+            SectionType::Dynamic(ds) => ds.bytecode::<Platform>(),
+            SectionType::DynStr(ds) => ds.bytecode::<Platform>(),
+            SectionType::DynSym(ds) => ds.bytecode::<Platform>(),
+            SectionType::Default(ds) => ds.bytecode::<Platform>(),
+            SectionType::RelDyn(ds) => ds.bytecode::<Platform>(),
         }
     }
 

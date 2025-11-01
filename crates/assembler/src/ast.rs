@@ -7,7 +7,12 @@ use {
         section::{CodeSection, DataSection},
     },
     either::Either,
-    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
+    sbpf_common::{
+        inst_param::Number,
+        instruction::Instruction,
+        opcode::Opcode,
+        platform::BPFPlatform,
+    },
     std::collections::HashMap,
 };
 
@@ -73,7 +78,7 @@ impl AST {
     }
 
     //
-    pub fn build_program(&mut self) -> Result<ParseResult, Vec<CompileError>> {
+    pub fn build_program<Platform: BPFPlatform>(&mut self) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
 
         // iterate through text labels and rodata labels and find the pair
@@ -167,7 +172,7 @@ impl AST {
             Err(errors)
         } else {
             Ok(ParseResult {
-                code_section: CodeSection::new(std::mem::take(&mut self.nodes), self.text_size),
+                code_section: CodeSection::new::<Platform>(std::mem::take(&mut self.nodes), self.text_size),
                 data_section: DataSection::new(
                     std::mem::take(&mut self.rodata_nodes),
                     self.rodata_size,

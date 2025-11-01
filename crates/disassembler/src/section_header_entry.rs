@@ -1,6 +1,10 @@
 use {
     crate::errors::DisassemblerError,
-    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    sbpf_common::{
+        instruction::Instruction,
+        opcode::Opcode,
+        platform::BPFPlatform,
+    },
     serde::{Deserialize, Serialize},
     std::fmt::Debug,
 };
@@ -17,7 +21,7 @@ pub struct SectionHeaderEntry {
 }
 
 impl SectionHeaderEntry {
-    pub fn new(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
+    pub fn new<Platform: BPFPlatform>(label: String, offset: usize, data: Vec<u8>) -> Result<Self, DisassemblerError> {
         let mut h = SectionHeaderEntry {
             label,
             offset,
@@ -27,7 +31,7 @@ impl SectionHeaderEntry {
         };
 
         if h.label.contains(".text\0") {
-            h.ixs = h.to_ixs()?;
+            h.ixs = h.to_ixs::<Platform>()?;
         }
 
         if let Ok(utf8) = String::from_utf8(h.data.clone()) {
@@ -40,7 +44,7 @@ impl SectionHeaderEntry {
         self.offset
     }
 
-    pub fn to_ixs(&self) -> Result<Vec<Instruction>, DisassemblerError> {
+    pub fn to_ixs<Platform: BPFPlatform>(&self) -> Result<Vec<Instruction>, DisassemblerError> {
         if !self.data.len().is_multiple_of(8) {
             return Err(DisassemblerError::InvalidDataLength);
         }
@@ -53,7 +57,7 @@ impl SectionHeaderEntry {
                 break;
             }
 
-            let ix = Instruction::from_bytes(remaining)?;
+            let ix = Instruction::from_bytes::<Platform>(remaining)?;
             if ix.opcode == Opcode::Lddw {
                 pos += 16;
             } else {
@@ -80,6 +84,7 @@ mod test {
             inst_param::{Number, Register},
             instruction::Instruction,
             opcode::Opcode,
+            platform::SbpfV0,
         },
     };
 
@@ -90,7 +95,7 @@ mod test {
             0x00, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
 
-        let h = SectionHeaderEntry::new(".text\0".to_string(), 128, data.clone()).unwrap();
+        let h = SectionHeaderEntry::new::<SbpfV0>(".text\0".to_string(), 128, data.clone()).unwrap();
 
         let ixs = vec![
             Instruction {
@@ -110,14 +115,14 @@ mod test {
                 span: 0..8,
             },
         ];
-        assert_eq!(ixs, h.to_ixs().unwrap());
+        assert_eq!(ixs, h.to_ixs::<SbpfV0>().unwrap());
 
         assert_eq!(
             data,
-            h.to_ixs()
+            h.to_ixs::<SbpfV0>()
                 .expect("Invalid IX")
                 .into_iter()
-                .flat_map(|i| i.to_bytes().unwrap())
+                .flat_map(|i| i.to_bytes::<SbpfV0>().unwrap())
                 .collect::<Vec<u8>>()
         )
     }
