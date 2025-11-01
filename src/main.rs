@@ -31,6 +31,14 @@ enum Commands {
     Disassemble(DisassembleArgs),
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum BpfPlatforms {
+    #[value(name = "bpf")]
+    BPF,
+    #[value(name = "sbpfv0")]
+    SbpfV0,
+}
+
 #[derive(Args)]
 pub struct InitArgs {
     name: Option<String>,
@@ -58,6 +66,8 @@ struct DisassembleArgs {
     filename: String,
     #[arg(short, long)]
     asm: bool,
+    #[arg(short, long, value_enum, default_value = "sbpfv0")]
+    platform: BpfPlatforms,
 }
 
 fn main() -> Result<(), Error> {
@@ -75,6 +85,15 @@ fn main() -> Result<(), Error> {
             test()
         }
         Commands::Clean => clean(),
-        Commands::Disassemble(args) => disassemble(args.filename.clone(), args.asm),
+        Commands::Disassemble(args) => match args.platform {
+            BpfPlatforms::BPF => disassemble::disassemble::<sbpf_common::platform::Bpf>(
+                args.filename.clone(),
+                args.asm,
+            ),
+            BpfPlatforms::SbpfV0 => disassemble::disassemble::<sbpf_common::platform::SbpfV0>(
+                args.filename.clone(),
+                args.asm,
+            ),
+        },
     }
 }

@@ -55,7 +55,7 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
         }
     };
 
-    let parse_result = match parse_tokens(&tokens) {
+    let parse_result = match parse_tokens::<sbpf_common::platform::SbpfV0>(&tokens) {
         Ok(program) => program,
         Err(errors) => {
             let compile_errors: Vec<CompileErrorInfo> = errors
@@ -73,6 +73,6 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
         }
     };
     let program = Program::from_parse_result(parse_result);
-    let bytecode = program.emit_bytecode();
+    let bytecode = program.emit_bytecode::<sbpf_common::platform::SbpfV0>();
     Ok(bytecode)
 }
