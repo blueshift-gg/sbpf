@@ -43,52 +43,49 @@ impl SectionHeaderEntry {
 
 #[cfg(test)]
 mod test {
-    // use {
-    //     crate::section_header_entry::SectionHeaderEntry,
-    //     either::Either,
-    //     sbpf_common::{
-    //         inst_param::{Number, Register},
-    //         instruction::Instruction,
-    //         opcode::Opcode,
-    //     },
-    // };
+    use {
+        crate::section_header_entry::SectionHeaderEntry,
+        either::Either,
+        sbpf_common::{
+            inst_param::{Number, Register},
+            instruction::Instruction,
+            opcode::Opcode,
+        },
+    };
 
-    // #[test]
-    // fn serialize_e2e() {
-    //     let data = vec![
-    //         0x18, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    //         0x00, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    //     ];
+    #[test]
+    fn serialize_e2e() {
+        let data = vec![
+            0x18, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
 
-    //     let h = SectionHeaderEntry::new(".text\0".to_string(), 128, data.clone()).unwrap();
+        let h = SectionHeaderEntry::new(".text\0".to_string(), 128, data.clone()).unwrap();
 
-    //     let ixs = vec![
-    //         Instruction {
-    //             opcode: Opcode::Lddw,
-    //             dst: Some(Register { n: 1 }),
-    //             src: None,
-    //             off: None,
-    //             imm: Some(Either::Right(Number::Int(0))),
-    //             span: 0..16,
-    //         },
-    //         Instruction {
-    //             opcode: Opcode::Exit,
-    //             dst: None,
-    //             src: None,
-    //             off: None,
-    //             imm: None,
-    //             span: 0..8,
-    //         },
-    //     ];
-    //     assert_eq!(ixs, h.to_ixs().unwrap());
+        let ixs = [
+            Instruction {
+                opcode: Opcode::Lddw,
+                dst: Some(Register { n: 1 }),
+                src: None,
+                off: None,
+                imm: Some(Either::Right(Number::Int(0))),
+                span: 0..16,
+            }
+            .to_bytes()
+            .unwrap(),
+            Instruction {
+                opcode: Opcode::Exit,
+                dst: None,
+                src: None,
+                off: None,
+                imm: None,
+                span: 0..8,
+            }
+            .to_bytes()
+            .unwrap(),
+        ]
+        .concat();
 
-    //     assert_eq!(
-    //         data,
-    //         h.to_ixs()
-    //             .expect("Invalid IX")
-    //             .into_iter()
-    //             .flat_map(|i| i.to_bytes().unwrap())
-    //             .collect::<Vec<u8>>()
-    //     )
-    // }
+        assert_eq!(ixs, h.to_bytes());
+    }
 }
