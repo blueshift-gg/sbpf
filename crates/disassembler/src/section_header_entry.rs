@@ -1,6 +1,6 @@
 use {
     crate::errors::DisassemblerError,
-    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    sbpf_common::instruction::Instruction,
     serde::{Deserialize, Serialize},
     std::fmt::Debug,
 };
@@ -35,7 +35,6 @@ impl SectionHeaderEntry {
     pub fn offset(&self) -> usize {
         self.offset
     }
-
 
     pub fn to_bytes(&self) -> Vec<u8> {
         self.data.clone()

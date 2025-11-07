@@ -1,5 +1,5 @@
 use {
-    crate::{elf_header::E_MACHINE_SBPF, errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
+    crate::{errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
     object::{Endianness, read::elf::ElfFile64},
     serde::{Deserialize, Serialize},
     std::fmt::{Debug, Display},
@@ -111,7 +111,6 @@ impl SectionHeader {
     ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
         let endian = elf_file.endian();
         let section_headers_data: Vec<_> = elf_file.elf_section_table().iter().collect();
-        let is_sbpf_v2 = elf_file.elf_header().e_machine.get(Endianness::Little) == E_MACHINE_SBPF && elf_file.elf_header().e_flags.get(Endianness::Little) == 0x02;
 
         let mut section_headers = Vec::new();
         for sh in section_headers_data.iter() {

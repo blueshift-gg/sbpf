@@ -88,7 +88,7 @@ impl Instruction {
     pub fn from_bytes_sbpf_v2(bytes: &[u8]) -> Result<Self, SBPFError> {
         // Preprocess the opcode byte for SBPF v2 (e_flags == 0x02)
         let mut processed_bytes = bytes.to_vec();
-        
+
         match processed_bytes[0] {
             // New opcodes in v2 that map to existing instructions
             0x8C => processed_bytes[0] = 0x61, // v2: 0x8C -> ldxw dst, [src + off]
@@ -105,16 +105,20 @@ impl Instruction {
             0x97 => processed_bytes[0] = 0x7A, // v2: mod64 dst, imm -> stdw [dst + off], imm
             0x9F => processed_bytes[0] = 0x7B, // v2: mod64 dst, src -> stxdw [dst + off], src
             // Revert Lddw
-            0x21 => if let Some(lddw_2) = processed_bytes.get(8) && lddw_2 == &0xf7 {
-                processed_bytes[0] = 0x18;
-                processed_bytes[8..12].clone_from_slice(&[0u8;4]);
-            },
+            0x21 => {
+                if let Some(lddw_2) = processed_bytes.get(8)
+                    && lddw_2 == &0xf7
+                {
+                    processed_bytes[0] = 0x18;
+                    processed_bytes[8..12].clone_from_slice(&[0u8; 4]);
+                }
+            }
             // Move callx target from src to dst
             0x8D => processed_bytes[1] >>= 4,
             // All other opcodes remain unchanged
-            _ => ()
+            _ => (),
         }
-        
+
         Self::from_bytes(&processed_bytes)
     }
 
