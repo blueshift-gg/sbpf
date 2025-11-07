@@ -1,9 +1,10 @@
 use {
     crate::{
-        elf_header::ELFHeader, errors::DisassemblerError, program_header::ProgramHeader,
+        elf_header::{E_MACHINE_SBPF, ELFHeader}, errors::DisassemblerError, program_header::ProgramHeader,
         section_header::SectionHeader, section_header_entry::SectionHeaderEntry,
     },
     object::{Endianness, read::elf::ElfFile64},
+    sbpf_common::{instruction::Instruction, opcode::Opcode},
     serde::{Deserialize, Serialize},
 };
 
@@ -35,6 +36,44 @@ impl Program {
             section_headers,
             section_header_entries,
         })
+    }
+
+    pub fn to_ixs(self) -> Result<Vec<Instruction>, DisassemblerError> {
+        // Find and populate instructions for the .text section
+        let text_section = self.section_header_entries.iter().find(|e| e.label.eq(".text\0")).ok_or(DisassemblerError::MissingTextSection)?;
+        let data = &text_section.data;
+        if !data.len().is_multiple_of(8) {
+            return Err(DisassemblerError::InvalidDataLength);
+        }
+        let mut ixs: Vec<Instruction> = vec![];
+        let mut pos = 0;
+
+        let is_sbpf_v2 = self.elf_header.e_flags == 0x02 && self.elf_header.e_machine == E_MACHINE_SBPF;
+        // Handle pre-processing
+
+        while pos < data.len() {
+            let remaining = &data[pos..];
+            if remaining.len() < 8 {
+                break;
+            }
+
+            // ugly v2 shit we need to fix goes here:
+            let ix = if is_sbpf_v2 {
+                Instruction::from_bytes_sbpf_v2(remaining)?
+            } else {
+                Instruction::from_bytes(remaining)?
+            };
+
+            if ix.opcode == Opcode::Lddw {
+                pos += 16;
+            } else {
+                pos += 8;
+            }
+
+            ixs.push(ix);
+        }
+
+        Ok(ixs)
     }
 }
 

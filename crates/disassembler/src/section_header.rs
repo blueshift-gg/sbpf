@@ -1,5 +1,5 @@
 use {
-    crate::{errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
+    crate::{elf_header::E_MACHINE_SBPF, errors::DisassemblerError, section_header_entry::SectionHeaderEntry},
     object::{Endianness, read::elf::ElfFile64},
     serde::{Deserialize, Serialize},
     std::fmt::{Debug, Display},
@@ -9,24 +9,25 @@ use {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[repr(u32)]
 pub enum SectionHeaderType {
-    SHT_NULL = 0x00,          // Section header table entry unused
-    SHT_PROGBITS = 0x01,      // Program data
-    SHT_SYMTAB = 0x02,        // Symbol table
-    SHT_STRTAB = 0x03,        // String table
-    SHT_RELA = 0x04,          // Relocation entries with addends
-    SHT_HASH = 0x05,          // Symbol hash table
-    SHT_DYNAMIC = 0x06,       // Dynamic linking information
-    SHT_NOTE = 0x07,          // Notes
-    SHT_NOBITS = 0x08,        // Program space with no data (bss)
-    SHT_REL = 0x09,           // Relocation entries, no addends
-    SHT_SHLIB = 0x0A,         // Reserved
-    SHT_DYNSYM = 0x0B,        // Dynamic linker symbol table
-    SHT_INIT_ARRAY = 0x0E,    // Array of constructors
-    SHT_FINI_ARRAY = 0x0F,    // Array of destructors
-    SHT_PREINIT_ARRAY = 0x10, // Array of pre-constructors
-    SHT_GROUP = 0x11,         // Section group
-    SHT_SYMTAB_SHNDX = 0x12,  // Extended section indices
-    SHT_NUM = 0x13,           // Number of defined types.
+    SHT_NULL = 0x00,           // Section header table entry unused
+    SHT_PROGBITS = 0x01,       // Program data
+    SHT_SYMTAB = 0x02,         // Symbol table
+    SHT_STRTAB = 0x03,         // String table
+    SHT_RELA = 0x04,           // Relocation entries with addends
+    SHT_HASH = 0x05,           // Symbol hash table
+    SHT_DYNAMIC = 0x06,        // Dynamic linking information
+    SHT_NOTE = 0x07,           // Notes
+    SHT_NOBITS = 0x08,         // Program space with no data (bss)
+    SHT_REL = 0x09,            // Relocation entries, no addends
+    SHT_SHLIB = 0x0A,          // Reserved
+    SHT_DYNSYM = 0x0B,         // Dynamic linker symbol table
+    SHT_INIT_ARRAY = 0x0E,     // Array of constructors
+    SHT_FINI_ARRAY = 0x0F,     // Array of destructors
+    SHT_PREINIT_ARRAY = 0x10,  // Array of pre-constructors
+    SHT_GROUP = 0x11,          // Section group
+    SHT_SYMTAB_SHNDX = 0x12,   // Extended section indices
+    SHT_NUM = 0x13,            // Number of defined types.
+    SHT_GNU_HASH = 0x6ffffff6, // GNU Hash
 }
 
 impl TryFrom<u32> for SectionHeaderType {
@@ -52,6 +53,7 @@ impl TryFrom<u32> for SectionHeaderType {
             0x11 => Self::SHT_GROUP,
             0x12 => Self::SHT_SYMTAB_SHNDX,
             0x13 => Self::SHT_NUM,
+            0x6ffffff6 => Self::SHT_GNU_HASH,
             _ => return Err(DisassemblerError::InvalidSectionHeaderType),
         })
     }
@@ -84,6 +86,7 @@ impl From<SectionHeaderType> for &str {
             SectionHeaderType::SHT_GROUP => "SHT_GROUP",
             SectionHeaderType::SHT_SYMTAB_SHNDX => "SHT_SYMTAB_SHNDX",
             SectionHeaderType::SHT_NUM => "SHT_NUM",
+            SectionHeaderType::SHT_GNU_HASH => "SHT_GNU_HASH",
         }
     }
 }
@@ -108,6 +111,7 @@ impl SectionHeader {
     ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
         let endian = elf_file.endian();
         let section_headers_data: Vec<_> = elf_file.elf_section_table().iter().collect();
+        let is_sbpf_v2 = elf_file.elf_header().e_machine.get(Endianness::Little) == E_MACHINE_SBPF && elf_file.elf_header().e_flags.get(Endianness::Little) == 0x02;
 
         let mut section_headers = Vec::new();
         for sh in section_headers_data.iter() {

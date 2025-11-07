@@ -109,6 +109,10 @@ impl ELFHeader {
         })
     }
 
+    // pub fn is_sbpf_v2(&self) -> bool {
+    //     self.e_machine == E_MACHINE_SBPF && self.e_flags == 0x02
+    // }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut b = self.ei_magic.to_vec();
         b.extend_from_slice(&[

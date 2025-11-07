@@ -85,6 +85,39 @@ impl Instruction {
         }
     }
 
+    pub fn from_bytes_sbpf_v2(bytes: &[u8]) -> Result<Self, SBPFError> {
+        // Preprocess the opcode byte for SBPF v2 (e_flags == 0x02)
+        let mut processed_bytes = bytes.to_vec();
+        
+        match processed_bytes[0] {
+            // New opcodes in v2 that map to existing instructions
+            0x8C => processed_bytes[0] = 0x61, // v2: 0x8C -> ldxw dst, [src + off]
+            0x8F => processed_bytes[0] = 0x63, // v2: 0x8F -> stxw [dst + off], src
+            // Repurposed opcodes in v2
+            0x2C => processed_bytes[0] = 0x71, // v2: mul32 dst, src -> ldxb dst, [src + off]
+            0x3C => processed_bytes[0] = 0x69, // v2: div32 dst, src -> ldxh dst, [src + off]
+            0x9C => processed_bytes[0] = 0x79, // v2: mod32 dst, src -> ldxdw dst, [src + off]
+            0x27 => processed_bytes[0] = 0x72, // v2: mul64 dst, imm -> stb [dst + off], imm
+            0x2F => processed_bytes[0] = 0x73, // v2: mul64 dst, src -> stxb [dst + off], src
+            0x37 => processed_bytes[0] = 0x6A, // v2: div64 dst, imm -> sth [dst + off], imm
+            0x3F => processed_bytes[0] = 0x6B, // v2: div64 dst, src -> stxh [dst + off], src
+            0x87 => processed_bytes[0] = 0x62, // v2: neg64 dst -> stw [dst + off], imm
+            0x97 => processed_bytes[0] = 0x7A, // v2: mod64 dst, imm -> stdw [dst + off], imm
+            0x9F => processed_bytes[0] = 0x7B, // v2: mod64 dst, src -> stxdw [dst + off], src
+            // Revert Lddw
+            0x21 => if let Some(lddw_2) = processed_bytes.get(8) && lddw_2 == &0xf7 {
+                processed_bytes[0] = 0x18;
+                processed_bytes[8..12].clone_from_slice(&[0u8;4]);
+            },
+            // Move callx target from src to dst
+            0x8D => processed_bytes[1] >>= 4,
+            // All other opcodes remain unchanged
+            _ => ()
+        }
+        
+        Self::from_bytes(&processed_bytes)
+    }
+
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let src_val = if self.opcode == Opcode::Call {
