@@ -87,8 +87,8 @@ directive       = { directive_inner ~ NEWLINE }
 // INSTRUCTIONS
 // ================
 
-// Arithmetic Operations (64-bit)
-arith_64_op       = {
+// Arithmetic and Logical Operations (64-bit)
+alu_64_op       = {
     "add64"
   | "sub64"
   | "mul64"
@@ -96,7 +96,6 @@ arith_64_op       = {
   | "sdiv64"
   | "mod64"
   | "smod64"
-  | "neg64"
   | "or64"
   | "and64"
   | "xor64"
@@ -105,11 +104,11 @@ arith_64_op       = {
   | "rsh64"
   | "arsh64"
 }
-instr_arith64_imm = { arith_64_op ~ register ~ "," ~ operand }
-instr_arith64_reg = { arith_64_op ~ register ~ "," ~ register }
+instr_alu64_imm = { alu_64_op ~ register ~ "," ~ operand }
+instr_alu64_reg = { alu_64_op ~ register ~ "," ~ register }
 
-// Arithmetic Operations (32-bit)
-arith_32_op       = {
+// Arithmetic and Logical Operations (32-bit)
+alu_32_op       = {
     "add32"
   | "sub32"
   | "mul32"
@@ -125,8 +124,11 @@ arith_32_op       = {
   | "rsh32"
   | "arsh32"
 }
-instr_arith32_imm = { arith_32_op ~ register ~ "," ~ operand }
-instr_arith32_reg = { arith_32_op ~ register ~ "," ~ register }
+instr_alu32_imm = { alu_32_op ~ register ~ "," ~ operand }
+instr_alu32_reg = { alu_32_op ~ register ~ "," ~ register }
+
+// Negate operation
+instr_neg64 = { "neg64" ~ register }
 
 // Memory Load Operations
 load_op    = { "ldxb" | "ldxh" | "ldxw" | "ldxdw" }
@@ -167,7 +169,7 @@ instr_exit  = { "exit" }
 
 // All instructions
 instruction = {
-    (instr_lddw | instr_callx | instr_call | instr_exit | instr_arith64_imm | instr_arith64_reg | instr_arith32_imm | instr_arith32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
+    (instr_lddw | instr_callx | instr_call | instr_exit | instr_neg64 | instr_alu64_imm | instr_alu64_reg | instr_alu32_imm | instr_alu32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
 }
 
 statement = {

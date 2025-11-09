@@ -414,11 +414,12 @@ fn process_instruction(
             Rule::instr_lddw => return process_lddw(inner, const_map, span_range),
             Rule::instr_call => return process_call(inner, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
-            Rule::instr_arith64_imm | Rule::instr_arith32_imm => {
-                return process_arith_imm(inner, const_map, span_range);
+            Rule::instr_neg64 => return process_neg64(inner, span_range),
+            Rule::instr_alu64_imm | Rule::instr_alu32_imm => {
+                return process_alu_imm(inner, const_map, span_range);
             }
-            Rule::instr_arith64_reg | Rule::instr_arith32_reg => {
-                return process_arith_reg(inner, span_range);
+            Rule::instr_alu64_reg | Rule::instr_alu32_reg => {
+                return process_alu_reg(inner, span_range);
             }
             Rule::instr_load => return process_load(inner, const_map, span_range),
             Rule::instr_store_imm => return process_store_imm(inner, const_map, span_range),
@@ -563,7 +564,7 @@ fn process_store_reg(
     })
 }
 
-fn process_arith_imm(
+fn process_alu_imm(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
     span: std::ops::Range<usize>,
@@ -574,7 +575,7 @@ fn process_arith_imm(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::arith_64_op | Rule::arith_32_op => opcode = Opcode::from_str(inner.as_str()).ok(),
+            Rule::alu_64_op | Rule::alu_32_op => opcode = Opcode::from_str(inner.as_str()).ok(),
             Rule::register => dst = Some(parse_register(inner)?),
             Rule::operand => imm = Some(parse_operand(inner, const_map)?),
             _ => {}
@@ -591,7 +592,7 @@ fn process_arith_imm(
     })
 }
 
-fn process_arith_reg(
+fn process_alu_reg(
     pair: Pair<Rule>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
@@ -601,7 +602,7 @@ fn process_arith_reg(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::arith_64_op | Rule::arith_32_op => {
+            Rule::alu_64_op | Rule::alu_32_op => {
                 let op_str = inner.as_str();
                 let inner_span = inner.as_span();
                 if let Ok(opc) = Opcode::from_str(op_str) {
@@ -780,6 +781,28 @@ fn process_callx(
 
     Ok(Instruction {
         opcode: Opcode::Callx,
+        dst,
+        src: None,
+        off: None,
+        imm: None,
+        span,
+    })
+}
+
+fn process_neg64(
+    pair: Pair<Rule>,
+    span: std::ops::Range<usize>,
+) -> Result<Instruction, CompileError> {
+    let mut dst = None;
+
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::register {
+            dst = Some(parse_register(inner)?);
+        }
+    }
+
+    Ok(Instruction {
+        opcode: Opcode::Neg64,
         dst,
         src: None,
         off: None,
