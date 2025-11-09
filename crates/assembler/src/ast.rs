@@ -72,15 +72,48 @@ impl AST {
             })
     }
 
+    /// Resolve numeric label references (like "2f" or "1b")
+    fn resolve_numeric_label(
+        label_ref: &str,
+        current_idx: usize,
+        numeric_labels: &[(String, u64, usize)],
+    ) -> Option<u64> {
+        if let Some(direction) = label_ref.chars().last() {
+            if direction == 'f' || direction == 'b' {
+                let label_num = &label_ref[..label_ref.len() - 1];
+
+                if direction == 'f' {
+                    // search forward from current position
+                    for (name, offset, node_idx) in numeric_labels {
+                        if name == label_num && *node_idx > current_idx {
+                            return Some(*offset);
+                        }
+                    }
+                } else {
+                    // search backward from current position
+                    for (name, offset, node_idx) in numeric_labels.iter().rev() {
+                        if name == label_num && *node_idx < current_idx {
+                            return Some(*offset);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     //
     pub fn build_program(&mut self) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
+        let mut numeric_labels: Vec<(String, u64, usize)> = Vec::new();
 
         // iterate through text labels and rodata labels and find the pair
         // of each label and offset
-        for node in &self.nodes {
+        for (idx, node) in self.nodes.iter().enumerate() {
             if let ASTNode::Label { label, offset } = node {
                 label_offset_map.insert(label.name.clone(), *offset);
+                // Also track numeric labels separately for forward/backward resolution
+                numeric_labels.push((label.name.clone(), *offset, idx));
             }
         }
 
@@ -99,7 +132,7 @@ impl AST {
 
         let mut errors = Vec::new();
 
-        for node in &mut self.nodes {
+        for (idx, node) in self.nodes.iter_mut().enumerate() {
             if let ASTNode::Instruction {
                 instruction: inst,
                 offset,
@@ -110,8 +143,15 @@ impl AST {
                 if inst.is_jump()
                     && let Some(Either::Left(label)) = &inst.off
                 {
-                    if let Some(target_offset) = label_offset_map.get(label) {
-                        let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
+                    let target_offset = if let Some(offset) = label_offset_map.get(label) {
+                        Some(*offset)
+                    } else {
+                        // Handle numeric label references
+                        Self::resolve_numeric_label(label, idx, &numeric_labels)
+                    };
+
+                    if let Some(target_offset) = target_offset {
+                        let rel_offset = (target_offset as i64 - *offset as i64) / 8 - 1;
                         inst.off = Some(Either::Right(rel_offset as i16));
                     } else {
                         errors.push(CompileError::UndefinedLabel {

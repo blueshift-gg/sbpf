@@ -856,14 +856,24 @@ fn parse_operand(
                 return Ok(Either::Left(name));
             }
             Rule::operand_expr => {
-                let mut sym = None;
+                let mut sym_name = None;
+                let mut num_value = None;
+
                 for expr_inner in inner.into_inner() {
-                    if expr_inner.as_rule() == Rule::symbol {
-                        sym = Some(expr_inner.as_str().to_string());
+                    match expr_inner.as_rule() {
+                        Rule::symbol => sym_name = Some(expr_inner.as_str().to_string()),
+                        Rule::number => num_value = Some(parse_number(expr_inner)?),
+                        _ => {}
                     }
                 }
-                if let Some(s) = sym {
-                    return Ok(Either::Left(s));
+
+                if let (Some(sym), Some(num)) = (sym_name, num_value) {
+                    if let Some(base_value) = const_map.get(&sym) {
+                        let result = base_value.clone() + num;
+                        return Ok(Either::Right(result));
+                    } else {
+                        return Ok(Either::Left(sym));
+                    }
                 }
             }
             _ => {}
