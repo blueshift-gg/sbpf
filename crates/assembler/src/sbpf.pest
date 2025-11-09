@@ -157,8 +157,8 @@ instr_jump_reg    = { jump_op ~ register ~ "," ~ register ~ "," ~ jump_target }
 instr_jump_uncond = { "ja" ~ jump_target }
 
 // Byte Swap Operations
-endian_op    = { "be" | "le" }
-instr_endian = { endian_op ~ register ~ "," ~ operand }
+endian_op    = { "be16" | "be32" | "be64" | "le16" | "le32" | "le64" }
+instr_endian = { endian_op ~ register }
 
 // Function Call Operations
 instr_call  = { "call" ~ symbol }

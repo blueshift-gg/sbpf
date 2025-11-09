@@ -426,7 +426,7 @@ fn process_instruction(
             Rule::instr_jump_imm => return process_jump_imm(inner, const_map, span_range),
             Rule::instr_jump_reg => return process_jump_reg(inner, span_range),
             Rule::instr_jump_uncond => return process_jump_uncond(inner, const_map, span_range),
-            Rule::instr_endian => return process_endian(inner, const_map, span_range),
+            Rule::instr_endian => return process_endian(inner, span_range),
             _ => {}
         }
     }
@@ -790,7 +790,6 @@ fn process_callx(
 
 fn process_endian(
     pair: Pair<Rule>,
-    const_map: &HashMap<String, Number>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut opcode = None;
@@ -801,14 +800,33 @@ fn process_endian(
         match inner.as_rule() {
             Rule::endian_op => {
                 let op_str = inner.as_str();
-                opcode = Some(if op_str.starts_with("be") {
-                    Opcode::Be
+                let inner_span = inner.as_span();
+                // Extract opcode and size from instruction (example: "be16" = be opcode, 16 bits)
+                let (opc, size) = if op_str.starts_with("be") {
+                    let size_str = &op_str[2..];
+                    let size = size_str
+                        .parse::<i64>()
+                        .map_err(|_| CompileError::ParseError {
+                            error: format!("Invalid endian size in '{}'", op_str),
+                            span: inner_span.start()..inner_span.end(),
+                            custom_label: None,
+                        })?;
+                    (Opcode::Be, size)
                 } else {
-                    Opcode::Le
-                });
+                    let size_str = &op_str[2..];
+                    let size = size_str
+                        .parse::<i64>()
+                        .map_err(|_| CompileError::ParseError {
+                            error: format!("Invalid endian size in '{}'", op_str),
+                            span: inner_span.start()..inner_span.end(),
+                            custom_label: None,
+                        })?;
+                    (Opcode::Le, size)
+                };
+                opcode = Some(opc);
+                imm = Some(Either::Right(Number::Int(size)));
             }
             Rule::register => dst = Some(parse_register(inner)?),
-            Rule::operand => imm = Some(parse_operand(inner, const_map)?),
             _ => {}
         }
     }
