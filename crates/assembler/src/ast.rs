@@ -78,23 +78,23 @@ impl AST {
         current_idx: usize,
         numeric_labels: &[(String, u64, usize)],
     ) -> Option<u64> {
-        if let Some(direction) = label_ref.chars().last() {
-            if direction == 'f' || direction == 'b' {
-                let label_num = &label_ref[..label_ref.len() - 1];
+        if let Some(direction) = label_ref.chars().last()
+            && (direction == 'f' || direction == 'b')
+        {
+            let label_num = &label_ref[..label_ref.len() - 1];
 
-                if direction == 'f' {
-                    // search forward from current position
-                    for (name, offset, node_idx) in numeric_labels {
-                        if name == label_num && *node_idx > current_idx {
-                            return Some(*offset);
-                        }
+            if direction == 'f' {
+                // search forward from current position
+                for (name, offset, node_idx) in numeric_labels {
+                    if name == label_num && *node_idx > current_idx {
+                        return Some(*offset);
                     }
-                } else {
-                    // search backward from current position
-                    for (name, offset, node_idx) in numeric_labels.iter().rev() {
-                        if name == label_num && *node_idx < current_idx {
-                            return Some(*offset);
-                        }
+                }
+            } else {
+                // search backward from current position
+                for (name, offset, node_idx) in numeric_labels.iter().rev() {
+                    if name == label_num && *node_idx < current_idx {
+                        return Some(*offset);
                     }
                 }
             }

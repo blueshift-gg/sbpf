@@ -825,8 +825,7 @@ fn process_endian(
                 let op_str = inner.as_str();
                 let inner_span = inner.as_span();
                 // Extract opcode and size from instruction (example: "be16" = be opcode, 16 bits)
-                let (opc, size) = if op_str.starts_with("be") {
-                    let size_str = &op_str[2..];
+                let (opc, size) = if let Some(size_str) = op_str.strip_prefix("be") {
                     let size = size_str
                         .parse::<i64>()
                         .map_err(|_| CompileError::ParseError {
@@ -835,8 +834,7 @@ fn process_endian(
                             custom_label: None,
                         })?;
                     (Opcode::Be, size)
-                } else {
-                    let size_str = &op_str[2..];
+                } else if let Some(size_str) = op_str.strip_prefix("le") {
                     let size = size_str
                         .parse::<i64>()
                         .map_err(|_| CompileError::ParseError {
@@ -845,6 +843,12 @@ fn process_endian(
                             custom_label: None,
                         })?;
                     (Opcode::Le, size)
+                } else {
+                    return Err(CompileError::ParseError {
+                        error: format!("Invalid endian operation '{}'", op_str),
+                        span: inner_span.start()..inner_span.end(),
+                        custom_label: None,
+                    });
                 };
                 opcode = Some(opc);
                 imm = Some(Either::Right(Number::Int(size)));
