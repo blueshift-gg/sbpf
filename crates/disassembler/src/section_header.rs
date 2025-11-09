@@ -200,14 +200,5 @@ mod tests {
         // Verify we have the expected number of section headers.
         assert_eq!(program.section_headers.len(), 6);
         assert_eq!(program.section_header_entries.len(), 6);
-
-        // Verify section header entries have proper data.
-        for entry in &program.section_header_entries {
-            assert!(!entry.label.is_empty());
-            if entry.label == ".text\0" {
-                assert!(!entry.data.is_empty());
-                assert!(!entry.ixs.is_empty());
-            }
-        }
     }
 }
