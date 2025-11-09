@@ -1,6 +1,6 @@
 use {
     crate::errors::DisassemblerError,
-    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    sbpf_common::instruction::Instruction,
     serde::{Deserialize, Serialize},
     std::fmt::Debug,
 };
@@ -26,10 +26,6 @@ impl SectionHeaderEntry {
             utf8: String::new(),
         };
 
-        if h.label.contains(".text\0") {
-            h.ixs = h.to_ixs()?;
-        }
-
         if let Ok(utf8) = String::from_utf8(h.data.clone()) {
             h.utf8 = utf8;
         }
@@ -38,32 +34,6 @@ impl SectionHeaderEntry {
 
     pub fn offset(&self) -> usize {
         self.offset
-    }
-
-    pub fn to_ixs(&self) -> Result<Vec<Instruction>, DisassemblerError> {
-        if !self.data.len().is_multiple_of(8) {
-            return Err(DisassemblerError::InvalidDataLength);
-        }
-        let mut ixs: Vec<Instruction> = vec![];
-        let mut pos = 0;
-
-        while pos < self.data.len() {
-            let remaining = &self.data[pos..];
-            if remaining.len() < 8 {
-                break;
-            }
-
-            let ix = Instruction::from_bytes(remaining)?;
-            if ix.opcode == Opcode::Lddw {
-                pos += 16;
-            } else {
-                pos += 8;
-            }
-
-            ixs.push(ix);
-        }
-
-        Ok(ixs)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -92,7 +62,7 @@ mod test {
 
         let h = SectionHeaderEntry::new(".text\0".to_string(), 128, data.clone()).unwrap();
 
-        let ixs = vec![
+        let ixs = [
             Instruction {
                 opcode: Opcode::Lddw,
                 dst: Some(Register { n: 1 }),
@@ -100,7 +70,9 @@ mod test {
                 off: None,
                 imm: Some(Either::Right(Number::Int(0))),
                 span: 0..16,
-            },
+            }
+            .to_bytes()
+            .unwrap(),
             Instruction {
                 opcode: Opcode::Exit,
                 dst: None,
@@ -108,17 +80,12 @@ mod test {
                 off: None,
                 imm: None,
                 span: 0..8,
-            },
-        ];
-        assert_eq!(ixs, h.to_ixs().unwrap());
+            }
+            .to_bytes()
+            .unwrap(),
+        ]
+        .concat();
 
-        assert_eq!(
-            data,
-            h.to_ixs()
-                .expect("Invalid IX")
-                .into_iter()
-                .flat_map(|i| i.to_bytes().unwrap())
-                .collect::<Vec<u8>>()
-        )
+        assert_eq!(ixs, h.to_bytes());
     }
 }

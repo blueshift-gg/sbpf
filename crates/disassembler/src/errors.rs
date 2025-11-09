@@ -18,6 +18,8 @@ pub enum DisassemblerError {
     InvalidString,
     #[error("Bytecode error: {0}")]
     BytecodeError(String),
+    #[error("Missing text section")]
+    MissingTextSection,
 }
 
 impl From<SBPFError> for DisassemblerError {
