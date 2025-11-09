@@ -4,7 +4,7 @@ use {
         debuginfo::DebugInfo,
         dynsym::{DynamicSymbol, RelDyn},
         header::SectionHeader,
-        lexer::Token,
+        parser::Token,
     },
     std::collections::HashMap,
 };
