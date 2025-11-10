@@ -157,9 +157,12 @@ pub fn validate_call_immediate(inst: &Instruction) -> Result<(), SBPFError> {
 
 pub fn validate_call_register(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
-        (None, Some(_src), None, None) => Ok(()),
+        (Some(_dst), None, None, None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
-            error: format!("{} instruction requires source register only", inst.opcode),
+            error: format!(
+                "{} instruction requires destination register only",
+                inst.opcode
+            ),
             span: inst.span.clone(),
             custom_label: None,
         }),
@@ -1151,8 +1154,8 @@ mod tests {
     fn test_validate_call_register_valid() {
         let valid_inst = Instruction {
             opcode: Opcode::Callx,
-            dst: None,
-            src: Some(Register { n: 1 }),
+            dst: Some(Register { n: 1 }),
+            src: None,
             off: None,
             imm: None,
             span: 0..8,
@@ -1161,7 +1164,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_call_register_missing_src() {
+    fn test_validate_call_register_missing_dst() {
         let inst = Instruction {
             opcode: Opcode::Callx,
             dst: None,
@@ -1176,7 +1179,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires source register only",
+                    "{} instruction requires destination register only",
                     Opcode::Callx
                 )
             );
@@ -1184,7 +1187,7 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_call_register_has_dst() {
+    fn test_validate_call_register_has_src() {
         let inst = Instruction {
             opcode: Opcode::Callx,
             dst: Some(Register { n: 0 }),
@@ -1199,7 +1202,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires source register only",
+                    "{} instruction requires destination register only",
                     Opcode::Callx
                 )
             );
@@ -1210,8 +1213,8 @@ mod tests {
     fn test_validate_call_register_has_offset() {
         let inst = Instruction {
             opcode: Opcode::Callx,
-            dst: None,
-            src: Some(Register { n: 1 }),
+            dst: Some(Register { n: 1 }),
+            src: None,
             off: Some(Either::Right(10)),
             imm: None,
             span: 0..8,
@@ -1222,7 +1225,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires source register only",
+                    "{} instruction requires destination register only",
                     Opcode::Callx
                 )
             );
@@ -1233,8 +1236,8 @@ mod tests {
     fn test_validate_call_register_has_imm() {
         let inst = Instruction {
             opcode: Opcode::Callx,
-            dst: None,
-            src: Some(Register { n: 1 }),
+            dst: Some(Register { n: 1 }),
+            src: None,
             off: None,
             imm: Some(Either::Right(Number::Int(100))),
             span: 0..8,
@@ -1245,7 +1248,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires source register only",
+                    "{} instruction requires destination register only",
                     Opcode::Callx
                 )
             );
