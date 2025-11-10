@@ -65,6 +65,11 @@ define_compile_errors! {
         label = "Unmatched parenthesis",
         fields = { span: Range<usize> }
     },
+    ParseError {
+        error = "Parse error: {error}",
+        label = "Parse error",
+        fields = { error: String, span: Range<usize> }
+    },
     OutOfRangeLiteral {
         error = "Out of range literal'",
         label = "Out of range literal",

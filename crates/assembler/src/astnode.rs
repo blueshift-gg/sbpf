@@ -1,5 +1,5 @@
 use {
-    crate::{debuginfo::DebugInfo, errors::CompileError, lexer::Token},
+    crate::{debuginfo::DebugInfo, errors::CompileError, parser::Token},
     sbpf_common::{inst_param::Number, instruction::Instruction},
     std::{collections::HashMap, ops::Range},
 };

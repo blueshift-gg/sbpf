@@ -1,5 +1,5 @@
 use {
-    crate::{lexer::tokenize, parser::parse_tokens, program::Program},
+    crate::{parser, program::Program},
     serde::Serialize,
     serde_wasm_bindgen::to_value,
     std::ops::Range,
@@ -37,26 +37,8 @@ fn span_to_line_col(source_code: &str, span: &Range<usize>) -> (usize, usize) {
 
 #[wasm_bindgen]
 pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
-    let tokens = match tokenize(source) {
-        Ok(tokens) => tokens,
-        Err(errors) => {
-            let compile_errors: Vec<CompileErrorInfo> = errors
-                .iter()
-                .map(|e| {
-                    let (line, col) = span_to_line_col(source, e.span());
-                    CompileErrorInfo {
-                        error: e.to_string(),
-                        line: line.to_string(),
-                        col: col.to_string(),
-                    }
-                })
-                .collect();
-            return Err(to_value(&compile_errors).unwrap());
-        }
-    };
-
-    let parse_result = match parse_tokens(&tokens) {
-        Ok(program) => program,
+    let parse_result = match parser::parse(source) {
+        Ok(result) => result,
         Err(errors) => {
             let compile_errors: Vec<CompileErrorInfo> = errors
                 .iter()

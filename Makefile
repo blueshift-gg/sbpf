@@ -13,6 +13,8 @@ web:
 .PHONY: test-examples
 test-examples:
 	@set -e; \
+	cargo build; \
+	cargo install --path .; \
 	for d in examples/*; do \
 		if [ -d "$$d" ]; then \
 			echo "=== Building and testing $$d ==="; \
