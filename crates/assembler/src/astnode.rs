@@ -104,26 +104,16 @@ impl ROData {
     fn validate_immediate_range(
         value: &Number,
         min: i64,
-        max: i64,
+        max: u64,
         span: Range<usize>,
     ) -> Result<(), CompileError> {
-        match value {
-            Number::Int(val) => {
-                if *val < min || *val > max {
-                    return Err(CompileError::OutOfRangeLiteral {
-                        span,
-                        custom_label: None,
-                    });
-                }
-            }
-            Number::Addr(val) => {
-                if *val < min || *val > max {
-                    return Err(CompileError::OutOfRangeLiteral {
-                        span,
-                        custom_label: None,
-                    });
-                }
-            }
+        let raw = value.to_i64();
+
+        if raw < min || (raw >= 0 && (raw as u64) > max) {
+            return Err(CompileError::OutOfRangeLiteral {
+                span,
+                custom_label: None,
+            });
         }
         Ok(())
     }
@@ -174,7 +164,7 @@ impl ROData {
                         Self::validate_immediate_range(
                             value,
                             i8::MIN as i64,
-                            i8::MAX as i64,
+                            u8::MAX as u64,
                             vector_literal_span.clone(),
                         )?;
                     }
@@ -184,7 +174,7 @@ impl ROData {
                         Self::validate_immediate_range(
                             value,
                             i16::MIN as i64,
-                            i16::MAX as i64,
+                            u16::MAX as u64,
                             vector_literal_span.clone(),
                         )?;
                     }
@@ -194,7 +184,7 @@ impl ROData {
                         Self::validate_immediate_range(
                             value,
                             i32::MIN as i64,
-                            i32::MAX as i64,
+                            u32::MAX as u64,
                             vector_literal_span.clone(),
                         )?;
                     }
@@ -204,7 +194,7 @@ impl ROData {
                         Self::validate_immediate_range(
                             value,
                             i64::MIN,
-                            i64::MAX,
+                            u64::MAX,
                             vector_literal_span.clone(),
                         )?;
                     }
