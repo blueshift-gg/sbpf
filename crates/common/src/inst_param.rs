@@ -27,6 +27,13 @@ impl Number {
             Number::Addr(a) => *a as i16,
         }
     }
+
+    pub fn to_i64(&self) -> i64 {
+        match self {
+            Number::Int(v) => *v,
+            Number::Addr(a) => *a,
+        }
+    }
 }
 
 impl fmt::Display for Number {
