@@ -284,7 +284,7 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     Ok(Instruction {
         opcode,
         dst: None,
-        src: None,
+        src: Some(Register { n: src }),
         off: None,
         imm: callimm,
         span: 0..8,
@@ -294,6 +294,13 @@ pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_call_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
+    // Handle SBPF Callx normalization
+    let (dst, imm) = if dst == 0 && imm != 0 {
+        (imm as u8, 0)
+    } else {
+        (dst, 0)
+    };
+
     // TODO: sbpf encodes dst_reg in immediate
     if src != 0 || off != 0 || imm != 0 {
         return Err(SBPFError::BytecodeError {
