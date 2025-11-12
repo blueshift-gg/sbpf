@@ -414,6 +414,7 @@ fn process_instruction(
             Rule::instr_lddw => return process_lddw(inner, const_map, span_range),
             Rule::instr_call => return process_call(inner, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
+            Rule::instr_neg32 => return process_neg32(inner, span_range),
             Rule::instr_neg64 => return process_neg64(inner, span_range),
             Rule::instr_alu64_imm | Rule::instr_alu32_imm => {
                 return process_alu_imm(inner, const_map, span_range);
@@ -781,6 +782,28 @@ fn process_callx(
 
     Ok(Instruction {
         opcode: Opcode::Callx,
+        dst,
+        src: None,
+        off: None,
+        imm: None,
+        span,
+    })
+}
+
+fn process_neg32(
+    pair: Pair<Rule>,
+    span: std::ops::Range<usize>,
+) -> Result<Instruction, CompileError> {
+    let mut dst = None;
+
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::register {
+            dst = Some(parse_register(inner)?);
+        }
+    }
+
+    Ok(Instruction {
+        opcode: Opcode::Neg32,
         dst,
         src: None,
         off: None,

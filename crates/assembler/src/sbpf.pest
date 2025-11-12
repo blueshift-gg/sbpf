@@ -128,6 +128,7 @@ instr_alu32_imm = { alu_32_op ~ register ~ "," ~ operand }
 instr_alu32_reg = { alu_32_op ~ register ~ "," ~ register }
 
 // Negate operation
+instr_neg32 = { "neg32" ~ register }
 instr_neg64 = { "neg64" ~ register }
 
 // Memory Load Operations
@@ -169,7 +170,7 @@ instr_exit  = { "exit" }
 
 // All instructions
 instruction = {
-    (instr_lddw | instr_callx | instr_call | instr_exit | instr_neg64 | instr_alu64_imm | instr_alu64_reg | instr_alu32_imm | instr_alu32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
+    (instr_lddw | instr_callx | instr_call | instr_exit | instr_neg32 | instr_neg64 | instr_alu64_imm | instr_alu64_reg | instr_alu32_imm | instr_alu32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
 }
 
 statement = {
