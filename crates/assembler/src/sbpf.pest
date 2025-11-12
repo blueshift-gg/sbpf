@@ -2,8 +2,8 @@ WHITESPACE = _{ " " | "\t" | "\r" }
 COMMENT    = _{ (";" | "#" | "//") ~ (!NEWLINE ~ ANY)* }
 
 // Numbers (decimal and hex)
-hex_number     = @{ "0x" ~ ASCII_HEX_DIGIT+ }
-decimal_number = @{ "-"? ~ ASCII_DIGIT+ }
+hex_number     = @{ "0x" ~ ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
+decimal_number = @{ "-"? ~ ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 number         = @{ hex_number | decimal_number }
 
 // String literals.
