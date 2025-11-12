@@ -412,7 +412,7 @@ fn process_instruction(
                 });
             }
             Rule::instr_lddw => return process_lddw(inner, const_map, span_range),
-            Rule::instr_call => return process_call(inner, span_range),
+            Rule::instr_call => return process_call(inner, const_map, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
             Rule::instr_neg64 => return process_neg64(inner, span_range),
             Rule::instr_alu64_imm | Rule::instr_alu32_imm => {
@@ -747,13 +747,18 @@ fn process_jump_uncond(
 
 fn process_call(
     pair: Pair<Rule>,
+    const_map: &HashMap<String, Number>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut imm = None;
 
     for inner in pair.into_inner() {
         if inner.as_rule() == Rule::symbol {
-            imm = Some(Either::Left(inner.as_str().to_string()));
+            if let Some(symbol) = const_map.get(inner.as_str()) {
+                imm = Some(Either::Right(symbol.to_owned()));
+            } else {
+                imm = Some(Either::Left(inner.as_str().to_string()));
+            }
         }
     }
 
