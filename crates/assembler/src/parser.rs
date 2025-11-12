@@ -1008,7 +1008,7 @@ fn parse_memory_ref(
 fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     let span = pair.as_span();
     let span_range = span.start()..span.end();
-    let number_str = pair.as_str();
+    let number_str = pair.as_str().replace('_', "");
 
     if number_str.starts_with("0x") {
         let hex_str = number_str.trim_start_matches("0x");
@@ -1020,7 +1020,7 @@ fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     }
 
     Err(CompileError::InvalidNumber {
-        number: number_str.to_string(),
+        number: number_str,
         span: span_range,
         custom_label: None,
     })
