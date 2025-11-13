@@ -1,6 +1,5 @@
 use {
     crate::errors::DisassemblerError,
-    sbpf_common::instruction::Instruction,
     serde::{Deserialize, Serialize},
     std::fmt::Debug,
 };
@@ -10,8 +9,6 @@ pub struct SectionHeaderEntry {
     pub label: String,
     pub offset: usize,
     pub data: Vec<u8>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ixs: Vec<Instruction>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub utf8: String,
 }
@@ -22,7 +19,6 @@ impl SectionHeaderEntry {
             label,
             offset,
             data,
-            ixs: vec![],
             utf8: String::new(),
         };
 

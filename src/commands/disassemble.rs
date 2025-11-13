@@ -14,15 +14,9 @@ pub fn disassemble(filename: String, asm: bool) -> Result<(), Error> {
         println!(
             "{}",
             program
-                .section_header_entries
+                .to_ixs()?
                 .iter()
-                .map(|h| h.ixs.clone())
-                .filter(|ixs| !ixs.is_empty())
-                .map(|ixs| ixs
-                    .iter()
-                    .map(|i| i.to_asm().unwrap())
-                    .collect::<Vec<String>>()
-                    .join("\n"))
+                .map(|ix| ix.to_asm().unwrap())
                 .collect::<Vec<String>>()
                 .join("\n")
         );
