@@ -5,7 +5,7 @@ pub fn validate_load_immediate(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), None, None, Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register and immediate value only",
+                "{} instruction requires destination register and immediate value",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -19,8 +19,7 @@ pub fn validate_load_memory(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), Some(_src), Some(_off), None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register, source register, offset, and no \
-                 immediate value",
+                "{} instruction requires destination register, source register, and offset",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -34,8 +33,7 @@ pub fn validate_store_immediate(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), None, Some(_off), Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register, offset, immediate value, and no \
-                 source register",
+                "{} instruction requires destination register, offset, and immediate value",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -49,8 +47,7 @@ pub fn validate_store_register(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), Some(_src), Some(_off), None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register, source register, offset, and no \
-                 immediate value",
+                "{} instruction requires destination register, source register, and offset",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -78,7 +75,7 @@ pub fn validate_binary_immediate(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), None, None, Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register and immediate value only",
+                "{} instruction requires destination register and immediate value",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -92,7 +89,7 @@ pub fn validate_binary_register(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), Some(_src), None, None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination and source registers only",
+                "{} instruction requires destination register and source register",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -105,10 +102,7 @@ pub fn validate_jump(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
         (None, None, Some(_off), None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
-            error: format!(
-                "{} instruction requires no source register or immediate value",
-                inst.opcode
-            ),
+            error: format!("{} instruction requires offset only", inst.opcode),
             span: inst.span.clone(),
             custom_label: None,
         }),
@@ -120,8 +114,7 @@ pub fn validate_jump_immediate(inst: &Instruction) -> Result<(), SBPFError> {
         (Some(_dst), None, Some(_off), Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction requires destination register and immediate value, and no source \
-                 register",
+                "{} instruction requires destination register, offset and immediate value",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -221,7 +214,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Lddw
                 )
             );
@@ -244,7 +237,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Lddw
                 )
             );
@@ -267,7 +260,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Lddw
                 )
             );
@@ -290,7 +283,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Lddw
                 )
             );
@@ -326,8 +319,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, source register, offset, and \
-                     no immediate value",
+                    "{} instruction requires destination register, source register, and offset",
                     Opcode::Ldxw
                 )
             );
@@ -350,8 +342,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, source register, offset, and \
-                     no immediate value",
+                    "{} instruction requires destination register, source register, and offset",
                     Opcode::Ldxw
                 )
             );
@@ -374,8 +365,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, source register, offset, and \
-                     no immediate value",
+                    "{} instruction requires destination register, source register, and offset",
                     Opcode::Ldxw
                 )
             );
@@ -411,8 +401,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, offset, immediate value, and \
-                     no source register",
+                    "{} instruction requires destination register, offset, and immediate value",
                     Opcode::Stw
                 )
             );
@@ -435,8 +424,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, offset, immediate value, and \
-                     no source register",
+                    "{} instruction requires destination register, offset, and immediate value",
                     Opcode::Stw
                 )
             );
@@ -472,8 +460,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, source register, offset, and \
-                     no immediate value",
+                    "{} instruction requires destination register, source register, and offset",
                     Opcode::Stxw
                 )
             );
@@ -496,8 +483,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register, source register, offset, and \
-                     no immediate value",
+                    "{} instruction requires destination register, source register, and offset",
                     Opcode::Stxw
                 )
             );
@@ -638,7 +624,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Le
                 )
             );
@@ -661,7 +647,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Le
                 )
             );
@@ -684,7 +670,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Le
                 )
             );
@@ -707,7 +693,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value only",
+                    "{} instruction requires destination register and immediate value",
                     Opcode::Le
                 )
             );
@@ -743,7 +729,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination and source registers only",
+                    "{} instruction requires destination register and source register",
                     Opcode::Add64Reg
                 )
             );
@@ -766,7 +752,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination and source registers only",
+                    "{} instruction requires destination register and source register",
                     Opcode::Add64Reg
                 )
             );
@@ -789,7 +775,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination and source registers only",
+                    "{} instruction requires destination register and source register",
                     Opcode::Add64Reg
                 )
             );
@@ -812,7 +798,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination and source registers only",
+                    "{} instruction requires destination register and source register",
                     Opcode::Add64Reg
                 )
             );
@@ -833,8 +819,8 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_jump_valid_with_dst() {
-        let valid_inst = Instruction {
+    fn test_validate_jump_valid_has_dst() {
+        let inst = Instruction {
             opcode: Opcode::Ja,
             dst: Some(Register { n: 0 }),
             src: None,
@@ -842,7 +828,14 @@ mod tests {
             imm: None,
             span: 0..8,
         };
-        assert!(validate_jump(&valid_inst).is_ok());
+        let result = validate_jump(&inst);
+        assert!(result.is_err());
+        if let Err(SBPFError::BytecodeError { error, .. }) = result {
+            assert_eq!(
+                error,
+                format!("{} instruction requires offset only", Opcode::Ja)
+            );
+        }
     }
 
     #[test]
@@ -860,10 +853,7 @@ mod tests {
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
                 error,
-                format!(
-                    "{} instruction requires no source register or immediate value",
-                    Opcode::Ja
-                )
+                format!("{} instruction requires offset only", Opcode::Ja)
             );
         }
     }
@@ -883,10 +873,7 @@ mod tests {
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
                 error,
-                format!(
-                    "{} instruction requires no source register or immediate value",
-                    Opcode::Ja
-                )
+                format!("{} instruction requires offset only", Opcode::Ja)
             );
         }
     }
@@ -920,8 +907,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value, and no \
-                     source register",
+                    "{} instruction requires destination register, offset and immediate value",
                     Opcode::JeqImm
                 )
             );
@@ -944,8 +930,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "{} instruction requires destination register and immediate value, and no \
-                     source register",
+                    "{} instruction requires destination register, offset and immediate value",
                     Opcode::JeqImm
                 )
             );
