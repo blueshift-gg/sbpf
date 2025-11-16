@@ -412,8 +412,9 @@ fn process_instruction(
                 });
             }
             Rule::instr_lddw => return process_lddw(inner, const_map, span_range),
-            Rule::instr_call => return process_call(inner, span_range),
+            Rule::instr_call => return process_call(inner, const_map, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
+            Rule::instr_neg32 => return process_neg32(inner, span_range),
             Rule::instr_neg64 => return process_neg64(inner, span_range),
             Rule::instr_alu64_imm | Rule::instr_alu32_imm => {
                 return process_alu_imm(inner, const_map, span_range);
@@ -747,13 +748,18 @@ fn process_jump_uncond(
 
 fn process_call(
     pair: Pair<Rule>,
+    const_map: &HashMap<String, Number>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut imm = None;
 
     for inner in pair.into_inner() {
         if inner.as_rule() == Rule::symbol {
-            imm = Some(Either::Left(inner.as_str().to_string()));
+            if let Some(symbol) = const_map.get(inner.as_str()) {
+                imm = Some(Either::Right(symbol.to_owned()));
+            } else {
+                imm = Some(Either::Left(inner.as_str().to_string()));
+            }
         }
     }
 
@@ -781,6 +787,28 @@ fn process_callx(
 
     Ok(Instruction {
         opcode: Opcode::Callx,
+        dst,
+        src: None,
+        off: None,
+        imm: None,
+        span,
+    })
+}
+
+fn process_neg32(
+    pair: Pair<Rule>,
+    span: std::ops::Range<usize>,
+) -> Result<Instruction, CompileError> {
+    let mut dst = None;
+
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::register {
+            dst = Some(parse_register(inner)?);
+        }
+    }
+
+    Ok(Instruction {
+        opcode: Opcode::Neg32,
         dst,
         src: None,
         off: None,
@@ -1008,7 +1036,7 @@ fn parse_memory_ref(
 fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     let span = pair.as_span();
     let span_range = span.start()..span.end();
-    let number_str = pair.as_str();
+    let number_str = pair.as_str().replace('_', "");
 
     if number_str.starts_with("0x") {
         let hex_str = number_str.trim_start_matches("0x");
@@ -1020,7 +1048,7 @@ fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     }
 
     Err(CompileError::InvalidNumber {
-        number: number_str.to_string(),
+        number: number_str,
         span: span_range,
         custom_label: None,
     })
