@@ -103,7 +103,7 @@ pub fn validate_binary_register(inst: &Instruction) -> Result<(), SBPFError> {
 
 pub fn validate_jump(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
-        (_, None, _, None) => Ok(()),
+        (None, None, Some(_off), None) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction requires no source register or immediate value",
@@ -117,7 +117,7 @@ pub fn validate_jump(inst: &Instruction) -> Result<(), SBPFError> {
 
 pub fn validate_jump_immediate(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
-        (Some(_dst), None, _, Some(_imm)) => Ok(()),
+        (Some(_dst), None, Some(_off), Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction requires destination register and immediate value, and no source \
