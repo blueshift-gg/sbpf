@@ -1,0 +1,18 @@
+.globl entrypoint
+
+entrypoint:
+  add32 r1, 0x10
+  sub32 r2, 0x5
+  mul32 r3, 0x2
+  div32 r4, 0x3
+  // sdiv32 r5, 0x4
+  mod32 r6, 0x7
+  smod32 r7, 0x6
+  or32 r8, 0xff
+  and32 r9, 0xf0
+  xor32 r1, 0xaa
+  mov32 r1, 0x100
+  lsh32 r2, 0x4
+  rsh32 r3, 0x2
+  arsh32 r4, 0x1
+  exit

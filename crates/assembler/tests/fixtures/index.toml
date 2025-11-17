@@ -1,27 +1,59 @@
-[cases.be_le_callx]
-file = "be_le_callx.s"
-hash = "c13b88606e194b06e9acba56b2cdc46c92895b17006a8df0eb8e80df6a8e94b9"
+[cases.alu_32_imm]
+file = "alu_32_imm.s"
+hash = "cf304c2cb384d02b041ad90dc7837f37d633f454e3e6ad431de8d6fd71d5daa7"
+
+[cases.alu_32_reg]
+file = "alu_32_reg.s"
+hash = "01776829b2d174b5364b3f14aea34cd2b41c2f631be244519502807996d2239b"
+
+[cases.alu_64_imm]
+file = "alu_64_imm.s"
+hash = "897fbaab994b3e80d2b12902818c2447fabf75fa86abb4116807b80d42c59cc3"
+
+[cases.alu_64_reg]
+file = "alu_64_reg.s"
+hash = "6aa6cbf02e43654aa6edc4f9baccc5ea5388f26d1f81ec7dda8893a6a2e586a0"
 
 [cases.calls]
 file = "calls.s"
-hash = "8ac48356694172cae5e47109804d1a3550e5cdd441c6c85bf7da957b1570e0e1"
+hash = "62da885b11fb7ee98303959583dd89fde64b387281b16c170a19091ab113a416"
 
-[cases.equ]
-file = "equ.s"
-hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"
+[cases.callx]
+file = "callx.s"
+hash = "f066dfd480abc6404dcd890317da33deb356081cfeb55502522c05d40670dad9"
 
-[cases.jumps]
-file = "jumps.s"
-hash = "7be6d8971386a6fb59845d0353d688183677b3115cc683cddfc2d636efa01bc0"
+[cases.endian]
+file = "endian.s"
+hash = "af0ebc4f2d5f56c66696cdb4b3faa50e0545d31a0224541b78b85d5c58f478ea"
 
-[cases.neg64]
-file = "neg64.s"
-hash = "cdc53c03d3c3455ab27d98a8f82086fc7a5f2d4427d08e6bd6f1cc218f5fbeb5"
+[cases.jumps_imm]
+file = "jumps_imm.s"
+hash = "2cdc92d0421e71b3d4ae45baf5ec85f8b213cfee3faf119f43142153756a9e84"
 
-[cases.ro_bytearray]
-file = "ro_bytearray.s"
-hash = "f2967906640257efdddd7684bd818109efb2857af8a3bb2bff1578c47265481f"
+[cases.jumps_reg]
+file = "jumps_reg.s"
+hash = "9397c54a33c4ad6a4459e3c2170eb24ef7282bfb79b218bde74f66ad764f36b7"
+
+[cases.jumps_uncond]
+file = "jumps_uncond.s"
+hash = "72e86e0945fb88bac0f059c926398b059e1915200873ab4c628b5c3c35129407"
+
+[cases.load]
+file = "load.s"
+hash = "e80c56ff4dfdd2d55822581202dc917beb661e82efc407dddf8b56e8c3e9071b"
+
+[cases.neg]
+file = "neg.s"
+hash = "8611102bfd01ef3a8842774a638dbeaf1099a5b3ec29ac5556c5c0c43cf04c1e"
 
 [cases.rodata]
 file = "rodata.s"
-hash = "b5bf26be95f734324c4aeb29ec94ac6456e051ad931f6167a391f64fde9a0647"
+hash = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"
+
+[cases.store_imm]
+file = "store_imm.s"
+hash = "30e07a5041d7787e4ff87fbd70115f20565f769bf777de8ae74c3056a5b48883"
+
+[cases.store_reg]
+file = "store_reg.s"
+hash = "03ddbd8ee4390cd1f1efc96d42684ba0350088d79c4586882edf6332b80fd8c0"
