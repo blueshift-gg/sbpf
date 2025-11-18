@@ -4,7 +4,7 @@ hash = "c13b88606e194b06e9acba56b2cdc46c92895b17006a8df0eb8e80df6a8e94b9"
 
 [cases.calls]
 file = "calls.s"
-hash = "8ac48356694172cae5e47109804d1a3550e5cdd441c6c85bf7da957b1570e0e1"
+hash = "721f1b40d11288f841a71d84378da9c1fb1227008dc3b9493d326bf39e1466c1"
 
 [cases.equ]
 file = "equ.s"
@@ -16,7 +16,7 @@ hash = "7be6d8971386a6fb59845d0353d688183677b3115cc683cddfc2d636efa01bc0"
 
 [cases.neg64]
 file = "neg64.s"
-hash = "cdc53c03d3c3455ab27d98a8f82086fc7a5f2d4427d08e6bd6f1cc218f5fbeb5"
+hash = "330570ef597e21b67aa44abe00f31766739c81dbbb2e8a555734dd727d1e7851"
 
 [cases.ro_bytearray]
 file = "ro_bytearray.s"

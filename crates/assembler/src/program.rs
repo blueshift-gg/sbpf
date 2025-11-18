@@ -114,6 +114,7 @@ impl Program {
                     rel_dyns.push(RelDyn::new(offset + elf_header.e_entry, rel_type as u64, 0));
                 }
             }
+            // create four dynamic related sections
             let mut dynamic_section = SectionType::Dynamic(DynamicSection::new(
                 (section_names
                     .iter()
@@ -121,11 +122,6 @@ impl Program {
                     .sum::<usize>()
                     + 1) as u32,
             ));
-            dynamic_section.set_offset(current_offset);
-            if let SectionType::Dynamic(ref mut dynamic_section) = dynamic_section {
-                dynamic_section.set_rel_count(rel_count);
-            }
-            current_offset += dynamic_section.size();
             section_names.push(dynamic_section.name().to_string());
 
             let mut dynsym_section = SectionType::DynSym(DynSymSection::new(
@@ -136,8 +132,6 @@ impl Program {
                     + 1) as u32,
                 dyn_syms,
             ));
-            dynsym_section.set_offset(current_offset);
-            current_offset += dynsym_section.size();
             section_names.push(dynsym_section.name().to_string());
 
             let mut dynstr_section = SectionType::DynStr(DynStrSection::new(
@@ -148,8 +142,6 @@ impl Program {
                     + 1) as u32,
                 symbol_names,
             ));
-            dynstr_section.set_offset(current_offset);
-            current_offset += dynstr_section.size();
             section_names.push(dynstr_section.name().to_string());
 
             let mut rel_dyn_section = SectionType::RelDyn(RelDynSection::new(
@@ -160,9 +152,50 @@ impl Program {
                     + 1) as u32,
                 rel_dyns,
             ));
-            rel_dyn_section.set_offset(current_offset);
-            current_offset += rel_dyn_section.size();
             section_names.push(rel_dyn_section.name().to_string());
+
+            dynamic_section.set_offset(current_offset);
+            if let SectionType::Dynamic(ref mut dynamic_section) = dynamic_section {
+                // link to .dynstr
+                dynamic_section.set_link(
+                    section_names
+                        .iter()
+                        .position(|name| name == ".dynstr")
+                        .expect("missing .dynstr section") as u32
+                        + 1,
+                );
+                dynamic_section.set_rel_count(rel_count);
+            }
+            current_offset += dynamic_section.size();
+
+            dynsym_section.set_offset(current_offset);
+            if let SectionType::DynSym(ref mut dynsym_section) = dynsym_section {
+                // link to .dynstr
+                dynsym_section.set_link(
+                    section_names
+                        .iter()
+                        .position(|name| name == ".dynstr")
+                        .expect("missing .dynstr section") as u32
+                        + 1,
+                );
+            }
+            current_offset += dynsym_section.size();
+
+            dynstr_section.set_offset(current_offset);
+            current_offset += dynstr_section.size();
+
+            rel_dyn_section.set_offset(current_offset);
+            if let SectionType::RelDyn(ref mut rel_dyn_section) = rel_dyn_section {
+                // link to .dynsym
+                rel_dyn_section.set_link(
+                    section_names
+                        .iter()
+                        .position(|name| name == ".dynsym")
+                        .expect("missing .dynsym section") as u32
+                        + 1,
+                );
+            }
+            current_offset += rel_dyn_section.size();
 
             if let SectionType::Dynamic(ref mut dynamic_section) = dynamic_section {
                 dynamic_section.set_rel_offset(rel_dyn_section.offset());
