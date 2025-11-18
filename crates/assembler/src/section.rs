@@ -309,6 +309,7 @@ pub struct DynamicSection {
     name: String,
     name_offset: u32,
     offset: u64,
+    link: u32,
     rel_offset: u64,
     rel_size: u64,
     rel_count: u64,
@@ -323,6 +324,7 @@ impl DynamicSection {
             name: String::from(".dynamic"),
             name_offset,
             offset: 0,
+            link: 0,
             rel_offset: 0,
             rel_size: 0,
             rel_count: 0,
@@ -334,6 +336,10 @@ impl DynamicSection {
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
+    }
+
+    pub fn set_link(&mut self, link: u32) {
+        self.link = link;
     }
 
     pub fn set_rel_offset(&mut self, offset: u64) {
@@ -368,7 +374,7 @@ impl DynamicSection {
             self.offset,
             self.offset,
             self.size(),
-            5,
+            self.link,
             0,
             8,
             16,
@@ -520,6 +526,7 @@ pub struct DynSymSection {
     name: String,
     name_offset: u32,
     offset: u64,
+    link: u32,
     symbols: Vec<DynamicSymbol>,
 }
 
@@ -529,12 +536,17 @@ impl DynSymSection {
             name: String::from(".dynsym"),
             name_offset,
             offset: 0,
+            link: 0,
             symbols,
         }
     }
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
+    }
+
+    pub fn set_link(&mut self, link: u32) {
+        self.link = link;
     }
 
     pub fn section_header_bytecode(&self) -> Vec<u8> {
@@ -546,7 +558,7 @@ impl DynSymSection {
             self.offset,
             self.offset,
             self.size(),
-            5,
+            self.link,
             1,
             8,
             24,
@@ -579,6 +591,7 @@ pub struct RelDynSection {
     name: String,
     name_offset: u32,
     offset: u64,
+    link: u32,
     entries: Vec<RelDyn>,
 }
 
@@ -588,12 +601,17 @@ impl RelDynSection {
             name: String::from(".rel.dyn"),
             name_offset,
             offset: 0,
+            link: 0,
             entries,
         }
     }
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
+    }
+
+    pub fn set_link(&mut self, link: u32) {
+        self.link = link;
     }
 
     pub fn size(&self) -> u64 {
@@ -609,7 +627,7 @@ impl RelDynSection {
             self.offset,
             self.offset,
             self.size(),
-            4,
+            self.link,
             0,
             8,
             16,

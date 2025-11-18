@@ -16,11 +16,11 @@ hash = "6aa6cbf02e43654aa6edc4f9baccc5ea5388f26d1f81ec7dda8893a6a2e586a0"
 
 [cases.calls]
 file = "calls.s"
-hash = "62da885b11fb7ee98303959583dd89fde64b387281b16c170a19091ab113a416"
+hash = "64934ea68d9e2b5c503fabeb21ce2a133a431f2bcc16530ac87f986e9974d998"
 
 [cases.callx]
 file = "callx.s"
-hash = "f066dfd480abc6404dcd890317da33deb356081cfeb55502522c05d40670dad9"
+hash = "394d7843fbe545405be96085be387e374308dc5188857cc483df633ae31cc016"
 
 [cases.endian]
 file = "endian.s"
