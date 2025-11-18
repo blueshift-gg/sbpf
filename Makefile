@@ -14,11 +14,10 @@ web:
 test-examples:
 	@set -e; \
 	cargo build; \
-	cargo install --path .; \
 	for d in examples/*; do \
 		if [ -d "$$d" ]; then \
 			echo "=== Building and testing $$d ==="; \
-			( cd "$$d" && sbpf build || exit 1 ); \
-			( cd "$$d" && sbpf test || exit 1 ); \
+			( cd "$$d" && cargo run --manifest-path ../../Cargo.toml --bin sbpf -- build || exit 1 ); \
+			( cd "$$d" && cargo run --manifest-path ../../Cargo.toml --bin sbpf -- test || exit 1 ); \
 		fi; \
 	done

@@ -1,8 +1,8 @@
 .globl entrypoint
 
 entrypoint:
-  call helper_function
-  call sol_log_64_
+  lddw r8, helper_function
+  callx r8
   exit
 
 helper_function:

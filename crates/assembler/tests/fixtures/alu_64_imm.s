@@ -1,0 +1,18 @@
+.globl entrypoint
+
+entrypoint:
+  add64 r1, 0x10
+  sub64 r2, 0x5
+  mul64 r3, 0x2
+  div64 r4, 0x3
+  // sdiv64 r5, 0x4
+  mod64 r6, 0x7
+  smod64 r7, 0x6
+  or64 r8, 0xff
+  and64 r9, 0xf0
+  xor64 r1, 0x1
+  mov64 r1, 0x100
+  lsh64 r2, 0x4
+  rsh64 r3, 0x2
+  arsh64 r4, 0x1
+  exit
