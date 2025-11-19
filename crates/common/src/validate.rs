@@ -139,9 +139,12 @@ pub fn validate_jump_register(inst: &Instruction) -> Result<(), SBPFError> {
 
 pub fn validate_call_immediate(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
-        (None, None, None, Some(_imm)) => Ok(()),
+        (None, Some(_src), None, Some(_imm)) => Ok(()),
         _ => Err(SBPFError::BytecodeError {
-            error: format!("{} instruction requires immediate value only", inst.opcode),
+            error: format!(
+                "{} instruction requires source register and immediate value",
+                inst.opcode
+            ),
             span: inst.span.clone(),
             custom_label: None,
         }),
@@ -1047,7 +1050,7 @@ mod tests {
         let valid_inst = Instruction {
             opcode: Opcode::Call,
             dst: None,
-            src: None,
+            src: Some(Register { n: 1 }),
             off: None,
             imm: Some(Either::Right(Number::Int(100))),
             span: 0..8,
@@ -1070,7 +1073,10 @@ mod tests {
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
                 error,
-                format!("{} instruction requires immediate value only", Opcode::Call)
+                format!(
+                    "{} instruction requires source register and immediate value",
+                    Opcode::Call
+                )
             );
         }
     }
@@ -1090,27 +1096,10 @@ mod tests {
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
                 error,
-                format!("{} instruction requires immediate value only", Opcode::Call)
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_call_immediate_has_src() {
-        let inst = Instruction {
-            opcode: Opcode::Call,
-            dst: None,
-            src: Some(Register { n: 1 }),
-            off: None,
-            imm: Some(Either::Right(Number::Int(100))),
-            span: 0..8,
-        };
-        let result = validate_call_immediate(&inst);
-        assert!(result.is_err());
-        if let Err(SBPFError::BytecodeError { error, .. }) = result {
-            assert_eq!(
-                error,
-                format!("{} instruction requires immediate value only", Opcode::Call)
+                format!(
+                    "{} instruction requires source register and immediate value",
+                    Opcode::Call
+                )
             );
         }
     }
@@ -1130,7 +1119,10 @@ mod tests {
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
                 error,
-                format!("{} instruction requires immediate value only", Opcode::Call)
+                format!(
+                    "{} instruction requires source register and immediate value",
+                    Opcode::Call
+                )
             );
         }
     }
