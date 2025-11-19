@@ -103,6 +103,13 @@ alu_64_op       = {
   | "lsh64"
   | "rsh64"
   | "arsh64"
+  | "hor64"
+  | "lmul64"
+  | "uhmul64"
+  | "udiv64"
+  | "urem64"
+  | "shmul64"
+  | "srem64"
 }
 instr_alu64_imm = { alu_64_op ~ register ~ "," ~ operand }
 instr_alu64_reg = { alu_64_op ~ register ~ "," ~ register }
@@ -123,6 +130,10 @@ alu_32_op       = {
   | "lsh32"
   | "rsh32"
   | "arsh32"
+  | "lmul32"
+  | "udiv32"
+  | "urem32"
+  | "srem32"
 }
 instr_alu32_imm = { alu_32_op ~ register ~ "," ~ operand }
 instr_alu32_reg = { alu_32_op ~ register ~ "," ~ register }
