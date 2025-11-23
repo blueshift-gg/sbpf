@@ -1043,13 +1043,21 @@ fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     let span_range = span.start()..span.end();
     let number_str = pair.as_str().replace('_', "");
 
-    if number_str.starts_with("0x") {
-        let hex_str = number_str.trim_start_matches("0x");
+    let mut sign: i64 = 1;
+    let value = if number_str.starts_with('-') {
+        sign = -1;
+        number_str.strip_prefix('-').unwrap()
+    } else {
+        number_str.as_str()
+    };
+
+    if value.starts_with("0x") {
+        let hex_str = value.trim_start_matches("0x");
         if let Ok(value) = u64::from_str_radix(hex_str, 16) {
-            return Ok(Number::Addr(value as i64));
+            return Ok(Number::Addr(sign * (value as i64)));
         }
-    } else if let Ok(value) = number_str.parse::<i64>() {
-        return Ok(Number::Int(value));
+    } else if let Ok(value) = value.parse::<i64>() {
+        return Ok(Number::Int(sign * value));
     }
 
     Err(CompileError::InvalidNumber {
