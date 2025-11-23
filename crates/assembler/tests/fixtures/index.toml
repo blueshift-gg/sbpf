@@ -52,7 +52,7 @@ hash = "8611102bfd01ef3a8842774a638dbeaf1099a5b3ec29ac5556c5c0c43cf04c1e"
 
 [cases.offsets]
 file = "offsets.s"
-hash = "a3a92afb7a0a13e430d485fd174bd5bfe83beae8067c8d547428ed8a375b8108"
+hash = "374f572eb411265ecf6c609a91e4211fa7fa8d8d193a45d1368a3b94d7c2ceb2"
 
 [cases.rodata]
 file = "rodata.s"
