@@ -155,8 +155,9 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-mollusk-svm = "0.4.1"
-solana-sdk = "2.2.1"
+mollusk-svm = "0.7.2"
+solana-instruction = "3.1.0"
+solana-address = "2.0.0"
 
 [features]
 test-sbf = []"#;
@@ -164,8 +165,8 @@ test-sbf = []"#;
 pub const RUST_TESTS: &str = r#"#[cfg(test)]
 mod tests {
     use mollusk_svm::{result::Check, Mollusk};
-    use solana_sdk::pubkey::Pubkey;
-    use solana_sdk::instruction::Instruction;
+    use solana_address::Address;
+    use solana_instruction::Instruction;
 
     #[test]
     fn test_hello_world() {
@@ -173,7 +174,7 @@ mod tests {
             [..32]
             .try_into()
             .expect("slice with incorrect length");
-        let program_id = Pubkey::new_from_array(program_id_keypair_bytes);
+        let program_id = Address::new_from_array(program_id_keypair_bytes);
 
         let instruction = Instruction::new_with_bytes(
             program_id,
