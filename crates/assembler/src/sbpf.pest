@@ -36,8 +36,9 @@ operand_expr = { symbol ~ "+" ~ number }
 operand      = { operand_expr | number | symbol }
 
 // Memory offset.
+memory_op     = { "+" | "-" }
 memory_offset = { number | symbol }
-memory_ref    = { "[" ~ register ~ ("+" ~ memory_offset)+ ~ "]" }
+memory_ref    = { "[" ~ register ~ (memory_op ~ memory_offset)+ ~ "]" }
 
 // Jump target
 jump_target = { numeric_label_ref | (("+" | "-")? ~ number) | symbol }

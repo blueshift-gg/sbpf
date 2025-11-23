@@ -50,6 +50,10 @@ hash = "e80c56ff4dfdd2d55822581202dc917beb661e82efc407dddf8b56e8c3e9071b"
 file = "neg.s"
 hash = "8611102bfd01ef3a8842774a638dbeaf1099a5b3ec29ac5556c5c0c43cf04c1e"
 
+[cases.offsets]
+file = "offsets.s"
+hash = "a3a92afb7a0a13e430d485fd174bd5bfe83beae8067c8d547428ed8a375b8108"
+
 [cases.rodata]
 file = "rodata.s"
 hash = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"

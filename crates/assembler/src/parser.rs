@@ -994,24 +994,29 @@ fn parse_memory_ref(
     let mut reg = None;
     let mut accumulated_offset: i16 = 0;
     let mut unresolved_symbol: Option<String> = None;
+    let mut sign: i16 = 1;
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::register => {
                 reg = Some(parse_register(inner)?);
             }
+            Rule::memory_op => {
+                sign = if inner.as_str() == "+" { 1 } else { -1 };
+            }
             Rule::memory_offset => {
                 for offset_inner in inner.into_inner() {
                     match offset_inner.as_rule() {
                         Rule::number => {
                             let num = parse_number(offset_inner)?;
-                            accumulated_offset = accumulated_offset.wrapping_add(num.to_i16());
+                            accumulated_offset =
+                                accumulated_offset.wrapping_add(sign * num.to_i16());
                         }
                         Rule::symbol => {
                             let name = offset_inner.as_str().to_string();
                             if let Some(value) = const_map.get(&name) {
                                 accumulated_offset =
-                                    accumulated_offset.wrapping_add(value.to_i16());
+                                    accumulated_offset.wrapping_add(sign * value.to_i16());
                             } else if unresolved_symbol.is_none() {
                                 unresolved_symbol = Some(name);
                             }
