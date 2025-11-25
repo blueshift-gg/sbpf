@@ -700,3 +700,320 @@ impl Opcode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_opcode_from_str_load_ops() {
+        assert_eq!(Opcode::from_str("lddw").unwrap(), Opcode::Lddw);
+        assert_eq!(Opcode::from_str("LDDW").unwrap(), Opcode::Lddw);
+        assert_eq!(Opcode::from_str("ldxb").unwrap(), Opcode::Ldxb);
+        assert_eq!(Opcode::from_str("ldxh").unwrap(), Opcode::Ldxh);
+        assert_eq!(Opcode::from_str("ldxw").unwrap(), Opcode::Ldxw);
+        assert_eq!(Opcode::from_str("ldxdw").unwrap(), Opcode::Ldxdw);
+    }
+
+    #[test]
+    fn test_opcode_from_str_store_ops() {
+        assert_eq!(Opcode::from_str("stb").unwrap(), Opcode::Stb);
+        assert_eq!(Opcode::from_str("sth").unwrap(), Opcode::Sth);
+        assert_eq!(Opcode::from_str("stw").unwrap(), Opcode::Stw);
+        assert_eq!(Opcode::from_str("stdw").unwrap(), Opcode::Stdw);
+        assert_eq!(Opcode::from_str("stxb").unwrap(), Opcode::Stxb);
+        assert_eq!(Opcode::from_str("stxh").unwrap(), Opcode::Stxh);
+        assert_eq!(Opcode::from_str("stxw").unwrap(), Opcode::Stxw);
+        assert_eq!(Opcode::from_str("stxdw").unwrap(), Opcode::Stxdw);
+    }
+
+    #[test]
+    fn test_opcode_from_str_alu32_ops() {
+        assert_eq!(Opcode::from_str("add32").unwrap(), Opcode::Add32Imm);
+        assert_eq!(Opcode::from_str("sub32").unwrap(), Opcode::Sub32Imm);
+        assert_eq!(Opcode::from_str("mul32").unwrap(), Opcode::Mul32Imm);
+        assert_eq!(Opcode::from_str("div32").unwrap(), Opcode::Div32Imm);
+        assert_eq!(Opcode::from_str("or32").unwrap(), Opcode::Or32Imm);
+        assert_eq!(Opcode::from_str("and32").unwrap(), Opcode::And32Imm);
+        assert_eq!(Opcode::from_str("lsh32").unwrap(), Opcode::Lsh32Imm);
+        assert_eq!(Opcode::from_str("rsh32").unwrap(), Opcode::Rsh32Imm);
+        assert_eq!(Opcode::from_str("neg32").unwrap(), Opcode::Neg32);
+        assert_eq!(Opcode::from_str("mod32").unwrap(), Opcode::Mod32Imm);
+        assert_eq!(Opcode::from_str("xor32").unwrap(), Opcode::Xor32Imm);
+        assert_eq!(Opcode::from_str("mov32").unwrap(), Opcode::Mov32Imm);
+        assert_eq!(Opcode::from_str("arsh32").unwrap(), Opcode::Arsh32Imm);
+        assert_eq!(Opcode::from_str("lmul32").unwrap(), Opcode::Lmul32Imm);
+        assert_eq!(Opcode::from_str("udiv32").unwrap(), Opcode::Udiv32Imm);
+        assert_eq!(Opcode::from_str("urem32").unwrap(), Opcode::Urem32Imm);
+        assert_eq!(Opcode::from_str("sdiv32").unwrap(), Opcode::Sdiv32Imm);
+        assert_eq!(Opcode::from_str("srem32").unwrap(), Opcode::Srem32Imm);
+    }
+
+    #[test]
+    fn test_opcode_from_str_alu64_ops() {
+        assert_eq!(Opcode::from_str("add64").unwrap(), Opcode::Add64Imm);
+        assert_eq!(Opcode::from_str("sub64").unwrap(), Opcode::Sub64Imm);
+        assert_eq!(Opcode::from_str("mul64").unwrap(), Opcode::Mul64Imm);
+        assert_eq!(Opcode::from_str("div64").unwrap(), Opcode::Div64Imm);
+        assert_eq!(Opcode::from_str("or64").unwrap(), Opcode::Or64Imm);
+        assert_eq!(Opcode::from_str("and64").unwrap(), Opcode::And64Imm);
+        assert_eq!(Opcode::from_str("neg64").unwrap(), Opcode::Neg64);
+        assert_eq!(Opcode::from_str("mov64").unwrap(), Opcode::Mov64Imm);
+        assert_eq!(Opcode::from_str("lsh64").unwrap(), Opcode::Lsh64Imm);
+        assert_eq!(Opcode::from_str("rsh64").unwrap(), Opcode::Rsh64Imm);
+        assert_eq!(Opcode::from_str("mod64").unwrap(), Opcode::Mod64Imm);
+        assert_eq!(Opcode::from_str("xor64").unwrap(), Opcode::Xor64Imm);
+        assert_eq!(Opcode::from_str("arsh64").unwrap(), Opcode::Arsh64Imm);
+        assert_eq!(Opcode::from_str("hor64").unwrap(), Opcode::Hor64Imm);
+        assert_eq!(Opcode::from_str("lmul64").unwrap(), Opcode::Lmul64Imm);
+        assert_eq!(Opcode::from_str("uhmul64").unwrap(), Opcode::Uhmul64Imm);
+        assert_eq!(Opcode::from_str("udiv64").unwrap(), Opcode::Udiv64Imm);
+        assert_eq!(Opcode::from_str("urem64").unwrap(), Opcode::Urem64Imm);
+        assert_eq!(Opcode::from_str("shmul64").unwrap(), Opcode::Shmul64Imm);
+        assert_eq!(Opcode::from_str("sdiv64").unwrap(), Opcode::Sdiv64Imm);
+        assert_eq!(Opcode::from_str("srem64").unwrap(), Opcode::Srem64Imm);
+    }
+
+    #[test]
+    fn test_opcode_from_str_be_le() {
+        assert_eq!(Opcode::from_str("le").unwrap(), Opcode::Le);
+        assert_eq!(Opcode::from_str("be").unwrap(), Opcode::Be);
+    }
+
+    #[test]
+    fn test_opcode_from_str_jump_ops() {
+        assert_eq!(Opcode::from_str("ja").unwrap(), Opcode::Ja);
+        assert_eq!(Opcode::from_str("jeq").unwrap(), Opcode::JeqImm);
+        assert_eq!(Opcode::from_str("jgt").unwrap(), Opcode::JgtImm);
+        assert_eq!(Opcode::from_str("jge").unwrap(), Opcode::JgeImm);
+        assert_eq!(Opcode::from_str("jlt").unwrap(), Opcode::JltImm);
+        assert_eq!(Opcode::from_str("jne").unwrap(), Opcode::JneImm);
+        assert_eq!(Opcode::from_str("jle").unwrap(), Opcode::JleImm);
+        assert_eq!(Opcode::from_str("jset").unwrap(), Opcode::JsetImm);
+        assert_eq!(Opcode::from_str("jsgt").unwrap(), Opcode::JsgtImm);
+        assert_eq!(Opcode::from_str("jsge").unwrap(), Opcode::JsgeImm);
+        assert_eq!(Opcode::from_str("jslt").unwrap(), Opcode::JsltImm);
+        assert_eq!(Opcode::from_str("jsle").unwrap(), Opcode::JsleImm);
+    }
+
+    #[test]
+    fn test_opcode_from_str_call_and_exit_ops() {
+        assert!(Opcode::from_str("invalid").is_err());
+        assert!(Opcode::from_str("").is_err());
+        assert!(Opcode::from_str("xyz").is_err());
+        assert_eq!(Opcode::from_str("call").unwrap(), Opcode::Call);
+        assert_eq!(Opcode::from_str("callx").unwrap(), Opcode::Callx);
+        assert_eq!(Opcode::from_str("exit").unwrap(), Opcode::Exit);
+    }
+
+    #[test]
+    fn test_opcode_from_str_invalid() {
+        assert!(Opcode::from_str("invalid").is_err());
+        assert!(Opcode::from_str("").is_err());
+        assert!(Opcode::from_str("xyz").is_err());
+    }
+
+    #[test]
+    fn test_all_load_memory_ops() {
+        for &op in LOAD_MEMORY_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_bin_imm_ops() {
+        for &op in BIN_IMM_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_jump_imm_ops() {
+        for &op in JUMP_IMM_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_store_imm_ops() {
+        for &op in STORE_IMM_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_store_reg_ops() {
+        for &op in STORE_REG_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_bin_reg_ops() {
+        for &op in BIN_REG_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_unary_ops() {
+        for &op in UNARY_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_jump_ops() {
+        for &op in JUMP_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_jump_reg_ops() {
+        for &op in JUMP_REG_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_call_ops() {
+        for &op in CALL_IMM_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+        for &op in CALL_REG_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_exit_op() {
+        for &op in EXIT_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_to_str_all_load_ops() {
+        assert_eq!(Opcode::Lddw.to_str(), "lddw");
+        assert_eq!(Opcode::Ldxb.to_str(), "ldxb");
+        assert_eq!(Opcode::Ldxh.to_str(), "ldxh");
+        assert_eq!(Opcode::Ldxw.to_str(), "ldxw");
+        assert_eq!(Opcode::Ldxdw.to_str(), "ldxdw");
+    }
+
+    #[test]
+    fn test_to_str_all_store_ops() {
+        assert_eq!(Opcode::Stb.to_str(), "stb");
+        assert_eq!(Opcode::Sth.to_str(), "sth");
+        assert_eq!(Opcode::Stw.to_str(), "stw");
+        assert_eq!(Opcode::Stdw.to_str(), "stdw");
+        assert_eq!(Opcode::Stxb.to_str(), "stxb");
+        assert_eq!(Opcode::Stxh.to_str(), "stxh");
+        assert_eq!(Opcode::Stxw.to_str(), "stxw");
+        assert_eq!(Opcode::Stxdw.to_str(), "stxdw");
+    }
+
+    #[test]
+    fn test_to_str_all_alu32_ops() {
+        assert_eq!(Opcode::Add32Imm.to_str(), "add32");
+        assert_eq!(Opcode::Add32Reg.to_str(), "add32");
+        assert_eq!(Opcode::Sub32Imm.to_str(), "sub32");
+        assert_eq!(Opcode::Mul32Imm.to_str(), "mul32");
+        assert_eq!(Opcode::Div32Imm.to_str(), "div32");
+        assert_eq!(Opcode::Or32Imm.to_str(), "or32");
+        assert_eq!(Opcode::And32Imm.to_str(), "and32");
+        assert_eq!(Opcode::Lsh32Imm.to_str(), "lsh32");
+        assert_eq!(Opcode::Rsh32Imm.to_str(), "rsh32");
+        assert_eq!(Opcode::Neg32.to_str(), "neg32");
+        assert_eq!(Opcode::Mod32Imm.to_str(), "mod32");
+        assert_eq!(Opcode::Xor32Imm.to_str(), "xor32");
+        assert_eq!(Opcode::Mov32Imm.to_str(), "mov32");
+        assert_eq!(Opcode::Arsh32Imm.to_str(), "arsh32");
+        assert_eq!(Opcode::Lmul32Imm.to_str(), "lmul32");
+        assert_eq!(Opcode::Lmul32Reg.to_str(), "lmul32");
+        assert_eq!(Opcode::Udiv32Imm.to_str(), "udiv32");
+        assert_eq!(Opcode::Urem32Imm.to_str(), "urem32");
+        assert_eq!(Opcode::Sdiv32Imm.to_str(), "sdiv32");
+        assert_eq!(Opcode::Srem32Imm.to_str(), "srem32");
+    }
+
+    #[test]
+    fn test_to_str_all_alu64_ops() {
+        assert_eq!(Opcode::Add64Imm.to_str(), "add64");
+        assert_eq!(Opcode::Sub64Imm.to_str(), "sub64");
+        assert_eq!(Opcode::Mul64Imm.to_str(), "mul64");
+        assert_eq!(Opcode::Div64Imm.to_str(), "div64");
+        assert_eq!(Opcode::Or64Imm.to_str(), "or64");
+        assert_eq!(Opcode::And64Imm.to_str(), "and64");
+        assert_eq!(Opcode::Lsh64Imm.to_str(), "lsh64");
+        assert_eq!(Opcode::Rsh64Imm.to_str(), "rsh64");
+        assert_eq!(Opcode::Neg64.to_str(), "neg64");
+        assert_eq!(Opcode::Mod64Imm.to_str(), "mod64");
+        assert_eq!(Opcode::Xor64Imm.to_str(), "xor64");
+        assert_eq!(Opcode::Mov64Imm.to_str(), "mov64");
+        assert_eq!(Opcode::Arsh64Imm.to_str(), "arsh64");
+        assert_eq!(Opcode::Hor64Imm.to_str(), "hor64");
+        assert_eq!(Opcode::Lmul64Imm.to_str(), "lmul64");
+        assert_eq!(Opcode::Uhmul64Imm.to_str(), "uhmul64");
+        assert_eq!(Opcode::Udiv64Imm.to_str(), "udiv64");
+        assert_eq!(Opcode::Urem64Imm.to_str(), "urem64");
+        assert_eq!(Opcode::Shmul64Imm.to_str(), "shmul64");
+        assert_eq!(Opcode::Sdiv64Imm.to_str(), "sdiv64");
+        assert_eq!(Opcode::Srem64Imm.to_str(), "srem64");
+    }
+
+    #[test]
+    fn test_to_str_be_le_ops() {
+        assert_eq!(Opcode::Be.to_str(), "be");
+        assert_eq!(Opcode::Le.to_str(), "le");
+    }
+
+    #[test]
+    fn test_to_str_all_jump_ops() {
+        assert_eq!(Opcode::Ja.to_str(), "ja");
+        assert_eq!(Opcode::JeqImm.to_str(), "jeq");
+        assert_eq!(Opcode::JeqReg.to_str(), "jeq");
+        assert_eq!(Opcode::JgtImm.to_str(), "jgt");
+        assert_eq!(Opcode::JgeImm.to_str(), "jge");
+        assert_eq!(Opcode::JltImm.to_str(), "jlt");
+        assert_eq!(Opcode::JleImm.to_str(), "jle");
+        assert_eq!(Opcode::JsetImm.to_str(), "jset");
+        assert_eq!(Opcode::JneImm.to_str(), "jne");
+        assert_eq!(Opcode::JsgtImm.to_str(), "jsgt");
+        assert_eq!(Opcode::JsgeImm.to_str(), "jsge");
+        assert_eq!(Opcode::JsltImm.to_str(), "jslt");
+        assert_eq!(Opcode::JsleImm.to_str(), "jsle");
+    }
+
+    #[test]
+    fn test_to_str_call_and_exit_ops() {
+        assert_eq!(Opcode::Call.to_str(), "call");
+        assert_eq!(Opcode::Callx.to_str(), "callx");
+        assert_eq!(Opcode::Exit.to_str(), "exit");
+    }
+}

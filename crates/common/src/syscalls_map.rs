@@ -406,4 +406,49 @@ mod tests {
         // Count should be original + 1
         assert_eq!(dynamic_mut.len(), REGISTERED_SYSCALLS.len() + 1);
     }
+
+    #[test]
+    fn test_syscall_map_len_and_is_empty() {
+        // Test static map
+        assert!(SYSCALLS.len() > 0);
+        assert!(!SYSCALLS.is_empty());
+
+        // Test map with single element
+        const SINGLE_ENTRIES: &[(u32, &str)] = &[(123, "test")];
+        const SINGLE_MAP: SyscallMap = SyscallMap::from_entries(SINGLE_ENTRIES);
+        assert_eq!(SINGLE_MAP.len(), 1);
+        assert!(!SINGLE_MAP.is_empty());
+    }
+
+    #[test]
+    fn test_dynamic_map_len_and_is_empty() {
+        // Test empty dynamic map
+        let empty_map = DynamicSyscallMap::new(vec![]).unwrap();
+        assert_eq!(empty_map.len(), 0);
+        assert!(empty_map.is_empty());
+
+        // Test non-empty dynamic map
+        let map = DynamicSyscallMap::from_names(&["test"]).unwrap();
+        assert_eq!(map.len(), 1);
+        assert!(!map.is_empty());
+    }
+
+    #[test]
+    fn test_dynamic_map_add_duplicate() {
+        let mut map = DynamicSyscallMap::from_names(&["existing"]).unwrap();
+        let result = map.add("existing".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dynamic_map_hash_conflict_in_creation() {
+        let syscalls = vec![String::from("test"), String::from("test")];
+        let result = DynamicSyscallMap::new(syscalls);
+        // Should error due to duplicate hash
+        assert!(result.is_err());
+        if let Err(msg) = result {
+            assert!(msg.contains("Hash conflict"));
+            assert!(msg.contains("test"));
+        }
+    }
 }
