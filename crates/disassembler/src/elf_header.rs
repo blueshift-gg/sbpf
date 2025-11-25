@@ -138,6 +138,7 @@ impl ELFHeader {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use {
         crate::{
             elf_header::{
@@ -163,9 +164,71 @@ mod tests {
         assert_eq!(program.elf_header.ei_pad, EI_PAD);
         assert_eq!(program.elf_header.e_type, E_TYPE);
         assert!(
-            program.elf_header.e_machine == E_MACHINE
-                || program.elf_header.e_machine == E_MACHINE_SBPF
+            program.elf_header.e_machine == E_MACHINE_SBPF
+                || program.elf_header.e_machine == E_MACHINE
         );
         assert_eq!(program.elf_header.e_version, E_VERSION);
+    }
+
+    #[test]
+    fn test_elf_header_to_bytes() {
+        let header = ELFHeader {
+            ei_magic: EI_MAGIC,
+            ei_class: EI_CLASS,
+            ei_data: EI_DATA,
+            ei_version: EI_VERSION,
+            ei_osabi: EI_OSABI,
+            ei_abiversion: EI_ABIVERSION,
+            ei_pad: EI_PAD,
+            e_type: 0x03,
+            e_machine: 0xf7,
+            e_version: 0x01,
+            e_entry: 0x120,
+            e_phoff: 64,
+            e_shoff: 552,
+            e_flags: 0,
+            e_ehsize: 64,
+            e_phentsize: 56,
+            e_phnum: 3,
+            e_shentsize: 64,
+            e_shnum: 6,
+            e_shstrndx: 5,
+        };
+
+        let bytes = header.to_bytes();
+        assert_eq!(bytes.len(), 64);
+        assert_eq!(&bytes[0..4], &EI_MAGIC);
+        assert_eq!(bytes[4], EI_CLASS);
+        assert_eq!(bytes[5], EI_DATA);
+        assert_eq!(bytes[6], EI_VERSION);
+        assert_eq!(bytes[7], EI_OSABI);
+        assert_eq!(bytes[8], EI_ABIVERSION);
+        assert_eq!(&bytes[9..16], &EI_PAD);
+    }
+
+    #[test]
+    fn test_elf_header_validation_errors() {
+        // Test invalid ELF headers
+
+        // Invalid magic.
+        let invalid_magic = hex!(
+            "00454C460201010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
+        );
+        let result = Program::from_bytes(&invalid_magic);
+        assert!(result.is_err());
+
+        // Invalid class (not 64-bit).
+        let invalid_class = hex!(
+            "7F454C460101010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
+        );
+        let result = Program::from_bytes(&invalid_class);
+        assert!(result.is_err());
+
+        // Invalid endianness (big endian instead of little).
+        let invalid_endian = hex!(
+            "7F454C460202010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
+        );
+        let result = Program::from_bytes(&invalid_endian);
+        assert!(result.is_err());
     }
 }

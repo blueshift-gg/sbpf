@@ -159,6 +159,7 @@ impl ProgramHeader {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use {crate::program::Program, hex_literal::hex};
 
     #[test]
@@ -178,5 +179,62 @@ mod tests {
             let original_header_bytes = &original_bytes[header_offset..header_offset + 56];
             assert_eq!(serialized, original_header_bytes,);
         }
+    }
+
+    #[test]
+    fn test_program_type_conversions() {
+        // Test try_from with all valid values.
+        assert!(matches!(ProgramType::try_from(0), Ok(ProgramType::PT_NULL)));
+        assert!(matches!(ProgramType::try_from(1), Ok(ProgramType::PT_LOAD)));
+        assert!(matches!(
+            ProgramType::try_from(2),
+            Ok(ProgramType::PT_DYNAMIC)
+        ));
+        assert!(matches!(
+            ProgramType::try_from(3),
+            Ok(ProgramType::PT_INTERP)
+        ));
+        assert!(matches!(ProgramType::try_from(4), Ok(ProgramType::PT_NOTE)));
+        assert!(matches!(
+            ProgramType::try_from(5),
+            Ok(ProgramType::PT_SHLIB)
+        ));
+        assert!(matches!(ProgramType::try_from(6), Ok(ProgramType::PT_PHDR)));
+        assert!(matches!(ProgramType::try_from(7), Ok(ProgramType::PT_TLS)));
+
+        // Test try_from with invalid value.
+        assert!(ProgramType::try_from(99).is_err());
+
+        // Test into u32.
+        assert_eq!(u32::from(ProgramType::PT_NULL), 0);
+        assert_eq!(u32::from(ProgramType::PT_LOAD), 1);
+        assert_eq!(u32::from(ProgramType::PT_DYNAMIC), 2);
+        assert_eq!(u32::from(ProgramType::PT_INTERP), 3);
+        assert_eq!(u32::from(ProgramType::PT_NOTE), 4);
+        assert_eq!(u32::from(ProgramType::PT_SHLIB), 5);
+        assert_eq!(u32::from(ProgramType::PT_PHDR), 6);
+        assert_eq!(u32::from(ProgramType::PT_TLS), 7);
+
+        // Test into &str.
+        assert_eq!(<&str>::from(ProgramType::PT_NULL), "PT_NULL");
+        assert_eq!(<&str>::from(ProgramType::PT_LOAD), "PT_LOAD");
+        assert_eq!(<&str>::from(ProgramType::PT_DYNAMIC), "PT_DYNAMIC");
+        assert_eq!(<&str>::from(ProgramType::PT_INTERP), "PT_INTERP");
+        assert_eq!(<&str>::from(ProgramType::PT_NOTE), "PT_NOTE");
+        assert_eq!(<&str>::from(ProgramType::PT_SHLIB), "PT_SHLIB");
+        assert_eq!(<&str>::from(ProgramType::PT_PHDR), "PT_PHDR");
+        assert_eq!(<&str>::from(ProgramType::PT_TLS), "PT_TLS");
+    }
+
+    #[test]
+    fn test_program_flags_display() {
+        // Test different flag combinations.
+        assert_eq!(ProgramFlags::from(0).to_string(), "*/*/*"); // No flags
+        assert_eq!(ProgramFlags::from(1).to_string(), "*/*/X"); // Execute only
+        assert_eq!(ProgramFlags::from(2).to_string(), "*/W/*"); // Write only
+        assert_eq!(ProgramFlags::from(4).to_string(), "R/*/*"); // Read only
+        assert_eq!(ProgramFlags::from(5).to_string(), "R/*/X"); // Read + Execute
+        assert_eq!(ProgramFlags::from(6).to_string(), "R/W/*"); // Read + Write
+        assert_eq!(ProgramFlags::from(7).to_string(), "R/W/X"); // All flags
     }
 }
