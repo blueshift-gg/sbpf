@@ -47,7 +47,30 @@ impl TestEnv {
     /// Set up a test environment with SBPF binary and temporary directory
     pub fn new(project_name: &str) -> Self {
         let current_dir = std::env::current_dir().expect("Failed to get current directory");
-        let sbpf_path = current_dir.join("target").join("debug").join("sbpf");
+
+        // Try multiple possible locations for the sbpf binary
+        // 1. target/debug/sbpf (normal cargo test)
+        // 2. target/llvm-cov-target/debug/sbpf (cargo llvm-cov)
+        let possible_paths = [
+            current_dir.join("target").join("debug").join("sbpf"),
+            current_dir
+                .join("target")
+                .join("llvm-cov-target")
+                .join("debug")
+                .join("sbpf"),
+        ];
+
+        let sbpf_path = possible_paths
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not find sbpf binary. Looked in: {:?}",
+                    possible_paths
+                )
+            });
+
         let guard = EnvVarGuard::new("SBPF_BIN", sbpf_path.to_string_lossy());
         let sbpf_bin = std::env::var("SBPF_BIN").expect("SBPF_BIN not set");
 

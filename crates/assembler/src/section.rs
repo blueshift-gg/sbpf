@@ -748,8 +748,10 @@ impl SectionType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sbpf_common::{instruction::Instruction, opcode::Opcode};
+    use {
+        super::*,
+        sbpf_common::{instruction::Instruction, opcode::Opcode},
+    };
 
     #[test]
     fn test_code_section_new() {

@@ -200,8 +200,7 @@ impl RelDynMap {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sbpf_common::inst_param::Register;
+    use {super::*, sbpf_common::inst_param::Register};
 
     #[test]
     fn test_dynamic_symbol_get_name() {

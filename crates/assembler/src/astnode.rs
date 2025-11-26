@@ -297,8 +297,10 @@ impl ASTNode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sbpf_common::{instruction::Instruction, opcode::Opcode};
+    use {
+        super::*,
+        sbpf_common::{instruction::Instruction, opcode::Opcode},
+    };
 
     #[test]
     fn test_global_decl_get_entry_label() {

@@ -159,8 +159,7 @@ impl ProgramHeader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use {crate::program::Program, hex_literal::hex};
+    use {super::*, crate::program::Program, hex_literal::hex};
 
     #[test]
     fn test_program_headers() {

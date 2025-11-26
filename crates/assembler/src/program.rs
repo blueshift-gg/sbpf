@@ -343,8 +343,7 @@ impl Program {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parser::parse;
+    use {super::*, crate::parser::parse};
 
     #[test]
     fn test_program_from_simple_source() {

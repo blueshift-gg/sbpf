@@ -222,8 +222,7 @@ impl AST {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::parser::Token;
+    use {super::*, crate::parser::Token};
 
     #[test]
     fn test_ast_new() {

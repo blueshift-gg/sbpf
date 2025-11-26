@@ -89,12 +89,14 @@ impl Program {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        elf_header::{E_MACHINE_SBPF, ELFHeader},
-        program::Program,
-        section_header_entry::SectionHeaderEntry,
+    use {
+        crate::{
+            elf_header::{E_MACHINE_SBPF, ELFHeader},
+            program::Program,
+            section_header_entry::SectionHeaderEntry,
+        },
+        hex_literal::hex,
     };
-    use hex_literal::hex;
 
     #[test]
     fn try_deserialize_program() {

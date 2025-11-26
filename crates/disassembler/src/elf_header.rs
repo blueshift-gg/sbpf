@@ -138,8 +138,8 @@ impl ELFHeader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use {
+        super::*,
         crate::{
             elf_header::{
                 E_MACHINE, E_MACHINE_SBPF, E_TYPE, E_VERSION, EI_ABIVERSION, EI_CLASS, EI_DATA,
