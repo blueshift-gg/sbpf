@@ -14,6 +14,9 @@
 
 # sbpf
 
+![ci](https://github.com/blueshift-gg/sbpf/actions/workflows/ci.yml/badge.svg)
+[![codecov](https://codecov.io/gh/blueshift-gg/sbpf/branch/master/graph/badge.svg)](https://codecov.io/gh/blueshift-gg/sbpf)
+
 A simple scaffold to bootstrap sBPF Assembly programs.
 
 ### Installation
