@@ -219,3 +219,142 @@ impl AST {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::Token;
+
+    #[test]
+    fn test_ast_new() {
+        let ast = AST::new();
+        assert!(ast.nodes.is_empty());
+        assert!(ast.rodata_nodes.is_empty());
+        assert!(ast.entry_label.is_none());
+        assert_eq!(ast.text_size, 0);
+        assert_eq!(ast.rodata_size, 0);
+    }
+
+    #[test]
+    fn test_ast_set_sizes() {
+        let mut ast = AST::new();
+        ast.set_text_size(100);
+        ast.set_rodata_size(50);
+        assert_eq!(ast.text_size, 100);
+        assert_eq!(ast.rodata_size, 50);
+    }
+
+    #[test]
+    fn test_get_instruction_at_offset() {
+        let mut ast = AST::new();
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        });
+
+        let found = ast.get_instruction_at_offset(0);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().opcode, Opcode::Exit);
+
+        let not_found = ast.get_instruction_at_offset(8);
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_get_rodata_at_offset() {
+        let mut ast = AST::new();
+        let rodata = ROData {
+            name: "data".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("test".to_string(), 6..12),
+            ],
+            span: 0..12,
+        };
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: rodata.clone(),
+            offset: 0,
+        });
+
+        let found = ast.get_rodata_at_offset(0);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "data");
+    }
+
+    #[test]
+    fn test_resolve_numeric_label_forward() {
+        let numeric_labels = vec![("1".to_string(), 16, 2), ("2".to_string(), 32, 4)];
+
+        let result = AST::resolve_numeric_label("1f", 0, &numeric_labels);
+        assert_eq!(result, Some(16));
+
+        let result = AST::resolve_numeric_label("2f", 3, &numeric_labels);
+        assert_eq!(result, Some(32));
+    }
+
+    #[test]
+    fn test_resolve_numeric_label_backward() {
+        let numeric_labels = vec![("1".to_string(), 16, 2), ("2".to_string(), 32, 4)];
+
+        let result = AST::resolve_numeric_label("1b", 3, &numeric_labels);
+        assert_eq!(result, Some(16));
+
+        let result = AST::resolve_numeric_label("2b", 5, &numeric_labels);
+        assert_eq!(result, Some(32));
+    }
+
+    #[test]
+    fn test_build_program_simple() {
+        let mut ast = AST::new();
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        });
+        ast.set_text_size(8);
+        ast.set_rodata_size(0);
+
+        let result = ast.build_program();
+        assert!(result.is_ok());
+        let parse_result = result.unwrap();
+        assert!(parse_result.prog_is_static);
+    }
+
+    #[test]
+    fn test_build_program_undefined_label_error() {
+        let mut ast = AST::new();
+
+        // Jump to undefined label
+        let inst = Instruction {
+            opcode: Opcode::Ja,
+            dst: None,
+            src: None,
+            off: Some(Either::Left("undefined_label".to_string())),
+            imm: None,
+            span: 0..10,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        });
+        ast.set_text_size(8);
+
+        let result = ast.build_program();
+        assert!(result.is_err());
+    }
+}

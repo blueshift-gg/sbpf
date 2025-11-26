@@ -745,3 +745,207 @@ impl SectionType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sbpf_common::{instruction::Instruction, opcode::Opcode};
+
+    #[test]
+    fn test_code_section_new() {
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        let nodes = vec![ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        }];
+
+        let section = CodeSection::new(nodes, 8);
+        assert_eq!(section.name(), ".text");
+        assert_eq!(section.get_size(), 8);
+    }
+
+    #[test]
+    fn test_code_section_bytecode() {
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        let nodes = vec![ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        }];
+
+        let section = CodeSection::new(nodes, 8);
+        let bytes = section.bytecode();
+        assert_eq!(bytes.len(), 8);
+    }
+
+    #[test]
+    fn test_data_section_new() {
+        let rodata = ROData {
+            name: "msg".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("Hi".to_string(), 6..10),
+            ],
+            span: 0..10,
+        };
+        let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
+
+        let section = DataSection::new(nodes, 2);
+        assert_eq!(section.name(), ".rodata");
+        assert_eq!(section.get_size(), 2);
+    }
+
+    #[test]
+    fn test_data_section_rodata() {
+        let rodata = ROData {
+            name: "my_str".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("test".to_string(), 6..12),
+            ],
+            span: 0..12,
+        };
+        let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
+
+        let section = DataSection::new(nodes, 4);
+        let rodata = section.rodata();
+        assert_eq!(rodata.len(), 1);
+        assert_eq!(rodata[0].0, "my_str");
+        assert_eq!(rodata[0].2, "test");
+    }
+
+    #[test]
+    fn test_null_section() {
+        let section = NullSection::new();
+        assert_eq!(section.name(), ".unknown");
+        assert_eq!(section.bytecode().len(), 0);
+        assert_eq!(section.size(), 0);
+    }
+
+    #[test]
+    fn test_shstrtab_section() {
+        let names = vec![".text".to_string(), ".data".to_string()];
+        let mut section = ShStrTabSection::new(10, names);
+        section.set_offset(100);
+
+        assert_eq!(section.name(), ".s");
+        assert!(section.size() > 0);
+
+        let bytes = section.bytecode();
+        assert!(bytes.len() > 0);
+        assert_eq!(bytes[0], 0); // First byte is null
+    }
+
+    #[test]
+    fn test_dynamic_section_setters() {
+        let mut section = DynamicSection::new(5);
+        section.set_offset(100);
+        section.set_link(3);
+        section.set_rel_offset(200);
+        section.set_rel_size(48);
+        section.set_rel_count(2);
+        section.set_dynsym_offset(300);
+        section.set_dynstr_offset(400);
+        section.set_dynstr_size(50);
+
+        assert_eq!(section.name(), ".dynamic");
+        assert!(section.size() > 0);
+    }
+
+    #[test]
+    fn test_dynamic_section_bytecode_with_rel_count() {
+        let mut section = DynamicSection::new(0);
+        section.set_rel_count(3);
+        assert_eq!(section.size(), 11 * 16); // With rel_count
+    }
+
+    #[test]
+    fn test_dynamic_section_bytecode_without_rel_count() {
+        let section = DynamicSection::new(0);
+        assert_eq!(section.size(), 10 * 16); // Without rel_count
+    }
+
+    #[test]
+    fn test_dynstr_section() {
+        let names = vec!["entrypoint".to_string(), "function".to_string()];
+        let mut section = DynStrSection::new(8, names);
+        section.set_offset(200);
+
+        assert_eq!(section.name(), ".dynstr");
+
+        let bytes = section.bytecode();
+        assert_eq!(bytes[0], 0);
+        assert_eq!(bytes.len() % 8, 0);
+    }
+
+    #[test]
+    fn test_dynsym_section() {
+        let symbols = vec![
+            DynamicSymbol::new(0, 0, 0, 0, 0, 0),
+            DynamicSymbol::new(1, 0x12, 0, 1, 0x120, 48),
+        ];
+        let mut section = DynSymSection::new(15, symbols);
+        section.set_offset(300);
+        section.set_link(4);
+
+        assert_eq!(section.name(), ".dynsym");
+        assert_eq!(section.size(), 2 * 24); // 2 symbols * 24 bytes each
+    }
+
+    #[test]
+    fn test_rel_dyn_section() {
+        let entries = vec![RelDyn::new(0x120, 0x08, 0), RelDyn::new(0x200, 0x0a, 1)];
+        let mut section = RelDynSection::new(18, entries);
+        section.set_offset(400);
+        section.set_link(3);
+
+        assert_eq!(section.name(), ".rel.dyn");
+        assert_eq!(section.size(), 2 * 16); // 2 entries * 16 bytes each
+    }
+
+    #[test]
+    fn test_section_type_enum_code() {
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        let code_section = CodeSection::new(
+            vec![ASTNode::Instruction {
+                instruction: inst,
+                offset: 0,
+            }],
+            8,
+        );
+
+        let section_type = SectionType::Code(code_section);
+        assert_eq!(section_type.name(), ".text");
+        assert_eq!(section_type.size(), 8);
+    }
+
+    #[test]
+    fn test_section_type_set_offset() {
+        let mut section = SectionType::Default(NullSection::new());
+        section.set_offset(100);
+
+        let mut dyn_section = SectionType::Dynamic(DynamicSection::new(0));
+        dyn_section.set_offset(200);
+        assert_eq!(dyn_section.offset(), 200);
+    }
+}

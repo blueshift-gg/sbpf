@@ -184,4 +184,53 @@ mod tests {
         assert_eq!(CUSTOM_MAP.get(murmur3_32("test1")), Some("test1"));
         assert_eq!(CUSTOM_MAP.get(murmur3_32("test2")), Some("test2"));
     }
+
+    #[test]
+    fn test_syscall_map_len_and_is_empty() {
+        // Test with non-empty map
+        const TEST_SYSCALLS: &[&str; 3] = &["a", "b", "c"];
+        const TEST_ENTRIES: &[(u32, &str); 3] = &compute_syscall_entries_const(TEST_SYSCALLS);
+        const TEST_MAP: SyscallMap<'static> = SyscallMap::from_entries(TEST_ENTRIES);
+
+        assert!(!TEST_MAP.is_empty());
+        assert_eq!(TEST_MAP.len(), 3);
+
+        // Test with single entry map
+        const SINGLE: &[&str; 1] = &["x"];
+        const SINGLE_ENTRIES: &[(u32, &str); 1] = &compute_syscall_entries_const(SINGLE);
+        const SINGLE_MAP: SyscallMap<'static> = SyscallMap::from_entries(SINGLE_ENTRIES);
+
+        assert!(!SINGLE_MAP.is_empty());
+        assert_eq!(SINGLE_MAP.len(), 1);
+    }
+
+    #[test]
+    fn test_binary_search_edge_cases() {
+        // Test binary search with various sizes
+        const SINGLE: &[&str; 1] = &["single"];
+        const SINGLE_ENTRIES: &[(u32, &str); 1] = &compute_syscall_entries_const(SINGLE);
+        const SINGLE_MAP: SyscallMap<'static> = SyscallMap::from_entries(SINGLE_ENTRIES);
+
+        assert_eq!(SINGLE_MAP.get(murmur3_32("single")), Some("single"));
+        assert_eq!(SINGLE_MAP.get(0xFFFFFFFF), None);
+
+        // Test with multiple entries
+        const MULTI: &[&str; 5] = &["a", "b", "c", "d", "e"];
+        const MULTI_ENTRIES: &[(u32, &str); 5] = &compute_syscall_entries_const(MULTI);
+        const MULTI_MAP: SyscallMap<'static> = SyscallMap::from_entries(MULTI_ENTRIES);
+
+        // Test all entries
+        assert_eq!(MULTI_MAP.get(murmur3_32("a")), Some("a"));
+        assert_eq!(MULTI_MAP.get(murmur3_32("b")), Some("b"));
+        assert_eq!(MULTI_MAP.get(murmur3_32("c")), Some("c"));
+        assert_eq!(MULTI_MAP.get(murmur3_32("d")), Some("d"));
+        assert_eq!(MULTI_MAP.get(murmur3_32("e")), Some("e"));
+    }
+
+    #[test]
+    #[should_panic(expected = "Hash conflict")]
+    fn test_compute_syscall_entries_hash_conflict_panic() {
+        let syscalls = vec!["duplicate".to_string(), "duplicate".to_string()];
+        let _ = compute_syscall_entries(&syscalls); // Should panic
+    }
 }

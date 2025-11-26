@@ -181,4 +181,25 @@ mod tests {
         // Count should be original + 1
         assert_eq!(dynamic_mut.len(), TEST_SYSCALLS.len() + 1);
     }
+
+    #[test]
+    fn test_dynamic_map_add_duplicate() {
+        let mut map = DynamicSyscallMap::from_names(&["existing"]).unwrap();
+
+        // Try to add the same syscall again
+        let result = map.add("existing".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Hash conflict"));
+    }
+
+    #[test]
+    fn test_dynamic_map_len_and_is_empty() {
+        let empty_map = DynamicSyscallMap::from_names(&[]).unwrap();
+        assert!(empty_map.is_empty());
+        assert_eq!(empty_map.len(), 0);
+
+        let map = DynamicSyscallMap::from_names(&["syscall1", "syscall2"]).unwrap();
+        assert!(!map.is_empty());
+        assert_eq!(map.len(), 2);
+    }
 }

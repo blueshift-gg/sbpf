@@ -340,3 +340,75 @@ impl Program {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse;
+
+    #[test]
+    fn test_program_from_simple_source() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let program = Program::from_parse_result(parse_result);
+
+        // Verify basic structure
+        assert!(!program.sections.is_empty());
+        assert!(program.sections.len() >= 2);
+    }
+
+    #[test]
+    fn test_program_without_rodata() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let program = Program::from_parse_result(parse_result);
+
+        assert!(!program.has_rodata());
+    }
+
+    #[test]
+    fn test_program_emit_bytecode() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let program = Program::from_parse_result(parse_result);
+
+        let bytecode = program.emit_bytecode();
+        assert!(!bytecode.is_empty());
+        // Should start with ELF magic
+        assert_eq!(&bytecode[0..4], b"\x7fELF");
+    }
+
+    #[test]
+    fn test_program_get_debug_map() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let program = Program::from_parse_result(parse_result);
+
+        let debug_map = program.get_debug_map();
+        assert!(!debug_map.is_empty());
+    }
+
+    #[test]
+    fn test_program_static_no_program_headers() {
+        // Create a static program (no dynamic symbols)
+        let source = "exit";
+        let mut parse_result = parse(source).unwrap();
+        parse_result.prog_is_static = true;
+
+        let program = Program::from_parse_result(parse_result);
+        assert!(program.program_headers.is_none());
+        assert_eq!(program.elf_header.e_phnum, 0);
+    }
+
+    #[test]
+    fn test_program_sections_ordering() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let program = Program::from_parse_result(parse_result);
+
+        // First section should be null
+        assert_eq!(program.sections[0].name(), "");
+        // Second should be .text
+        assert_eq!(program.sections[1].name(), ".text");
+    }
+}
