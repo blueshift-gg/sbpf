@@ -3,12 +3,15 @@ use {
         elf_header::{E_MACHINE_SBPF, ELFHeader},
         errors::DisassemblerError,
         program_header::ProgramHeader,
+        relocation::Relocation,
         section_header::SectionHeader,
         section_header_entry::SectionHeaderEntry,
     },
+    either::Either,
     object::{Endianness, read::elf::ElfFile64},
-    sbpf_common::{instruction::Instruction, opcode::Opcode},
+    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
     serde::{Deserialize, Serialize},
+    std::collections::HashMap,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,6 +20,7 @@ pub struct Program {
     pub program_headers: Vec<ProgramHeader>,
     pub section_headers: Vec<SectionHeader>,
     pub section_header_entries: Vec<SectionHeaderEntry>,
+    pub relocations: Vec<Relocation>,
 }
 
 impl Program {
@@ -35,11 +39,15 @@ impl Program {
         // Parse section headers and section header entries.
         let (section_headers, section_header_entries) = SectionHeader::from_elf_file(&elf_file)?;
 
+        // Parse relocations.
+        let relocations = Relocation::from_elf_file(&elf_file)?;
+
         Ok(Self {
             elf_header,
             program_headers,
             section_headers,
             section_header_entries,
+            relocations,
         })
     }
 
@@ -50,6 +58,11 @@ impl Program {
             .iter()
             .find(|e| e.label.eq(".text\0"))
             .ok_or(DisassemblerError::MissingTextSection)?;
+        let text_section_offset = text_section.offset as u64;
+
+        // Build syscall map
+        let syscall_map = self.build_syscall_map(text_section_offset);
+
         let data = &text_section.data;
         if !data.len().is_multiple_of(8) {
             return Err(DisassemblerError::InvalidDataLength);
@@ -68,11 +81,19 @@ impl Program {
             }
 
             // ugly v2 shit we need to fix goes here:
-            let ix = if is_sbpf_v2 {
+            let mut ix = if is_sbpf_v2 {
                 Instruction::from_bytes_sbpf_v2(remaining)?
             } else {
                 Instruction::from_bytes(remaining)?
             };
+
+            // Handle syscall relocation
+            if ix.opcode == Opcode::Call
+                && let Some(Either::Right(Number::Int(-1))) = ix.imm
+                && let Some(syscall_name) = syscall_map.get(&(pos as u64))
+            {
+                ix.imm = Some(Either::Left(syscall_name.clone()));
+            }
 
             if ix.opcode == Opcode::Lddw {
                 pos += 16;
@@ -84,6 +105,23 @@ impl Program {
         }
 
         Ok(ixs)
+    }
+
+    /// Build a hashmap where:
+    /// - key: relative position within .text section
+    /// - value: syscall name (sol_log_64_, sol_log_, etc.)
+    fn build_syscall_map(&self, text_section_offset: u64) -> HashMap<u64, String> {
+        self.relocations
+            .iter()
+            .filter(|r| r.is_syscall())
+            .filter_map(|r| {
+                r.symbol_name.as_ref().map(|name| {
+                    // Convert absolute offset to relative position within .text
+                    let relative_pos = r.relative_offset(text_section_offset);
+                    (relative_pos, name.clone())
+                })
+            })
+            .collect()
     }
 }
 
