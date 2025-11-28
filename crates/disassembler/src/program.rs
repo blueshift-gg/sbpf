@@ -88,12 +88,11 @@ impl Program {
             };
 
             // Handle syscall relocation
-            if ix.opcode == Opcode::Call {
-                if let Some(Either::Right(Number::Int(-1))) = ix.imm {
-                    if let Some(syscall_name) = syscall_map.get(&(pos as u64)) {
-                        ix.imm = Some(Either::Left(syscall_name.clone()));
-                    }
-                }
+            if ix.opcode == Opcode::Call
+                && let Some(Either::Right(Number::Int(-1))) = ix.imm
+                && let Some(syscall_name) = syscall_map.get(&(pos as u64))
+            {
+                ix.imm = Some(Either::Left(syscall_name.clone()));
             }
 
             if ix.opcode == Opcode::Lddw {
