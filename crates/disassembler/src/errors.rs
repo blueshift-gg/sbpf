@@ -20,6 +20,10 @@ pub enum DisassemblerError {
     BytecodeError(String),
     #[error("Missing text section")]
     MissingTextSection,
+    #[error("Invalid offset in .dynstr section")]
+    InvalidDynstrOffset,
+    #[error("Non-UTF8 data in .dynstr section")]
+    InvalidUtf8InDynstr,
 }
 
 impl From<SBPFError> for DisassemblerError {
