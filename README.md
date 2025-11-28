@@ -35,6 +35,7 @@ To view all the commands you can run, type `sbpf help`. Here are the available c
 -   `test`: Test the deployed program.
 -   `e2e`: Build, deploy, and test a program.
 -   `clean`: Clean up build and deploy artifacts.
+-   `disassemble`: Disassemble a Solana program executable.
 -   `help`: Print this message or the help of the given subcommand(s).
 
 ```
