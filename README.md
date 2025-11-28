@@ -42,13 +42,14 @@ To view all the commands you can run, type `sbpf help`. Here are the available c
 Usage: sbpf <COMMAND>
 
 Commands:
-  init    Create a new project scaffold
-  build   Compile into a Solana program executable
-  deploy  Build and deploy the program
-  test    Test deployed program
-  e2e     Build, deploy and test a program
-  clean   Clean up build and deploy artifacts
-  help    Print this message or the help of the given subcommand(s)
+  init         Create a new project scaffold
+  build        Compile into a Solana program executable
+  deploy       Build and deploy the program
+  test         Test deployed program
+  e2e          Build, deploy and test a program
+  clean        Clean up build and deploy artifacts
+  disassemble  Disassemble a Solana program executable
+  help         Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
