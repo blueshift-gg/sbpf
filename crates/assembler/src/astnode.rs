@@ -294,3 +294,334 @@ impl ASTNode {
         self.bytecode_with_debug_map().map(|(bytes, _)| bytes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        sbpf_common::{instruction::Instruction, opcode::Opcode},
+    };
+
+    #[test]
+    fn test_global_decl_get_entry_label() {
+        let global = GlobalDecl {
+            entry_label: "entrypoint".to_string(),
+            span: 0..10,
+        };
+        assert_eq!(global.get_entry_label(), "entrypoint");
+    }
+
+    #[test]
+    fn test_equ_decl_methods() {
+        let equ = EquDecl {
+            name: "MY_CONST".to_string(),
+            value: Token::ImmediateValue(Number::Int(42), 5..7),
+            span: 0..15,
+        };
+        assert_eq!(equ.get_name(), "MY_CONST");
+        assert_eq!(equ.get_val(), Number::Int(42));
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid Equ declaration")]
+    fn test_equ_decl_invalid_value() {
+        let equ = EquDecl {
+            name: "INVALID".to_string(),
+            value: Token::Identifier("not_a_number".to_string(), 0..5),
+            span: 0..10,
+        };
+        let _ = equ.get_val(); // Should panic
+    }
+
+    #[test]
+    fn test_rodata_get_size_ascii() {
+        let rodata = ROData {
+            name: "my_string".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("Hello".to_string(), 6..13),
+            ],
+            span: 0..13,
+        };
+        assert_eq!(rodata.get_size(), 5);
+    }
+
+    #[test]
+    fn test_rodata_get_size_byte() {
+        let rodata = ROData {
+            name: "my_bytes".to_string(),
+            args: vec![
+                Token::Directive("byte".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(1), Number::Int(2), Number::Int(3)], 5..14),
+            ],
+            span: 0..14,
+        };
+        assert_eq!(rodata.get_size(), 3);
+    }
+
+    #[test]
+    fn test_rodata_get_size_short() {
+        let rodata = ROData {
+            name: "my_shorts".to_string(),
+            args: vec![
+                Token::Directive("short".to_string(), 0..5),
+                Token::VectorLiteral(vec![Number::Int(1), Number::Int(2)], 6..12),
+            ],
+            span: 0..12,
+        };
+        assert_eq!(rodata.get_size(), 4); // 2 shorts * 2 bytes
+    }
+
+    #[test]
+    fn test_rodata_get_size_int() {
+        let rodata = ROData {
+            name: "my_ints".to_string(),
+            args: vec![
+                Token::Directive("int".to_string(), 0..3),
+                Token::VectorLiteral(vec![Number::Int(100)], 4..7),
+            ],
+            span: 0..7,
+        };
+        assert_eq!(rodata.get_size(), 4); // 1 int * 4 bytes
+    }
+
+    #[test]
+    fn test_rodata_get_size_quad() {
+        let rodata = ROData {
+            name: "my_quads".to_string(),
+            args: vec![
+                Token::Directive("quad".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(1000)], 5..9),
+            ],
+            span: 0..9,
+        };
+        assert_eq!(rodata.get_size(), 8); // 1 quad * 8 bytes
+    }
+
+    #[test]
+    fn test_rodata_verify_ascii() {
+        let rodata = ROData {
+            name: "str".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("test".to_string(), 6..12),
+            ],
+            span: 0..12,
+        };
+        assert!(rodata.verify().is_ok());
+    }
+
+    #[test]
+    fn test_rodata_verify_byte_valid() {
+        let rodata = ROData {
+            name: "bytes".to_string(),
+            args: vec![
+                Token::Directive("byte".to_string(), 0..4),
+                Token::VectorLiteral(
+                    vec![Number::Int(0), Number::Int(127), Number::Int(-128)],
+                    5..15,
+                ),
+            ],
+            span: 0..15,
+        };
+        assert!(rodata.verify().is_ok());
+    }
+
+    #[test]
+    fn test_rodata_verify_byte_out_of_range() {
+        let rodata = ROData {
+            name: "bytes".to_string(),
+            args: vec![
+                Token::Directive("byte".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(256)], 5..10),
+            ],
+            span: 0..10,
+        };
+        assert!(rodata.verify().is_err());
+    }
+
+    #[test]
+    fn test_rodata_verify_short_valid() {
+        let rodata = ROData {
+            name: "shorts".to_string(),
+            args: vec![
+                Token::Directive("short".to_string(), 0..5),
+                Token::VectorLiteral(vec![Number::Int(32767), Number::Int(-32768)], 6..16),
+            ],
+            span: 0..16,
+        };
+        assert!(rodata.verify().is_ok());
+    }
+
+    #[test]
+    fn test_rodata_verify_int_valid() {
+        let rodata = ROData {
+            name: "ints".to_string(),
+            args: vec![
+                Token::Directive("int".to_string(), 0..3),
+                Token::VectorLiteral(vec![Number::Int(2147483647)], 4..14),
+            ],
+            span: 0..14,
+        };
+        assert!(rodata.verify().is_ok());
+    }
+
+    #[test]
+    fn test_rodata_verify_quad_valid() {
+        let rodata = ROData {
+            name: "quads".to_string(),
+            args: vec![
+                Token::Directive("quad".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(9223372036854775807)], 5..20),
+            ],
+            span: 0..20,
+        };
+        assert!(rodata.verify().is_ok());
+    }
+
+    #[test]
+    fn test_rodata_verify_invalid_directive() {
+        let rodata = ROData {
+            name: "invalid".to_string(),
+            args: vec![
+                Token::Directive("invalid".to_string(), 0..7),
+                Token::VectorLiteral(vec![Number::Int(1)], 8..11),
+            ],
+            span: 0..11,
+        };
+        assert!(rodata.verify().is_err());
+    }
+
+    #[test]
+    fn test_astnode_instruction_bytecode() {
+        let inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..4,
+        };
+        let node = ASTNode::Instruction {
+            instruction: inst,
+            offset: 0,
+        };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        assert_eq!(bytecode.unwrap().len(), 8);
+    }
+
+    #[test]
+    fn test_astnode_rodata_bytecode_ascii() {
+        let rodata = ROData {
+            name: "msg".to_string(),
+            args: vec![
+                Token::Directive("ascii".to_string(), 0..5),
+                Token::StringLiteral("Hi".to_string(), 6..10),
+            ],
+            span: 0..10,
+        };
+        let node = ASTNode::ROData { rodata, offset: 0 };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        assert_eq!(bytecode.unwrap(), b"Hi");
+    }
+
+    #[test]
+    fn test_astnode_rodata_bytecode_byte() {
+        let rodata = ROData {
+            name: "data".to_string(),
+            args: vec![
+                Token::Directive("byte".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(0x42), Number::Int(0x43)], 5..13),
+            ],
+            span: 0..13,
+        };
+        let node = ASTNode::ROData { rodata, offset: 0 };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        assert_eq!(bytecode.unwrap(), vec![0x42u8, 0x43u8]);
+    }
+
+    #[test]
+    fn test_astnode_rodata_bytecode_short() {
+        let rodata = ROData {
+            name: "data".to_string(),
+            args: vec![
+                Token::Directive("short".to_string(), 0..5),
+                Token::VectorLiteral(vec![Number::Int(0x1234)], 6..12),
+            ],
+            span: 0..12,
+        };
+        let node = ASTNode::ROData { rodata, offset: 0 };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        let bytes = bytecode.unwrap();
+        assert_eq!(bytes.len(), 2);
+        assert_eq!(i16::from_le_bytes([bytes[0], bytes[1]]), 0x1234);
+    }
+
+    #[test]
+    fn test_astnode_rodata_bytecode_int() {
+        let rodata = ROData {
+            name: "data".to_string(),
+            args: vec![
+                Token::Directive("int".to_string(), 0..3),
+                Token::VectorLiteral(vec![Number::Int(0x12345678)], 4..14),
+            ],
+            span: 0..14,
+        };
+        let node = ASTNode::ROData { rodata, offset: 0 };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        let bytes = bytecode.unwrap();
+        assert_eq!(bytes.len(), 4);
+    }
+
+    #[test]
+    fn test_astnode_rodata_bytecode_quad() {
+        let rodata = ROData {
+            name: "data".to_string(),
+            args: vec![
+                Token::Directive("quad".to_string(), 0..4),
+                Token::VectorLiteral(vec![Number::Int(0x123456789ABCDEF0)], 5..21),
+            ],
+            span: 0..21,
+        };
+        let node = ASTNode::ROData { rodata, offset: 0 };
+
+        let bytecode = node.bytecode();
+        assert!(bytecode.is_some());
+        let bytes = bytecode.unwrap();
+        assert_eq!(bytes.len(), 8);
+    }
+
+    #[test]
+    fn test_astnode_label_no_bytecode() {
+        let node = ASTNode::Label {
+            label: Label {
+                name: "loop".to_string(),
+                span: 0..4,
+            },
+            offset: 0,
+        };
+        assert!(node.bytecode().is_none());
+    }
+
+    #[test]
+    fn test_astnode_directive_no_bytecode() {
+        let node = ASTNode::Directive {
+            directive: Directive {
+                name: "section".to_string(),
+                args: vec![],
+                span: 0..7,
+            },
+        };
+        assert!(node.bytecode().is_none());
+    }
+}
