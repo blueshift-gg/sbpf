@@ -64,6 +64,7 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     let mut text_offset = 0u64;
     let mut rodata_offset = 0u64;
     let mut errors = Vec::new();
+    let mut missing_text_directive = false;
 
     for pair in pairs {
         if pair.as_rule() == Rule::program {
@@ -80,6 +81,7 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
                     &mut rodata_phase,
                     &mut text_offset,
                     &mut rodata_offset,
+                    &mut missing_text_directive,
                 ) {
                     Ok(_) => {}
                     Err(e) => errors.push(e),
@@ -106,6 +108,7 @@ fn process_statement(
     rodata_phase: &mut bool,
     text_offset: &mut u64,
     rodata_offset: &mut u64,
+    missing_text_directive: &mut bool,
 ) -> Result<(), CompileError> {
     for inner in pair.into_inner() {
         match inner.as_rule() {
@@ -142,7 +145,7 @@ fn process_statement(
                     label_spans.insert(label_name.clone(), label_span.clone());
 
                     if *rodata_phase {
-                        // Handle rodata label wit directive
+                        // Handle rodata label with directive
                         if let Some(dir_pair) = directive_opt {
                             let rodata = process_rodata_directive(
                                 label_name.clone(),
@@ -155,6 +158,13 @@ fn process_statement(
                                 offset: *rodata_offset,
                             });
                             *rodata_offset += size;
+                        } else if instruction_opt.is_some() && !*missing_text_directive {
+                            // Error - instruction found after .rodata without .text
+                            *missing_text_directive = true;
+                            return Err(CompileError::MissingTextDirective {
+                                span: label_span,
+                                custom_label: None,
+                            });
                         }
                     } else {
                         ast.nodes.push(ASTNode::Label {
@@ -181,15 +191,21 @@ fn process_statement(
                 process_directive_statement(inner, ast, const_map, rodata_phase)?;
             }
             Rule::instruction => {
-                if !*rodata_phase {
-                    let instruction = process_instruction(inner, const_map)?;
-                    let size = instruction.get_size();
-                    ast.nodes.push(ASTNode::Instruction {
-                        instruction,
-                        offset: *text_offset,
+                if *rodata_phase && !*missing_text_directive {
+                    *missing_text_directive = true;
+                    let span = inner.as_span();
+                    return Err(CompileError::MissingTextDirective {
+                        span: span.start()..span.end(),
+                        custom_label: None,
                     });
-                    *text_offset += size;
                 }
+                let instruction = process_instruction(inner, const_map)?;
+                let size = instruction.get_size();
+                ast.nodes.push(ASTNode::Instruction {
+                    instruction,
+                    offset: *text_offset,
+                });
+                *text_offset += size;
             }
             _ => {}
         }

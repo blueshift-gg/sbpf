@@ -173,6 +173,7 @@ mod tests {
             section_header_entries: vec![
                 SectionHeaderEntry::new(".text\0".to_string(), 0, vec![0x95, 0x00, 0x00]).unwrap(), // Only 3 bytes
             ],
+            relocations: vec![],
         };
 
         let result = program.to_ixs();
@@ -219,6 +220,7 @@ mod tests {
             section_header_entries: vec![
                 SectionHeaderEntry::new(".text\0".to_string(), 0, lddw_bytes).unwrap(),
             ],
+            relocations: vec![],
         };
 
         let ixs = program.to_ixs().unwrap();
@@ -259,6 +261,7 @@ mod tests {
             section_header_entries: vec![
                 SectionHeaderEntry::new(".text\0".to_string(), 0, v2_bytes).unwrap(),
             ],
+            relocations: vec![],
         };
 
         let ixs = program.to_ixs().unwrap();
