@@ -100,6 +100,7 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     ast.build_program()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_statement(
     pair: Pair<Rule>,
     ast: &mut AST,
