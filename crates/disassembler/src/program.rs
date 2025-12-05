@@ -104,6 +104,56 @@ impl Program {
             ixs.push(ix);
         }
 
+        // Mapping from slot index to byte position (1 slot = 8 bytes)
+        let mut slot_to_position: Vec<u64> = Vec::new();
+        let mut pos: u64 = 0;
+        for ix in &ixs {
+            slot_to_position.push(pos);
+            if ix.opcode == Opcode::Lddw {
+                // lddw occupies 2 slots
+                slot_to_position.push(pos + 8);
+                pos += 16;
+            } else {
+                pos += 8;
+            }
+        }
+
+        // Mapping from instruction index to slot index
+        let mut idx_to_slot: Vec<usize> = Vec::new();
+        let mut slot: usize = 0;
+        for ix in &ixs {
+            idx_to_slot.push(slot);
+            if ix.opcode == Opcode::Lddw {
+                slot += 2;
+            } else {
+                slot += 1;
+            }
+        }
+
+        // Resolve jump and internal call targets
+        for (idx, ix) in ixs.iter_mut().enumerate() {
+            if ix.is_jump()
+                && let Some(Either::Right(off)) = &ix.off
+            {
+                let current_slot = idx_to_slot[idx];
+                let target_slot = (current_slot as i64 + 1 + (*off as i64)) as usize;
+                if let Some(&target_pos) = slot_to_position.get(target_slot) {
+                    ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
+                }
+            }
+
+            if ix.opcode == Opcode::Call
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+                && *imm >= 0
+            {
+                let current_slot = idx_to_slot[idx];
+                let target_slot = current_slot + 1 + (*imm as usize);
+                if let Some(&target_pos) = slot_to_position.get(target_slot) {
+                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                }
+            }
+        }
+
         Ok(ixs)
     }
 
