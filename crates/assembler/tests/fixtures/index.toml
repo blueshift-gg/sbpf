@@ -26,6 +26,10 @@ hash = "394d7843fbe545405be96085be387e374308dc5188857cc483df633ae31cc016"
 file = "endian.s"
 hash = "af0ebc4f2d5f56c66696cdb4b3faa50e0545d31a0224541b78b85d5c58f478ea"
 
+[cases.entrypoint]
+file = "entrypoint.s"
+hash = "c2674385e32e40410e64b820229c8cf41a61dadd9627435b449ad410903ba453"
+
 [cases.equ]
 file = "equ.s"
 hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"

@@ -42,7 +42,15 @@ impl Program {
 
         // Calculate base offset after ELF header and program headers
         let mut current_offset = 64 + (ph_count as u64 * 56); // 64 bytes ELF header, 56 bytes per program header
-        elf_header.e_entry = current_offset;
+
+        // Get the entry point offset from dynamic_symbols if available
+        let entry_point_offset = dynamic_symbols
+            .get_entry_points()
+            .first()
+            .map(|(_, offset)| *offset)
+            .unwrap_or(0);
+
+        elf_header.e_entry = current_offset + entry_point_offset;
 
         // Create a vector of sections
         let mut sections = Vec::new();

@@ -48,8 +48,8 @@ jump_target = { numeric_label_ref | (("+" | "-")? ~ number) | symbol }
 // ============
 
 // Global
-globl_symbol    = { "entrypoint" | "e" }
-directive_globl = { ".globl" ~ globl_symbol }
+globl_symbol    = { identifier }
+directive_globl = { (".globl" | ".global") ~ globl_symbol }
 
 // External
 directive_extern = { ".extern" ~ symbol+ }

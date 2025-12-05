@@ -20,6 +20,18 @@ use {
 #[grammar = "sbpf.pest"]
 pub struct SbpfParser;
 
+/// Context containing all mutable state during parsing
+struct ParseContext<'a> {
+    ast: &'a mut AST,
+    const_map: &'a mut HashMap<String, Number>,
+    label_spans: &'a mut HashMap<String, std::ops::Range<usize>>,
+    errors: Vec<CompileError>,
+    rodata_phase: bool,
+    text_offset: u64,
+    rodata_offset: u64,
+    missing_text_directive: bool,
+}
+
 /// BPF_X flag: Converts immediate variant opcodes to register variant opcodes
 const BPF_X: u8 = 0x08;
 
@@ -60,33 +72,33 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     let mut ast = AST::new();
     let mut const_map = HashMap::<String, Number>::new();
     let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
-    let mut rodata_phase = false;
-    let mut text_offset = 0u64;
-    let mut rodata_offset = 0u64;
-    let mut errors = Vec::new();
 
-    for pair in pairs {
-        if pair.as_rule() == Rule::program {
-            for statement in pair.into_inner() {
-                if statement.as_rule() == Rule::EOI {
-                    continue;
-                }
+    let (text_offset, rodata_offset, errors) = {
+        let mut ctx = ParseContext {
+            ast: &mut ast,
+            const_map: &mut const_map,
+            label_spans: &mut label_spans,
+            errors: Vec::new(),
+            rodata_phase: false,
+            text_offset: 0,
+            rodata_offset: 0,
+            missing_text_directive: false,
+        };
 
-                match process_statement(
-                    statement,
-                    &mut ast,
-                    &mut const_map,
-                    &mut label_spans,
-                    &mut rodata_phase,
-                    &mut text_offset,
-                    &mut rodata_offset,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => errors.push(e),
+        for pair in pairs {
+            if pair.as_rule() == Rule::program {
+                for statement in pair.into_inner() {
+                    if statement.as_rule() == Rule::EOI {
+                        continue;
+                    }
+
+                    process_statement(statement, &mut ctx);
                 }
             }
         }
-    }
+
+        (ctx.text_offset, ctx.rodata_offset, ctx.errors)
+    };
 
     if !errors.is_empty() {
         return Err(errors);
@@ -98,15 +110,7 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     ast.build_program()
 }
 
-fn process_statement(
-    pair: Pair<Rule>,
-    ast: &mut AST,
-    const_map: &mut HashMap<String, Number>,
-    label_spans: &mut HashMap<String, std::ops::Range<usize>>,
-    rodata_phase: &mut bool,
-    text_offset: &mut u64,
-    rodata_offset: &mut u64,
-) -> Result<(), CompileError> {
+fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::label => {
@@ -117,7 +121,10 @@ fn process_statement(
                 for item in inner.into_inner() {
                     match item.as_rule() {
                         Rule::identifier | Rule::numeric_label => {
-                            label_opt = Some(extract_label_from_pair(item)?);
+                            match extract_label_from_pair(item) {
+                                Ok(label) => label_opt = Some(label),
+                                Err(e) => ctx.errors.push(e),
+                            }
                         }
                         Rule::directive_inner => {
                             directive_opt = Some(item);
@@ -131,70 +138,105 @@ fn process_statement(
 
                 if let Some((label_name, label_span)) = label_opt {
                     // Check for duplicate labels
-                    if let Some(original_span) = label_spans.get(&label_name) {
-                        return Err(CompileError::DuplicateLabel {
+                    if let Some(original_span) = ctx.label_spans.get(&label_name) {
+                        ctx.errors.push(CompileError::DuplicateLabel {
                             label: label_name,
                             span: label_span,
                             original_span: original_span.clone(),
                             custom_label: Some("Label already defined".to_string()),
                         });
+                        continue;
                     }
-                    label_spans.insert(label_name.clone(), label_span.clone());
+                    ctx.label_spans
+                        .insert(label_name.clone(), label_span.clone());
 
-                    if *rodata_phase {
-                        // Handle rodata label wit directive
+                    if ctx.rodata_phase {
+                        // Handle rodata label with directive
                         if let Some(dir_pair) = directive_opt {
-                            let rodata = process_rodata_directive(
+                            match process_rodata_directive(
                                 label_name.clone(),
                                 label_span.clone(),
                                 dir_pair,
-                            )?;
-                            let size = rodata.get_size();
-                            ast.rodata_nodes.push(ASTNode::ROData {
-                                rodata,
-                                offset: *rodata_offset,
-                            });
-                            *rodata_offset += size;
+                            ) {
+                                Ok(rodata) => {
+                                    let size = rodata.get_size();
+                                    ctx.ast.rodata_nodes.push(ASTNode::ROData {
+                                        rodata,
+                                        offset: ctx.rodata_offset,
+                                    });
+                                    ctx.rodata_offset += size;
+                                }
+                                Err(e) => ctx.errors.push(e),
+                            }
+                        } else if let Some(inst_pair) = instruction_opt {
+                            if let Err(e) = process_instruction(inst_pair, ctx.const_map) {
+                                ctx.errors.push(e);
+                            }
+                            if !ctx.missing_text_directive {
+                                ctx.missing_text_directive = true;
+                                ctx.errors.push(CompileError::MissingTextDirective {
+                                    span: label_span,
+                                    custom_label: None,
+                                });
+                            }
                         }
                     } else {
-                        ast.nodes.push(ASTNode::Label {
+                        ctx.ast.nodes.push(ASTNode::Label {
                             label: Label {
                                 name: label_name,
                                 span: label_span,
                             },
-                            offset: *text_offset,
+                            offset: ctx.text_offset,
                         });
 
                         if let Some(inst_pair) = instruction_opt {
-                            let instruction = process_instruction(inst_pair, const_map)?;
-                            let size = instruction.get_size();
-                            ast.nodes.push(ASTNode::Instruction {
-                                instruction,
-                                offset: *text_offset,
-                            });
-                            *text_offset += size;
+                            match process_instruction(inst_pair, ctx.const_map) {
+                                Ok(instruction) => {
+                                    let size = instruction.get_size();
+                                    ctx.ast.nodes.push(ASTNode::Instruction {
+                                        instruction,
+                                        offset: ctx.text_offset,
+                                    });
+                                    ctx.text_offset += size;
+                                }
+                                Err(e) => ctx.errors.push(e),
+                            }
                         }
                     }
                 }
             }
             Rule::directive => {
-                process_directive_statement(inner, ast, const_map, rodata_phase)?;
+                process_directive_statement(inner, ctx);
             }
             Rule::instruction => {
-                if !*rodata_phase {
-                    let instruction = process_instruction(inner, const_map)?;
-                    let size = instruction.get_size();
-                    ast.nodes.push(ASTNode::Instruction {
-                        instruction,
-                        offset: *text_offset,
+                let span = inner.as_span();
+                let span_range = span.start()..span.end();
+
+                match process_instruction(inner, ctx.const_map) {
+                    Ok(instruction) => {
+                        if !ctx.rodata_phase {
+                            let size = instruction.get_size();
+                            ctx.ast.nodes.push(ASTNode::Instruction {
+                                instruction,
+                                offset: ctx.text_offset,
+                            });
+                            ctx.text_offset += size;
+                        }
+                    }
+                    Err(e) => ctx.errors.push(e),
+                }
+
+                if ctx.rodata_phase && !ctx.missing_text_directive {
+                    ctx.missing_text_directive = true;
+                    ctx.errors.push(CompileError::MissingTextDirective {
+                        span: span_range,
+                        custom_label: None,
                     });
-                    *text_offset += size;
                 }
             }
             _ => {}
         }
     }
-    Ok(())
 }
 
 fn extract_label_from_pair(
@@ -204,24 +246,13 @@ fn extract_label_from_pair(
     Ok((pair.as_str().to_string(), span.start()..span.end()))
 }
 
-fn process_directive_statement(
-    pair: Pair<Rule>,
-    ast: &mut AST,
-    const_map: &mut HashMap<String, Number>,
-    rodata_phase: &mut bool,
-) -> Result<(), CompileError> {
+fn process_directive_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
     for directive_inner_pair in pair.into_inner() {
-        process_directive_inner(directive_inner_pair, ast, const_map, rodata_phase)?;
+        process_directive_inner(directive_inner_pair, ctx);
     }
-    Ok(())
 }
 
-fn process_directive_inner(
-    pair: Pair<Rule>,
-    ast: &mut AST,
-    const_map: &mut HashMap<String, Number>,
-    rodata_phase: &mut bool,
-) -> Result<(), CompileError> {
+fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::directive_globl => {
@@ -229,8 +260,8 @@ fn process_directive_inner(
                 for globl_inner in inner.into_inner() {
                     if globl_inner.as_rule() == Rule::globl_symbol {
                         let entry_label = globl_inner.as_str().to_string();
-                        ast.entry_label = Some(entry_label.clone());
-                        ast.nodes.push(ASTNode::GlobalDecl {
+                        ctx.ast.entry_label = Some(entry_label.clone());
+                        ctx.ast.nodes.push(ASTNode::GlobalDecl {
                             global_decl: GlobalDecl {
                                 entry_label,
                                 span: span.start()..span.end(),
@@ -251,7 +282,7 @@ fn process_directive_inner(
                         ));
                     }
                 }
-                ast.nodes.push(ASTNode::ExternDecl {
+                ctx.ast.nodes.push(ASTNode::ExternDecl {
                     extern_decl: ExternDecl {
                         args: symbols,
                         span: span.start()..span.end(),
@@ -267,25 +298,26 @@ fn process_directive_inner(
                         Rule::identifier => {
                             ident = Some(equ_inner.as_str().to_string());
                         }
-                        Rule::expression => {
-                            value = Some(eval_expression(equ_inner, const_map)?);
-                        }
+                        Rule::expression => match eval_expression(equ_inner, ctx.const_map) {
+                            Ok(v) => value = Some(v),
+                            Err(e) => ctx.errors.push(e),
+                        },
                         _ => {}
                     }
                 }
 
                 if let (Some(name), Some(val)) = (ident, value) {
-                    const_map.insert(name, val);
+                    ctx.const_map.insert(name, val);
                 }
             }
             Rule::directive_section => {
                 let section_name = inner.as_str().trim_start_matches('.');
                 match section_name {
-                    "text" => *rodata_phase = false,
+                    "text" => ctx.rodata_phase = false,
                     "rodata" => {
-                        *rodata_phase = true;
+                        ctx.rodata_phase = true;
                         let span = inner.as_span();
-                        ast.nodes.push(ASTNode::RodataDecl {
+                        ctx.ast.nodes.push(ASTNode::RodataDecl {
                             rodata_decl: RodataDecl {
                                 span: span.start()..span.end(),
                             },
@@ -297,7 +329,6 @@ fn process_directive_inner(
             _ => {}
         }
     }
-    Ok(())
 }
 
 fn process_rodata_directive(
