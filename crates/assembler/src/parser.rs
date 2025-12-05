@@ -348,12 +348,16 @@ fn process_rodata_directive(
                 }
             }
             Rule::directive_byte
+            | Rule::directive_short
             | Rule::directive_word
+            | Rule::directive_int
             | Rule::directive_long
             | Rule::directive_quad => {
                 let directive_name = match inner.as_rule() {
                     Rule::directive_byte => "byte",
+                    Rule::directive_short => "short",
                     Rule::directive_word => "word",
+                    Rule::directive_int => "int",
                     Rule::directive_long => "long",
                     Rule::directive_quad => "quad",
                     _ => "byte",

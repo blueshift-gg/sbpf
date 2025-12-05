@@ -4,6 +4,7 @@ use {
         errors::DisassemblerError,
         program_header::ProgramHeader,
         relocation::Relocation,
+        rodata::RodataSection,
         section_header::SectionHeader,
         section_header_entry::SectionHeaderEntry,
     },
@@ -11,7 +12,7 @@ use {
     object::{Endianness, read::elf::ElfFile64},
     sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
     serde::{Deserialize, Serialize},
-    std::collections::HashMap,
+    std::collections::{BTreeSet, HashMap},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,7 +52,7 @@ impl Program {
         })
     }
 
-    pub fn to_ixs(self) -> Result<Vec<Instruction>, DisassemblerError> {
+    pub fn to_ixs(self) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -67,12 +68,23 @@ impl Program {
         if !data.len().is_multiple_of(8) {
             return Err(DisassemblerError::InvalidDataLength);
         }
-        let mut ixs: Vec<Instruction> = vec![];
-        let mut pos = 0;
 
         let is_sbpf_v2 =
             self.elf_header.e_flags == 0x02 && self.elf_header.e_machine == E_MACHINE_SBPF;
-        // Handle pre-processing
+
+        // Get rodata info
+        let rodata_info = self.get_rodata_info();
+        let (rodata_base, rodata_end) = rodata_info
+            .as_ref()
+            .map(|(d, addr)| (*addr, *addr + d.len() as u64))
+            .unwrap_or((0, 0));
+
+        // Parse instructions and build slot/position mappings
+        let mut ixs: Vec<Instruction> = Vec::new();
+        let mut slot_to_position: Vec<u64> = Vec::new();
+        let mut idx_to_slot: Vec<usize> = Vec::new();
+        let mut pos: usize = 0;
+        let mut slot: usize = 0;
 
         while pos < data.len() {
             let remaining = &data[pos..];
@@ -95,43 +107,28 @@ impl Program {
                 ix.imm = Some(Either::Left(syscall_name.clone()));
             }
 
+            slot_to_position.push(pos as u64);
+            idx_to_slot.push(slot);
+
             if ix.opcode == Opcode::Lddw {
+                slot_to_position.push(pos as u64 + 8);
                 pos += 16;
+                slot += 2;
             } else {
                 pos += 8;
+                slot += 1;
             }
 
             ixs.push(ix);
         }
 
-        // Mapping from slot index to byte position (1 slot = 8 bytes)
-        let mut slot_to_position: Vec<u64> = Vec::new();
-        let mut pos: u64 = 0;
-        for ix in &ixs {
-            slot_to_position.push(pos);
-            if ix.opcode == Opcode::Lddw {
-                // lddw occupies 2 slots
-                slot_to_position.push(pos + 8);
-                pos += 16;
-            } else {
-                pos += 8;
-            }
-        }
+        // Resolve jump/call labels and collect rodata references
+        let mut rodata_refs = BTreeSet::new();
 
-        // Mapping from instruction index to slot index
-        let mut idx_to_slot: Vec<usize> = Vec::new();
-        let mut slot: usize = 0;
-        for ix in &ixs {
-            idx_to_slot.push(slot);
-            if ix.opcode == Opcode::Lddw {
-                slot += 2;
-            } else {
-                slot += 1;
-            }
-        }
-
-        // Resolve jump and internal call targets
         for (idx, ix) in ixs.iter_mut().enumerate() {
+            let is_lddw = ix.opcode == Opcode::Lddw;
+
+            // Resolve jump targets
             if ix.is_jump()
                 && let Some(Either::Right(off)) = &ix.off
             {
@@ -142,6 +139,7 @@ impl Program {
                 }
             }
 
+            // Resolve internal call targets
             if ix.opcode == Opcode::Call
                 && let Some(Either::Right(Number::Int(imm))) = &ix.imm
                 && *imm >= 0
@@ -152,9 +150,40 @@ impl Program {
                     ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
                 }
             }
+
+            // Collect rodata references
+            if is_lddw
+                && rodata_info.is_some()
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+            {
+                let addr = *imm as u64;
+                if addr >= rodata_base && addr < rodata_end {
+                    rodata_refs.insert(addr);
+                }
+            }
         }
 
-        Ok(ixs)
+        // Parse rodata and replace addresses with labels
+        let rodata = if let Some((data, base_addr)) = rodata_info {
+            let rodata = RodataSection::parse(data, base_addr, &rodata_refs);
+
+            for ix in &mut ixs {
+                if ix.opcode == Opcode::Lddw
+                    && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+                {
+                    let addr = *imm as u64;
+                    if let Some(label) = rodata.get_label(addr) {
+                        ix.imm = Some(Either::Left(label.to_string()));
+                    }
+                }
+            }
+
+            Some(rodata)
+        } else {
+            None
+        };
+
+        Ok((ixs, rodata))
     }
 
     /// Build a hashmap where:
@@ -172,6 +201,21 @@ impl Program {
                 })
             })
             .collect()
+    }
+
+    /// Get the raw rodata bytes and the virtual address where it's loaded in memory
+    fn get_rodata_info(&self) -> Option<(Vec<u8>, u64)> {
+        let rodata_entry = self
+            .section_header_entries
+            .iter()
+            .find(|e| e.label.starts_with(".rodata"))?;
+
+        let rodata_header = self
+            .section_headers
+            .iter()
+            .find(|h| h.sh_offset as usize == rodata_entry.offset)?;
+
+        Some((rodata_entry.data.clone(), rodata_header.sh_addr))
     }
 }
 
@@ -273,7 +317,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let ixs = program.to_ixs().unwrap();
+        let (ixs, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 2); // lddw + exit
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
     }
@@ -314,7 +358,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let ixs = program.to_ixs().unwrap();
+        let (ixs, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 1);
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
     }
