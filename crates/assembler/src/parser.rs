@@ -95,6 +95,8 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
+    print!("{:?}", ast);
+
     ast.build_program()
 }
 
