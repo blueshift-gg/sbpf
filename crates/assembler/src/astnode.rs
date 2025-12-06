@@ -129,7 +129,7 @@ impl ROData {
                     "byte" => {
                         size = values.len() as u64;
                     }
-                    "short" => {
+                    "short" | "word" => {
                         size = values.len() as u64 * 2;
                     }
                     "int" | "long" => {
@@ -169,7 +169,7 @@ impl ROData {
                         )?;
                     }
                 }
-                "short" => {
+                "short" | "word" => {
                     for value in values {
                         Self::validate_immediate_range(
                             value,
@@ -252,7 +252,7 @@ impl ASTNode {
                                 };
                                 bytes.extend(imm8.to_le_bytes());
                             }
-                        } else if directive == "short" {
+                        } else if directive == "short" || directive == "word" {
                             for value in values {
                                 let imm16 = match value {
                                     Number::Int(val) => *val as i16,

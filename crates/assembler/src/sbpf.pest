@@ -67,7 +67,9 @@ directive_section = {
 // Data directives
 directive_ascii = { ".ascii" ~ string_literal }
 directive_byte  = { ".byte" ~ number ~ ("," ~ number)* }
+directive_short = { ".short" ~ number ~ ("," ~ number)* }
 directive_word  = { ".word" ~ number ~ ("," ~ number)* }
+directive_int   = { ".int" ~ number ~ ("," ~ number)* }
 directive_long  = { ".long" ~ number ~ ("," ~ number)* }
 directive_quad  = { ".quad" ~ number ~ ("," ~ number)* }
 
@@ -78,7 +80,9 @@ directive_inner = {
   | directive_section
   | directive_ascii
   | directive_byte
+  | directive_short
   | directive_word
+  | directive_int
   | directive_long
   | directive_quad
 }
