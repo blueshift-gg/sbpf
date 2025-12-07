@@ -217,6 +217,23 @@ impl Program {
 
         Some((rodata_entry.data.clone(), rodata_header.sh_addr))
     }
+
+    /// Get the entrypoint offset
+    pub fn get_entrypoint_offset(&self) -> Option<u64> {
+        let text_header = self.section_headers.iter().find(|h| {
+            self.section_header_entries
+                .iter()
+                .any(|e| e.label.eq(".text\0") && e.offset == h.sh_offset as usize)
+        })?;
+        let text_sh_addr = text_header.sh_addr;
+        let e_entry = self.elf_header.e_entry;
+
+        if e_entry >= text_sh_addr {
+            Some(e_entry - text_sh_addr)
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]

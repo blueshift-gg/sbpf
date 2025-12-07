@@ -43,6 +43,8 @@ impl Program {
         // Calculate base offset after ELF header and program headers
         let mut current_offset = 64 + (ph_count as u64 * 56); // 64 bytes ELF header, 56 bytes per program header
 
+        let text_offset = current_offset;
+
         // Get the entry point offset from dynamic_symbols if available
         let entry_point_offset = dynamic_symbols
             .get_entry_points()
@@ -50,7 +52,7 @@ impl Program {
             .map(|(_, offset)| *offset)
             .unwrap_or(0);
 
-        elf_header.e_entry = current_offset + entry_point_offset;
+        elf_header.e_entry = text_offset + entry_point_offset;
 
         // Create a vector of sections
         let mut sections = Vec::new();
@@ -110,7 +112,7 @@ impl Program {
                 if rel_type == RelocationType::RSbfSyscall {
                     if let Some(index) = symbol_names.iter().position(|n| *n == name) {
                         rel_dyns.push(RelDyn::new(
-                            offset + elf_header.e_entry,
+                            offset + text_offset,
                             rel_type as u64,
                             index as u64 + 1,
                         ));
@@ -119,7 +121,7 @@ impl Program {
                     }
                 } else if rel_type == RelocationType::RSbf64Relative {
                     rel_count += 1;
-                    rel_dyns.push(RelDyn::new(offset + elf_header.e_entry, rel_type as u64, 0));
+                    rel_dyns.push(RelDyn::new(offset + text_offset, rel_type as u64, 0));
                 }
             }
             // create four dynamic related sections
@@ -226,7 +228,7 @@ impl Program {
 
             program_headers = Some(vec![
                 ProgramHeader::new_load(
-                    elf_header.e_entry,
+                    text_offset,
                     text_size,
                     true, // executable
                 ),

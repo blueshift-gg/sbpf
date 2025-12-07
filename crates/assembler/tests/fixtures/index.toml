@@ -28,7 +28,7 @@ hash = "af0ebc4f2d5f56c66696cdb4b3faa50e0545d31a0224541b78b85d5c58f478ea"
 
 [cases.entrypoint]
 file = "entrypoint.s"
-hash = "c2674385e32e40410e64b820229c8cf41a61dadd9627435b449ad410903ba453"
+hash = "88ce8f70beb96446c91f367db2389c97e8aa8172f100e1bd83469c0bb383de4b"
 
 [cases.equ]
 file = "equ.s"
