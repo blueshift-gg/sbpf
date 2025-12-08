@@ -5,21 +5,25 @@ use {
     std::{collections::HashSet, fs::File, io::Read},
 };
 
-pub fn disassemble(filename: String, asm: bool) -> Result<(), Error> {
+pub fn disassemble(filename: String, debug: bool) -> Result<(), Error> {
     let mut file = File::open(filename)?;
     let mut b = vec![];
     file.read_to_end(&mut b)?;
     let program = Program::from_bytes(b.as_ref())?;
 
-    let output = disassemble_program(program, asm)?;
+    let output = disassemble_program(program, debug)?;
     print!("{}", output);
     Ok(())
 }
 
-fn disassemble_program(program: Program, asm: bool) -> Result<String, Error> {
+fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
     let mut output = String::new();
 
-    if asm {
+    if debug {
+        output = serde_json::to_string_pretty(&program)?;
+    } else {
+        let entrypoint_offset = program.get_entrypoint_offset();
+
         let (ixs, rodata) = program.to_ixs()?;
 
         // Build position map
@@ -51,16 +55,23 @@ fn disassemble_program(program: Program, asm: bool) -> Result<String, Error> {
             }
         }
 
+        // Output .globl entrypoint directive at the top
+        output.push_str(".globl entrypoint\n");
+
         let mut in_labeled_block = false;
         for (idx, ix) in ixs.iter().enumerate() {
             let pos = positions[idx];
             let is_fn_target = fn_targets.contains(&pos);
             let is_jmp_target = jmp_targets.contains(&pos);
+            let is_entrypoint = entrypoint_offset == Some(pos);
 
-            // Output labels if this position is a target
-            if is_fn_target || is_jmp_target {
+            // Output labels if this position is a target or entrypoint
+            if is_fn_target || is_jmp_target || is_entrypoint {
                 output.push('\n');
-                if is_fn_target {
+                if is_entrypoint {
+                    output.push_str("entrypoint:\n");
+                }
+                if is_fn_target && !is_entrypoint {
                     output.push_str(&format!("fn_{:04x}:\n", pos));
                 }
                 if is_jmp_target {
@@ -81,8 +92,6 @@ fn disassemble_program(program: Program, asm: bool) -> Result<String, Error> {
             output.push('\n');
             output.push_str(&rodata.to_asm());
         }
-    } else {
-        output = serde_json::to_string_pretty(&program)?;
     }
 
     Ok(output)
@@ -158,10 +167,13 @@ mod tests {
         );
 
         let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, true).unwrap();
+        let output = disassemble_program(program, false).unwrap();
 
-        let expected = r#"call fn_0068
-ja jmp_0038
+        let expected = r#".globl entrypoint
+
+entrypoint:
+  call fn_0068
+  ja jmp_0038
 
 jmp_0010:
   lddw r1, 1
@@ -234,11 +246,14 @@ fn_0088:
         );
 
         let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, true).unwrap();
+        let output = disassemble_program(program, false).unwrap();
 
         // Both fn and jmp labels should be present
-        let expected = r#"call fn_0010
-ja jmp_0010
+        let expected = r#".globl entrypoint
+
+entrypoint:
+  call fn_0010
+  ja jmp_0010
 
 fn_0010:
 jmp_0010:
@@ -312,17 +327,20 @@ jmp_0010:
         );
 
         let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, true).unwrap();
+        let output = disassemble_program(program, false).unwrap();
 
-        let expected = r#"lddw r1, data_0000
-lddw r2, data_0003
-lddw r3, data_0005
-lddw r4, data_0009
-call sol_log_64_
-lddw r1, str_0011
-lddw r2, 12
-call sol_log_
-exit
+        let expected = r#".globl entrypoint
+
+entrypoint:
+  lddw r1, data_0000
+  lddw r2, data_0003
+  lddw r3, data_0005
+  lddw r4, data_0009
+  call sol_log_64_
+  lddw r1, str_0011
+  lddw r2, 12
+  call sol_log_
+  exit
 
 .rodata
   data_0000: .byte 0x01, 0x02, 0x03
