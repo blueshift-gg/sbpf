@@ -167,7 +167,11 @@ impl Instruction {
         if let Some(handler) = OPCODE_TO_HANDLER.get(&self.opcode) {
             match (handler.validate)(self) {
                 Ok(()) => {
-                    let mut asm = format!("{}", self.opcode);
+                    let mut asm = if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
+                        self.op_imm_bits()?
+                    } else {
+                        format!("{}", self.opcode)
+                    };
                     let mut param = vec![];
 
                     fn off_str(off: &Either<String, i16>) -> String {
@@ -193,9 +197,13 @@ impl Instruction {
                             self.src.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
                         ));
-                    } else if self.get_opcode_type() == OperationType::StoreImmediate
-                        || self.get_opcode_type() == OperationType::StoreRegister
-                    {
+                    } else if self.get_opcode_type() == OperationType::StoreImmediate {
+                        param.push(mem_off(
+                            self.dst.as_ref().unwrap(),
+                            self.off.as_ref().unwrap(),
+                        ));
+                        param.push(format!("{}", self.imm.as_ref().unwrap()));
+                    } else if self.get_opcode_type() == OperationType::StoreRegister {
                         param.push(mem_off(
                             self.dst.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
@@ -213,12 +221,11 @@ impl Instruction {
                                 param.push(format!("r{}", src.n));
                             }
                         }
-                        if let Some(imm) = &self.imm {
-                            if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
-                                todo!("handle le/be")
-                            } else {
-                                param.push(format!("{}", imm));
-                            }
+                        if let Some(imm) = &self.imm
+                            && self.opcode != Opcode::Le
+                            && self.opcode != Opcode::Be
+                        {
+                            param.push(format!("{}", imm));
                         }
                         if let Some(off) = &self.off {
                             param.push(off_str(off).to_string());
@@ -324,6 +331,100 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stxw [r2+0], r1");
+    }
+
+    #[test]
+    fn serialize_e2e_stb() {
+        let b = hex!("7200000000000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stb);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stb [r0+0], 0");
+    }
+
+    #[test]
+    fn serialize_e2e_sth() {
+        let b = hex!("6a01040034120000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Sth);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "sth [r1+4], 4660");
+    }
+
+    #[test]
+    fn serialize_e2e_stw() {
+        let b = hex!("6201080064000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stw);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stw [r1+8], 100");
+    }
+
+    #[test]
+    fn serialize_e2e_stdw() {
+        let b = hex!("7a021000efbeadde");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stdw);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stdw [r2+16], -559038737");
+    }
+
+    #[test]
+    fn serialize_e2e_le16() {
+        let b = hex!("d401000010000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le16 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_le32() {
+        let b = hex!("d401000020000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le32 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_le64() {
+        let b = hex!("d403000040000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le64 r3");
+    }
+
+    #[test]
+    fn serialize_e2e_be16() {
+        let b = hex!("dc01000010000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be16 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_be32() {
+        let b = hex!("dc02000020000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be32 r2");
+    }
+
+    #[test]
+    fn serialize_e2e_be64() {
+        let b = hex!("dc03000040000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be64 r3");
     }
 
     #[test]
