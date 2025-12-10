@@ -191,7 +191,7 @@ impl SectionHeader {
 
 #[cfg(test)]
 mod tests {
-    use {crate::program::Program, hex_literal::hex};
+    use {super::*, crate::program::Program, hex_literal::hex};
 
     #[test]
     fn test_section_headers() {
@@ -200,5 +200,166 @@ mod tests {
         // Verify we have the expected number of section headers.
         assert_eq!(program.section_headers.len(), 6);
         assert_eq!(program.section_header_entries.len(), 6);
+    }
+
+    #[test]
+    fn test_section_header_type_conversions() {
+        // Test all valid TryFrom conversions.
+        assert!(matches!(
+            SectionHeaderType::try_from(0x00),
+            Ok(SectionHeaderType::SHT_NULL)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x01),
+            Ok(SectionHeaderType::SHT_PROGBITS)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x02),
+            Ok(SectionHeaderType::SHT_SYMTAB)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x03),
+            Ok(SectionHeaderType::SHT_STRTAB)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x04),
+            Ok(SectionHeaderType::SHT_RELA)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x05),
+            Ok(SectionHeaderType::SHT_HASH)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x06),
+            Ok(SectionHeaderType::SHT_DYNAMIC)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x07),
+            Ok(SectionHeaderType::SHT_NOTE)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x08),
+            Ok(SectionHeaderType::SHT_NOBITS)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x09),
+            Ok(SectionHeaderType::SHT_REL)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x0A),
+            Ok(SectionHeaderType::SHT_SHLIB)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x0B),
+            Ok(SectionHeaderType::SHT_DYNSYM)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x0E),
+            Ok(SectionHeaderType::SHT_INIT_ARRAY)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x0F),
+            Ok(SectionHeaderType::SHT_FINI_ARRAY)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x10),
+            Ok(SectionHeaderType::SHT_PREINIT_ARRAY)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x11),
+            Ok(SectionHeaderType::SHT_GROUP)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x12),
+            Ok(SectionHeaderType::SHT_SYMTAB_SHNDX)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x13),
+            Ok(SectionHeaderType::SHT_NUM)
+        ));
+        assert!(matches!(
+            SectionHeaderType::try_from(0x6ffffff6),
+            Ok(SectionHeaderType::SHT_GNU_HASH)
+        ));
+
+        // Test invalid value
+        assert!(SectionHeaderType::try_from(0xFF).is_err());
+    }
+
+    #[test]
+    fn test_section_header_type_to_str() {
+        // Test all Into<&str> conversions.
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_NULL), "SHT_NULL");
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_PROGBITS),
+            "SHT_PROGBITS"
+        );
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_SYMTAB), "SHT_SYMTAB");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_STRTAB), "SHT_STRTAB");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_RELA), "SHT_RELA");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_HASH), "SHT_HASH");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_DYNAMIC), "SHT_DYNAMIC");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_NOTE), "SHT_NOTE");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_NOBITS), "SHT_NOBITS");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_REL), "SHT_REL");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_SHLIB), "SHT_SHLIB");
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_DYNSYM), "SHT_DYNSYM");
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_INIT_ARRAY),
+            "SHT_INIT_ARRAY"
+        );
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_FINI_ARRAY),
+            "SHT_FINI_ARRAY"
+        );
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_PREINIT_ARRAY),
+            "SHT_PREINIT_ARRAY"
+        );
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_GROUP), "SHT_GROUP");
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_SYMTAB_SHNDX),
+            "SHT_SYMTAB_SHNDX"
+        );
+        assert_eq!(<&str>::from(SectionHeaderType::SHT_NUM), "SHT_NUM");
+        assert_eq!(
+            <&str>::from(SectionHeaderType::SHT_GNU_HASH),
+            "SHT_GNU_HASH"
+        );
+    }
+
+    #[test]
+    fn test_section_header_type_display() {
+        assert_eq!(SectionHeaderType::SHT_PROGBITS.to_string(), "SHT_PROGBITS");
+        assert_eq!(SectionHeaderType::SHT_DYNAMIC.to_string(), "SHT_DYNAMIC");
+    }
+
+    #[test]
+    fn test_section_header_to_bytes() {
+        let header = SectionHeader {
+            sh_name: 1,
+            sh_type: SectionHeaderType::SHT_PROGBITS,
+            sh_flags: 6,
+            sh_addr: 0x120,
+            sh_offset: 0x120,
+            sh_size: 48,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: 8,
+            sh_entsize: 0,
+        };
+
+        let bytes = header.to_bytes();
+        assert_eq!(bytes.len(), 64);
+
+        // Check first few fields.
+        assert_eq!(
+            u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            1
+        );
+        assert_eq!(
+            u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+            1
+        );
     }
 }

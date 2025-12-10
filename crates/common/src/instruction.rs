@@ -167,7 +167,11 @@ impl Instruction {
         if let Some(handler) = OPCODE_TO_HANDLER.get(&self.opcode) {
             match (handler.validate)(self) {
                 Ok(()) => {
-                    let mut asm = format!("{}", self.opcode);
+                    let mut asm = if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
+                        self.op_imm_bits()?
+                    } else {
+                        format!("{}", self.opcode)
+                    };
                     let mut param = vec![];
 
                     fn off_str(off: &Either<String, i16>) -> String {
@@ -193,9 +197,13 @@ impl Instruction {
                             self.src.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
                         ));
-                    } else if self.get_opcode_type() == OperationType::StoreImmediate
-                        || self.get_opcode_type() == OperationType::StoreRegister
-                    {
+                    } else if self.get_opcode_type() == OperationType::StoreImmediate {
+                        param.push(mem_off(
+                            self.dst.as_ref().unwrap(),
+                            self.off.as_ref().unwrap(),
+                        ));
+                        param.push(format!("{}", self.imm.as_ref().unwrap()));
+                    } else if self.get_opcode_type() == OperationType::StoreRegister {
                         param.push(mem_off(
                             self.dst.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
@@ -206,14 +214,18 @@ impl Instruction {
                             param.push(format!("r{}", dst.n));
                         }
                         if let Some(src) = &self.src {
-                            param.push(format!("r{}", src.n));
-                        }
-                        if let Some(imm) = &self.imm {
-                            if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
-                                todo!("handle le/be")
-                            } else {
-                                param.push(format!("{}", imm));
+                            // Skip src register for syscalls
+                            let is_syscall = self.opcode == Opcode::Call
+                                && matches!(&self.imm, Some(Either::Left(_)));
+                            if !is_syscall {
+                                param.push(format!("r{}", src.n));
                             }
+                        }
+                        if let Some(imm) = &self.imm
+                            && self.opcode != Opcode::Le
+                            && self.opcode != Opcode::Be
+                        {
+                            param.push(format!("{}", imm));
                         }
                         if let Some(off) = &self.off {
                             param.push(off_str(off).to_string());
@@ -239,7 +251,15 @@ impl Instruction {
 
 #[cfg(test)]
 mod test {
-    use {crate::instruction::Instruction, hex_literal::hex};
+    use {
+        crate::{
+            inst_param::{Number, Register},
+            instruction::Instruction,
+            opcode::Opcode,
+        },
+        either::Either,
+        hex_literal::hex,
+    };
 
     #[test]
     fn serialize_e2e() {
@@ -314,6 +334,100 @@ mod test {
     }
 
     #[test]
+    fn serialize_e2e_stb() {
+        let b = hex!("7200000000000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stb);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stb [r0+0], 0");
+    }
+
+    #[test]
+    fn serialize_e2e_sth() {
+        let b = hex!("6a01040034120000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Sth);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "sth [r1+4], 4660");
+    }
+
+    #[test]
+    fn serialize_e2e_stw() {
+        let b = hex!("6201080064000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stw);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stw [r1+8], 100");
+    }
+
+    #[test]
+    fn serialize_e2e_stdw() {
+        let b = hex!("7a021000efbeadde");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Stdw);
+        assert!(i.src.is_none());
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "stdw [r2+16], -559038737");
+    }
+
+    #[test]
+    fn serialize_e2e_le16() {
+        let b = hex!("d401000010000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le16 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_le32() {
+        let b = hex!("d401000020000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le32 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_le64() {
+        let b = hex!("d403000040000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Le);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "le64 r3");
+    }
+
+    #[test]
+    fn serialize_e2e_be16() {
+        let b = hex!("dc01000010000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be16 r1");
+    }
+
+    #[test]
+    fn serialize_e2e_be32() {
+        let b = hex!("dc02000020000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be32 r2");
+    }
+
+    #[test]
+    fn serialize_e2e_be64() {
+        let b = hex!("dc03000040000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.opcode, Opcode::Be);
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm().unwrap(), "be64 r3");
+    }
+
+    #[test]
     fn serialize_e2e_neg64() {
         let b = hex!("8700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
@@ -358,5 +472,201 @@ mod test {
     fn test_unsupported_opcode() {
         let add32 = Instruction::from_bytes(&hex!("1300000000000000"));
         assert!(add32.is_err());
+    }
+
+    #[test]
+    fn test_op_imm_bits_16() {
+        let inst = Instruction {
+            opcode: Opcode::Le,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(16))),
+            span: 0..8,
+        };
+        assert_eq!(inst.op_imm_bits().unwrap(), "le16");
+    }
+
+    #[test]
+    fn test_op_imm_bits_32() {
+        let inst = Instruction {
+            opcode: Opcode::Le,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(32))),
+            span: 0..8,
+        };
+        assert_eq!(inst.op_imm_bits().unwrap(), "le32");
+    }
+
+    #[test]
+    fn test_op_imm_bits_64() {
+        let inst = Instruction {
+            opcode: Opcode::Be,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(64))),
+            span: 0..8,
+        };
+        assert_eq!(inst.op_imm_bits().unwrap(), "be64");
+    }
+
+    #[test]
+    fn test_op_imm_bits_invalid() {
+        let inst = Instruction {
+            opcode: Opcode::Le,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(8))),
+            span: 0..8,
+        };
+        assert!(inst.op_imm_bits().is_err());
+    }
+
+    #[test]
+    fn test_op_imm_bits_no_imm() {
+        let inst = Instruction {
+            opcode: Opcode::Le,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..8,
+        };
+        assert!(inst.op_imm_bits().is_err());
+    }
+
+    #[test]
+    fn test_to_bytes_callx() {
+        // callx r5 - dst register encoded in imm
+        let inst = Instruction {
+            opcode: Opcode::Callx,
+            dst: Some(Register { n: 5 }),
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..8,
+        };
+        let bytes = inst.to_bytes().unwrap();
+        assert_eq!(bytes[0], 0x8d);
+        assert_eq!(bytes[4], 5);
+    }
+
+    #[test]
+    fn test_to_bytes_call_with_identifier() {
+        let inst = Instruction {
+            opcode: Opcode::Call,
+            dst: None,
+            src: Some(Register { n: 1 }),
+            off: None,
+            imm: Some(Either::Left("function".to_string())),
+            span: 0..8,
+        };
+        let bytes = inst.to_bytes().unwrap();
+        // Should encode -1 for unresolved identifier
+        assert_eq!(
+            i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+            -1
+        );
+    }
+
+    #[test]
+    fn test_to_asm_with_imm_addr() {
+        // Test Number::Addr variant in to_bytes
+        let inst = Instruction {
+            opcode: Opcode::Add64Imm,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Addr(100))),
+            span: 0..8,
+        };
+        let bytes = inst.to_bytes().unwrap();
+        assert_eq!(bytes[0], 0x07); // add64 imm opcode
+        assert_eq!(
+            i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+            100
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_sbpf_v2() {
+        // Test all v2 opcode mappings and repurposed opcodes
+        let test_cases = vec![
+            // New opcodes in v2
+            (hex!("8c12000000000000"), Opcode::Ldxw, "v2: 0x8C -> ldxw"),
+            (hex!("8f12000000000000"), Opcode::Stxw, "v2: 0x8F -> stxw"),
+            // Repurposed opcodes in v2
+            (
+                hex!("2c12000000000000"),
+                Opcode::Ldxb,
+                "v2: 0x2C (mul32 reg) -> ldxb",
+            ),
+            (
+                hex!("3c12000000000000"),
+                Opcode::Ldxh,
+                "v2: 0x3C (div32 reg) -> ldxh",
+            ),
+            (
+                hex!("9c12000000000000"),
+                Opcode::Ldxdw,
+                "v2: 0x9C (mod32 reg) -> ldxdw",
+            ),
+            (
+                hex!("2701040064000000"),
+                Opcode::Stb,
+                "v2: 0x27 (mul64 imm) -> stb",
+            ),
+            (
+                hex!("2f12040000000000"),
+                Opcode::Stxb,
+                "v2: 0x2F (mul64 reg) -> stxb",
+            ),
+            (
+                hex!("3701040064000000"),
+                Opcode::Sth,
+                "v2: 0x37 (div64 imm) -> sth",
+            ),
+            (
+                hex!("3f12040000000000"),
+                Opcode::Stxh,
+                "v2: 0x3F (div64 reg) -> stxh",
+            ),
+            (
+                hex!("8701040064000000"),
+                Opcode::Stw,
+                "v2: 0x87 (neg64) -> stw",
+            ),
+            (
+                hex!("9701040064000000"),
+                Opcode::Stdw,
+                "v2: 0x97 (mod64 imm) -> stdw",
+            ),
+            (
+                hex!("9f12040000000000"),
+                Opcode::Stxdw,
+                "v2: 0x9F (mod64 reg) -> stxdw",
+            ),
+        ];
+
+        for (bytes, expected_opcode, description) in test_cases {
+            let inst = Instruction::from_bytes_sbpf_v2(&bytes).unwrap();
+            assert_eq!(inst.opcode, expected_opcode, "{}", description);
+        }
+
+        // Test callx
+        let callx_bytes = hex!("8d50000000000000");
+        let callx_inst = Instruction::from_bytes_sbpf_v2(&callx_bytes).unwrap();
+        assert_eq!(callx_inst.opcode, Opcode::Callx);
+        assert_eq!(callx_inst.dst.unwrap().n, 5);
+
+        // Test lddw
+        let mut lddw_bytes = vec![0x21, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        lddw_bytes.extend_from_slice(&[0xf7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        let lddw_inst = Instruction::from_bytes_sbpf_v2(&lddw_bytes).unwrap();
+        assert_eq!(lddw_inst.opcode, Opcode::Lddw);
     }
 }

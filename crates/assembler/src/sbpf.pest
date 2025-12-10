@@ -2,7 +2,7 @@ WHITESPACE = _{ " " | "\t" | "\r" }
 COMMENT    = _{ (";" | "#" | "//") ~ (!NEWLINE ~ ANY)* }
 
 // Numbers (decimal and hex)
-hex_number     = @{ "0x" ~ ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
+hex_number     = @{ "-"? ~ "0x" ~ ASCII_HEX_DIGIT+ ~ ("_" ~ ASCII_HEX_DIGIT+)* }
 decimal_number = @{ "-"? ~ ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
 number         = @{ hex_number | decimal_number }
 
@@ -36,8 +36,9 @@ operand_expr = { symbol ~ "+" ~ number }
 operand      = { operand_expr | number | symbol }
 
 // Memory offset.
+memory_op     = { "+" | "-" }
 memory_offset = { number | symbol }
-memory_ref    = { "[" ~ register ~ ("+" ~ memory_offset)+ ~ "]" }
+memory_ref    = { "[" ~ register ~ (memory_op ~ memory_offset)+ ~ "]" }
 
 // Jump target
 jump_target = { numeric_label_ref | (("+" | "-")? ~ number) | symbol }
@@ -47,8 +48,8 @@ jump_target = { numeric_label_ref | (("+" | "-")? ~ number) | symbol }
 // ============
 
 // Global
-globl_symbol    = { "entrypoint" | "e" }
-directive_globl = { ".globl" ~ globl_symbol }
+globl_symbol    = { identifier }
+directive_globl = { (".globl" | ".global") ~ globl_symbol }
 
 // External
 directive_extern = { ".extern" ~ symbol+ }
@@ -66,7 +67,9 @@ directive_section = {
 // Data directives
 directive_ascii = { ".ascii" ~ string_literal }
 directive_byte  = { ".byte" ~ number ~ ("," ~ number)* }
+directive_short = { ".short" ~ number ~ ("," ~ number)* }
 directive_word  = { ".word" ~ number ~ ("," ~ number)* }
+directive_int   = { ".int" ~ number ~ ("," ~ number)* }
 directive_long  = { ".long" ~ number ~ ("," ~ number)* }
 directive_quad  = { ".quad" ~ number ~ ("," ~ number)* }
 
@@ -77,7 +80,9 @@ directive_inner = {
   | directive_section
   | directive_ascii
   | directive_byte
+  | directive_short
   | directive_word
+  | directive_int
   | directive_long
   | directive_quad
 }
@@ -103,6 +108,13 @@ alu_64_op       = {
   | "lsh64"
   | "rsh64"
   | "arsh64"
+  | "hor64"
+  | "lmul64"
+  | "uhmul64"
+  | "udiv64"
+  | "urem64"
+  | "shmul64"
+  | "srem64"
 }
 instr_alu64_imm = { alu_64_op ~ register ~ "," ~ operand }
 instr_alu64_reg = { alu_64_op ~ register ~ "," ~ register }
@@ -123,6 +135,10 @@ alu_32_op       = {
   | "lsh32"
   | "rsh32"
   | "arsh32"
+  | "lmul32"
+  | "udiv32"
+  | "urem32"
+  | "srem32"
 }
 instr_alu32_imm = { alu_32_op ~ register ~ "," ~ operand }
 instr_alu32_reg = { alu_32_op ~ register ~ "," ~ register }

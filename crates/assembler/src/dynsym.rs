@@ -197,3 +197,128 @@ impl RelDynMap {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, sbpf_common::inst_param::Register};
+
+    #[test]
+    fn test_dynamic_symbol_get_name() {
+        let sym = DynamicSymbol::new(42, 0x12, 0, 1, 0, 0);
+        assert_eq!(sym.get_name(), 42);
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_new() {
+        let map = DynamicSymbolMap::new();
+        assert!(map.symbols.is_empty());
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_add_entry_point() {
+        let mut map = DynamicSymbolMap::new();
+        map.add_entry_point("entrypoint".to_string(), 0x120);
+
+        let entry_points = map.get_entry_points();
+        assert_eq!(entry_points.len(), 1);
+        assert_eq!(entry_points[0].0, "entrypoint");
+        assert_eq!(entry_points[0].1, 0x120);
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_add_call_target() {
+        let mut map = DynamicSymbolMap::new();
+        map.add_call_target("function".to_string(), 0x200);
+
+        let call_targets = map.get_call_targets();
+        assert_eq!(call_targets.len(), 1);
+        assert_eq!(call_targets[0].0, "function");
+        assert_eq!(call_targets[0].1, 0x200);
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_get_symbol() {
+        let mut map = DynamicSymbolMap::new();
+        map.add_symbol("test".to_string(), SymbolKind::CallTarget, 100);
+
+        let sym = map.get_symbol("test");
+        assert!(sym.is_some());
+        assert_eq!(sym.unwrap().len(), 1);
+
+        let not_found = map.get_symbol("nonexistent");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_get_symbols() {
+        let mut map = DynamicSymbolMap::new();
+        map.add_symbol("func1".to_string(), SymbolKind::CallTarget, 100);
+        map.add_symbol("func2".to_string(), SymbolKind::EntryPoint, 200);
+
+        let symbols = map.get_symbols();
+        assert_eq!(symbols.len(), 2);
+        assert!(symbols.contains_key("func1"));
+        assert!(symbols.contains_key("func2"));
+    }
+
+    #[test]
+    fn test_dynamic_symbol_map_copy() {
+        let mut map = DynamicSymbolMap::new();
+        map.add_entry_point("main".to_string(), 0);
+
+        let copy = map.copy();
+        assert_eq!(copy.symbols.len(), 1);
+        assert!(copy.get_symbol("main").is_some());
+    }
+
+    #[test]
+    fn test_get_relocation_info_lddw() {
+        let inst = Instruction {
+            opcode: Opcode::Lddw,
+            dst: Some(Register { n: 1 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Left("my_data".to_string())),
+            span: 0..10,
+        };
+
+        let (rel_type, name) = get_relocation_info(&inst);
+        assert_eq!(rel_type, RelocationType::RSbf64Relative);
+        assert_eq!(name, "my_data");
+    }
+
+    #[test]
+    fn test_get_relocation_info_call() {
+        let inst = Instruction {
+            opcode: Opcode::Call,
+            dst: None,
+            src: Some(Register { n: 1 }),
+            off: None,
+            imm: Some(Either::Left("my_function".to_string())),
+            span: 0..10,
+        };
+
+        let (rel_type, name) = get_relocation_info(&inst);
+        assert_eq!(rel_type, RelocationType::RSbfSyscall);
+        assert_eq!(name, "my_function");
+    }
+
+    #[test]
+    fn test_rel_dyn_map_add_and_get() {
+        let mut map = RelDynMap::new();
+        map.add_rel_dyn(0x100, RelocationType::RSbf64Relative, "data".to_string());
+        map.add_rel_dyn(0x200, RelocationType::RSbfSyscall, "func".to_string());
+
+        let rel_dyns = map.get_rel_dyns();
+        assert_eq!(rel_dyns.len(), 2);
+    }
+
+    #[test]
+    fn test_rel_dyn_map_copy() {
+        let mut map = RelDynMap::new();
+        map.add_rel_dyn(0x100, RelocationType::RSbf64Relative, "test".to_string());
+
+        let copy = map.copy();
+        assert_eq!(copy.rel_dyns.len(), 1);
+    }
+}

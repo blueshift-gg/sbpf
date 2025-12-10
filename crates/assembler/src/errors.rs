@@ -96,4 +96,9 @@ define_compile_errors! {
         label = "Bytecode error",
         fields = { error: String, span: Range<usize> }
     },
+    MissingTextDirective {
+        error = "Missing text directive",
+        label = "Missing text directive",
+        fields = { span: Range<usize> }
+    },
 }

@@ -25,3 +25,21 @@ impl SBPFError {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bytecode_error() {
+        let error = SBPFError::BytecodeError {
+            error: "Invalid opcode".to_string(),
+            span: 10..20,
+            custom_label: Some("Custom error message".to_string()),
+        };
+
+        assert_eq!(error.label(), "Custom error message");
+        assert_eq!(error.span(), &(10..20));
+        assert_eq!(error.to_string(), "Bytecode error: Invalid opcode");
+    }
+}

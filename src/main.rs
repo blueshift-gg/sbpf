@@ -57,7 +57,7 @@ struct LinkArgs {
 struct DisassembleArgs {
     filename: String,
     #[arg(short, long)]
-    asm: bool,
+    debug: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -75,6 +75,6 @@ fn main() -> Result<(), Error> {
             test()
         }
         Commands::Clean => clean(),
-        Commands::Disassemble(args) => disassemble(args.filename.clone(), args.asm),
+        Commands::Disassemble(args) => disassemble(args.filename.clone(), args.debug),
     }
 }

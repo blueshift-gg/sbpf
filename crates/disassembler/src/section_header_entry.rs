@@ -84,4 +84,11 @@ mod test {
 
         assert_eq!(ixs, h.to_bytes());
     }
+
+    #[test]
+    fn test_offset() {
+        let data = vec![0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let h = SectionHeaderEntry::new(".test".to_string(), 256, data).unwrap();
+        assert_eq!(h.offset(), 256);
+    }
 }

@@ -50,3 +50,41 @@ macro_rules! bug {
         panic!("{}", format!("Internal error: {}\n", format!($($arg)*)));
     }};
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Range;
+
+    #[test]
+    fn test_define_compile_errors_macro() {
+        define_compile_errors! {
+            TestError1 {
+                error = "Test error 1",
+                label = "test label 1",
+                fields = { span: Range<usize> }
+            },
+            TestError2 {
+                error = "Test error 2",
+                label = "test label 2",
+                fields = { span: Range<usize>, message: String }
+            }
+        }
+
+        // Test creating errors
+        let err1 = CompileError::TestError1 {
+            span: 0..10,
+            custom_label: None,
+        };
+        assert_eq!(err1.label(), "test label 1");
+        assert_eq!(err1.span(), &(0..10));
+        assert_eq!(err1.to_string(), "Test error 1");
+
+        let err2 = CompileError::TestError2 {
+            span: 5..15,
+            message: "custom message".to_string(),
+            custom_label: Some("custom".to_string()),
+        };
+        assert_eq!(err2.label(), "custom");
+        assert_eq!(err2.span(), &(5..15));
+    }
+}

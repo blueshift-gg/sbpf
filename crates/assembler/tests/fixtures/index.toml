@@ -26,6 +26,10 @@ hash = "394d7843fbe545405be96085be387e374308dc5188857cc483df633ae31cc016"
 file = "endian.s"
 hash = "af0ebc4f2d5f56c66696cdb4b3faa50e0545d31a0224541b78b85d5c58f478ea"
 
+[cases.entrypoint]
+file = "entrypoint.s"
+hash = "88ce8f70beb96446c91f367db2389c97e8aa8172f100e1bd83469c0bb383de4b"
+
 [cases.equ]
 file = "equ.s"
 hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"
@@ -49,6 +53,14 @@ hash = "e80c56ff4dfdd2d55822581202dc917beb661e82efc407dddf8b56e8c3e9071b"
 [cases.neg]
 file = "neg.s"
 hash = "8611102bfd01ef3a8842774a638dbeaf1099a5b3ec29ac5556c5c0c43cf04c1e"
+
+[cases.numbers]
+file = "numbers.s"
+hash = "a06715ad3cf4bb5bd825193ff77b3dae1bfdcb778916d78b92ead6cbd9c399d2"
+
+[cases.offsets]
+file = "offsets.s"
+hash = "374f572eb411265ecf6c609a91e4211fa7fa8d8d193a45d1368a3b94d7c2ceb2"
 
 [cases.rodata]
 file = "rodata.s"
