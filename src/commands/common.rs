@@ -9,7 +9,7 @@ pub struct SolanaConfig {
 pub const PROGRAM: &str = r#".globl entrypoint
 entrypoint:
   lddw r1, message
-  lddw r2, 14
+  mov64 r2, 14
   call sol_log_
   exit
 .rodata
