@@ -1078,6 +1078,11 @@ fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     let span_range = span.start()..span.end();
     let number_str = pair.as_str().replace('_', "");
 
+    // Try parsing as i64 first
+    if let Ok(value) = number_str.parse::<i64>() {
+        return Ok(Number::Int(value));
+    }
+
     let mut sign: i64 = 1;
     let value = if number_str.starts_with('-') {
         sign = -1;
@@ -1091,8 +1096,6 @@ fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
         if let Ok(value) = u64::from_str_radix(hex_str, 16) {
             return Ok(Number::Addr(sign * (value as i64)));
         }
-    } else if let Ok(value) = value.parse::<i64>() {
-        return Ok(Number::Int(sign * value));
     }
 
     Err(CompileError::InvalidNumber {
