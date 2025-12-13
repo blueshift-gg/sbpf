@@ -163,7 +163,7 @@ function getStringFromWasm0(ptr, len) {
 }
 
 function takeFromExternrefTable0(idx) {
-    const value = wasm.__wbindgen_export_2.get(idx);
+    const value = wasm.__wbindgen_externrefs.get(idx);
     wasm.__externref_table_dealloc(idx);
     return value;
 }
@@ -188,12 +188,24 @@ export function assemble(source) {
     return v2;
 }
 
-export function __wbg_new_19c25a3f2fa63a02() {
+export function __wbg___wbindgen_debug_string_df47ffb5e35e6763(arg0, arg1) {
+    const ret = debugString(arg1);
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+};
+
+export function __wbg___wbindgen_throw_b855445ff6a94295(arg0, arg1) {
+    throw new Error(getStringFromWasm0(arg0, arg1));
+};
+
+export function __wbg_new_1acc0b6eea89d040() {
     const ret = new Object();
     return ret;
 };
 
-export function __wbg_new_1f3a344cf3123716() {
+export function __wbg_new_e17d9f43105b08be() {
     const ret = new Array();
     return ret;
 };
@@ -202,20 +214,8 @@ export function __wbg_set_3f1d0b984ed272ed(arg0, arg1, arg2) {
     arg0[arg1] = arg2;
 };
 
-export function __wbg_set_90f6c0f7bd8c0415(arg0, arg1, arg2) {
+export function __wbg_set_c213c871859d6500(arg0, arg1, arg2) {
     arg0[arg1 >>> 0] = arg2;
-};
-
-export function __wbg_wbindgendebugstring_99ef257a3ddda34d(arg0, arg1) {
-    const ret = debugString(arg1);
-    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-};
-
-export function __wbg_wbindgenthrow_451ec1a8469d7eb6(arg0, arg1) {
-    throw new Error(getStringFromWasm0(arg0, arg1));
 };
 
 export function __wbindgen_cast_2241b6af4c4b2941(arg0, arg1) {
@@ -225,7 +225,7 @@ export function __wbindgen_cast_2241b6af4c4b2941(arg0, arg1) {
 };
 
 export function __wbindgen_init_externref_table() {
-    const table = wasm.__wbindgen_export_2;
+    const table = wasm.__wbindgen_externrefs;
     const offset = table.grow(4);
     table.set(0, undefined);
     table.set(offset + 0, undefined);
