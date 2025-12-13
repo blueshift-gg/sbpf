@@ -142,12 +142,13 @@ impl Program {
             // Resolve internal call targets
             if ix.opcode == Opcode::Call
                 && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-                && *imm >= 0
             {
-                let current_slot = idx_to_slot[idx];
-                let target_slot = current_slot + 1 + (*imm as usize);
-                if let Some(&target_pos) = slot_to_position.get(target_slot) {
-                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                let current_slot = idx_to_slot[idx] as i64;
+                let target_slot = current_slot + 1 + *imm;
+                if target_slot >= 0 {
+                    if let Some(&target_pos) = slot_to_position.get(target_slot as usize) {
+                        ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                    }
                 }
             }
 
