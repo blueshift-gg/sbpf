@@ -35,7 +35,7 @@ members = ["crates/assembler", "crates/common", "crates/disassembler", "crates/s
 exclude = ["examples"]
 
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/blueshift-gg/sbpf"
@@ -50,7 +50,7 @@ num-traits = "0.2"
 object = "0.37.3"
 thiserror = "2.0.12"
 
-sbpf-assembler = { path = "crates/assembler", version = "0.1.5" }
-sbpf-disassembler = { path = "crates/disassembler", version = "0.1.5" }
-sbpf-common = { path = "crates/common", version = "0.1.5" }
-sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.5" }
+sbpf-assembler = { path = "crates/assembler", version = "0.1.6" }
+sbpf-disassembler = { path = "crates/disassembler", version = "0.1.6" }
+sbpf-common = { path = "crates/common", version = "0.1.6" }
+sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.6" }
