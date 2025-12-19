@@ -34,6 +34,10 @@ hash = "88ce8f70beb96446c91f367db2389c97e8aa8172f100e1bd83469c0bb383de4b"
 file = "equ.s"
 hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"
 
+[cases.internal_call_only]
+file = "internal_call_only.s"
+hash = "b8c4d7aeb8eca8b20cc5387207629ba10c0a819fe441a0f0784108803e89faad"
+
 [cases.jumps_imm]
 file = "jumps_imm.s"
 hash = "2cdc92d0421e71b3d4ae45baf5ec85f8b213cfee3faf119f43142153756a9e84"
