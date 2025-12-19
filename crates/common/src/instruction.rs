@@ -4,6 +4,7 @@ use {
         inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
         opcode::{Opcode, OperationType},
+        syscalls::REGISTERED_SYSCALLS,
     },
     core::ops::Range,
     either::Either,
@@ -39,11 +40,19 @@ impl Instruction {
         )
     }
 
+    pub fn is_syscall(&self) -> bool {
+        if self.opcode == Opcode::Call
+            && let Some(Either::Left(identifier)) = &self.imm
+        {
+            return REGISTERED_SYSCALLS.contains(&identifier.as_str());
+        }
+        false
+    }
+
     pub fn needs_relocation(&self) -> bool {
         match self.opcode {
-            Opcode::Call | Opcode::Lddw => {
-                matches!(&self.imm, Some(Either::Left(_identifier)))
-            }
+            Opcode::Call => self.is_syscall(),
+            Opcode::Lddw => matches!(&self.imm, Some(Either::Left(_identifier))),
             _ => false,
         }
     }
@@ -668,5 +677,34 @@ mod test {
         lddw_bytes.extend_from_slice(&[0xf7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
         let lddw_inst = Instruction::from_bytes_sbpf_v2(&lddw_bytes).unwrap();
         assert_eq!(lddw_inst.opcode, Opcode::Lddw);
+    }
+
+    #[test]
+    fn test_is_syscall() {
+        let test_cases = vec![
+            // Syscalls
+            ("sol_log_", true),
+            ("sol_invoke_signed_c", true),
+            ("abort", true),
+            ("sol_sha256", true),
+            ("sol_memcpy_", true),
+            // Non-syscalls
+            ("my_fn", false),
+            ("helper_function", false),
+            ("entrypoint", false),
+            ("random", false),
+        ];
+
+        for (name, expected) in test_cases {
+            let inst = Instruction {
+                opcode: Opcode::Call,
+                dst: None,
+                src: Some(Register { n: 1 }),
+                off: None,
+                imm: Some(Either::Left(name.to_string())),
+                span: 0..8,
+            };
+            assert_eq!(inst.is_syscall(), expected);
+        }
     }
 }
