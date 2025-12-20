@@ -20,6 +20,7 @@ pub mod program;
 pub mod section;
 
 // Debug info
+pub mod debug;
 pub mod debuginfo;
 
 // WASM bindings
@@ -27,6 +28,8 @@ pub mod debuginfo;
 pub mod wasm;
 
 pub use self::{
+    astnode::ASTNode,
+    debug::DebugData,
     errors::CompileError,
     parser::{ParseResult, Token, parse},
     program::Program,
@@ -39,9 +42,84 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
             return Err(errors);
         }
     };
-    let program = Program::from_parse_result(parse_result);
+    let program = Program::from_parse_result(parse_result, None);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
+}
+
+pub fn assemble_with_debug_data(
+    source: &str,
+    filename: &str,
+    directory: &str,
+) -> Result<Vec<u8>, Vec<CompileError>> {
+    let parse_result = match parse(source) {
+        Ok(result) => result,
+        Err(errors) => {
+            return Err(errors);
+        }
+    };
+
+    // Collect line entries and labels from parse result
+    let lines = collect_line_entries(source, &parse_result);
+    let labels = collect_labels(source, &parse_result);
+    let code_end = parse_result.code_section.get_size();
+
+    let debug_data = DebugData {
+        filename: filename.to_string(),
+        directory: directory.to_string(),
+        lines,
+        labels,
+        code_start: 0,
+        code_end,
+    };
+
+    let program = Program::from_parse_result(parse_result, Some(debug_data));
+    let bytecode = program.emit_bytecode();
+    Ok(bytecode)
+}
+
+// Helper function to collect line entries
+fn collect_line_entries(source: &str, parse_result: &ParseResult) -> Vec<(u64, u32)> {
+    let mut line_starts = vec![0usize];
+    for (i, c) in source.char_indices() {
+        if c == '\n' {
+            line_starts.push(i + 1);
+        }
+    }
+
+    let mut entries = Vec::new(); // Vec<(address, line)>
+    for node in parse_result.code_section.get_nodes() {
+        if let ASTNode::Instruction {
+            instruction,
+            offset,
+        } = node
+        {
+            let line = line_starts.partition_point(|&start| start <= instruction.span.start) as u32;
+            entries.push((*offset, line));
+        }
+    }
+
+    entries
+}
+
+// Helper function to collect labels
+fn collect_labels(source: &str, parse_result: &ParseResult) -> Vec<(String, u64, u32)> {
+    let mut line_starts = vec![0usize];
+    for (i, c) in source.char_indices() {
+        if c == '\n' {
+            line_starts.push(i + 1);
+        }
+    }
+
+    let mut labels = Vec::new(); // Vec<(name, address, line)>
+    for node in parse_result.code_section.get_nodes() {
+        if let ASTNode::Label { label, offset } = node {
+            let line = line_starts.partition_point(|&start| start <= label.span.start) as u32;
+            labels.push((label.name.clone(), *offset, line));
+        }
+    }
+
+    labels
 }
 
 #[cfg(test)]
@@ -204,5 +282,42 @@ mod tests {
         "#;
         let result = assemble(source);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_assemble_with_debug_data() {
+        let source = r#".equ MSG_LEN, 14
+
+.globl entrypoint
+entrypoint:
+  lddw r1, message
+  mov64 r2, MSG_LEN
+  call sol_log_
+  exit
+.rodata
+  message: .ascii "Hello, Solana!"
+"#;
+        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp");
+        assert!(result.is_ok());
+        let bytecode = result.unwrap();
+
+        // Verify the ELF has all debug sections.
+        let bytecode_str = String::from_utf8_lossy(&bytecode);
+        assert!(
+            bytecode_str.contains(".debug_abbrev"),
+            "Missing .debug_abbrev section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_info"),
+            "Missing .debug_info section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_line"),
+            "Missing .debug_line section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_line_str"),
+            "Missing .debug_line_str section"
+        );
     }
 }

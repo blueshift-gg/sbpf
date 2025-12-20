@@ -1,5 +1,6 @@
 use {
     crate::{
+        debug::{self, DebugData},
         debuginfo::DebugInfo,
         dynsym::{DynamicSymbol, RelDyn, RelocationType},
         header::{ElfHeader, ProgramHeader},
@@ -28,6 +29,7 @@ impl Program {
             relocation_data,
             prog_is_static,
         }: ParseResult,
+        debug_data: Option<DebugData>,
     ) -> Self {
         let mut elf_header = ElfHeader::new();
         let mut program_headers = None;
@@ -215,6 +217,28 @@ impl Program {
                 dynamic_section.set_dynstr_size(dynstr_section.size());
             }
 
+            // Generate debug sections
+            let debug_sections: Vec<SectionType> = if let Some(ref data) = debug_data {
+                debug::generate_debug_sections(
+                    data,
+                    text_offset,
+                    &mut section_names,
+                    &mut current_offset,
+                )
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| match i {
+                    0 => SectionType::DebugAbbrev(s),
+                    1 => SectionType::DebugInfo(s),
+                    2 => SectionType::DebugLine(s),
+                    3 => SectionType::DebugLineStr(s),
+                    _ => unreachable!(),
+                })
+                .collect()
+            } else {
+                Vec::new()
+            };
+
             let mut shstrtab_section = SectionType::ShStrTab(ShStrTabSection::new(
                 (section_names
                     .iter()
@@ -244,6 +268,11 @@ impl Program {
             sections.push(dynsym_section);
             sections.push(dynstr_section);
             sections.push(rel_dyn_section);
+
+            for debug_section in debug_sections {
+                sections.push(debug_section);
+            }
+
             sections.push(shstrtab_section);
         } else {
             // Create a vector of section names
@@ -359,7 +388,7 @@ mod tests {
     fn test_program_from_simple_source() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         // Verify basic structure
         assert!(!program.sections.is_empty());
@@ -370,7 +399,7 @@ mod tests {
     fn test_program_without_rodata() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         assert!(!program.has_rodata());
     }
@@ -379,7 +408,7 @@ mod tests {
     fn test_program_emit_bytecode() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         let bytecode = program.emit_bytecode();
         assert!(!bytecode.is_empty());
@@ -391,7 +420,7 @@ mod tests {
     fn test_program_get_debug_map() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         let debug_map = program.get_debug_map();
         assert!(!debug_map.is_empty());
@@ -404,7 +433,7 @@ mod tests {
         let mut parse_result = parse(source).unwrap();
         parse_result.prog_is_static = true;
 
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
         assert!(program.program_headers.is_none());
         assert_eq!(program.elf_header.e_phnum, 0);
     }
@@ -413,7 +442,7 @@ mod tests {
     fn test_program_sections_ordering() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         // First section should be null
         assert_eq!(program.sections[0].name(), "");

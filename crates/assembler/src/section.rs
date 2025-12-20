@@ -653,6 +653,66 @@ impl Section for RelDynSection {
         bytes
     }
 }
+#[derive(Debug, Clone)]
+pub struct DebugSection {
+    name: String,
+    name_offset: u32,
+    data: Vec<u8>,
+    offset: u64,
+}
+
+impl DebugSection {
+    pub fn new(name: &str, name_offset: u32, data: Vec<u8>) -> Self {
+        Self {
+            name: name.to_string(),
+            name_offset,
+            data,
+            offset: 0,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn size(&self) -> u64 {
+        let raw = self.data.len();
+        let padding = (8 - (raw % 8)) % 8;
+        (raw + padding) as u64
+    }
+
+    pub fn bytecode(&self) -> Vec<u8> {
+        let mut bytes = self.data.clone();
+        while bytes.len() % 8 != 0 {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    pub fn set_offset(&mut self, offset: u64) {
+        self.offset = offset;
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset
+    }
+
+    pub fn section_header_bytecode(&self) -> Vec<u8> {
+        SectionHeader::new(
+            self.name_offset,
+            SectionHeader::SHT_PROGBITS,
+            0,
+            0,
+            self.offset,
+            self.data.len() as u64, // size without padding
+            0,
+            0,
+            1,
+            0,
+        )
+        .bytecode()
+    }
+}
 
 #[derive(Debug)]
 pub enum SectionType {
@@ -664,6 +724,10 @@ pub enum SectionType {
     DynSym(DynSymSection),
     Default(NullSection),
     RelDyn(RelDynSection),
+    DebugAbbrev(DebugSection),
+    DebugInfo(DebugSection),
+    DebugLine(DebugSection),
+    DebugLineStr(DebugSection),
 }
 
 impl SectionType {
@@ -677,6 +741,10 @@ impl SectionType {
             SectionType::DynSym(ds) => &ds.name,
             SectionType::Default(ds) => &ds.name,
             SectionType::RelDyn(ds) => &ds.name,
+            SectionType::DebugAbbrev(ds) => ds.name(),
+            SectionType::DebugInfo(ds) => ds.name(),
+            SectionType::DebugLine(ds) => ds.name(),
+            SectionType::DebugLineStr(ds) => ds.name(),
         }
     }
 
@@ -690,6 +758,10 @@ impl SectionType {
             SectionType::DynSym(ds) => ds.bytecode(),
             SectionType::Default(ds) => ds.bytecode(),
             SectionType::RelDyn(ds) => ds.bytecode(),
+            SectionType::DebugAbbrev(ds) => ds.bytecode(),
+            SectionType::DebugInfo(ds) => ds.bytecode(),
+            SectionType::DebugLine(ds) => ds.bytecode(),
+            SectionType::DebugLineStr(ds) => ds.bytecode(),
         }
     }
 
@@ -703,6 +775,10 @@ impl SectionType {
             SectionType::DynSym(ds) => ds.size(),
             SectionType::Default(ds) => ds.size(),
             SectionType::RelDyn(ds) => ds.size(),
+            SectionType::DebugAbbrev(ds) => ds.size(),
+            SectionType::DebugInfo(ds) => ds.size(),
+            SectionType::DebugLine(ds) => ds.size(),
+            SectionType::DebugLineStr(ds) => ds.size(),
         }
     }
 
@@ -716,6 +792,10 @@ impl SectionType {
             SectionType::DynSym(ds) => ds.section_header_bytecode(),
             SectionType::Default(ds) => ds.section_header_bytecode(),
             SectionType::RelDyn(ds) => ds.section_header_bytecode(),
+            SectionType::DebugAbbrev(ds) => ds.section_header_bytecode(),
+            SectionType::DebugInfo(ds) => ds.section_header_bytecode(),
+            SectionType::DebugLine(ds) => ds.section_header_bytecode(),
+            SectionType::DebugLineStr(ds) => ds.section_header_bytecode(),
         }
     }
 
@@ -729,6 +809,10 @@ impl SectionType {
             SectionType::DynSym(ds) => ds.set_offset(offset),
             SectionType::RelDyn(ds) => ds.set_offset(offset),
             SectionType::Default(_) => (), // NullSection doesn't need offset
+            SectionType::DebugAbbrev(ds) => ds.set_offset(offset),
+            SectionType::DebugInfo(ds) => ds.set_offset(offset),
+            SectionType::DebugLine(ds) => ds.set_offset(offset),
+            SectionType::DebugLineStr(ds) => ds.set_offset(offset),
         }
     }
 
@@ -742,6 +826,10 @@ impl SectionType {
             SectionType::DynSym(ds) => ds.offset,
             SectionType::Default(ns) => ns.offset,
             SectionType::RelDyn(rs) => rs.offset,
+            SectionType::DebugAbbrev(ds) => ds.offset(),
+            SectionType::DebugInfo(ds) => ds.offset(),
+            SectionType::DebugLine(ds) => ds.offset(),
+            SectionType::DebugLineStr(ds) => ds.offset(),
         }
     }
 }
@@ -949,5 +1037,28 @@ mod tests {
         let mut dyn_section = SectionType::Dynamic(DynamicSection::new(0));
         dyn_section.set_offset(200);
         assert_eq!(dyn_section.offset(), 200);
+    }
+
+    #[test]
+    fn test_debug_section_types() {
+        let sections = vec![
+            SectionType::DebugAbbrev(DebugSection::new(".debug_abbrev", 0, vec![1, 2, 3])),
+            SectionType::DebugInfo(DebugSection::new(".debug_info", 0, vec![4, 5, 6])),
+            SectionType::DebugLine(DebugSection::new(".debug_line", 0, vec![7, 8, 9])),
+            SectionType::DebugLineStr(DebugSection::new(".debug_line_str", 0, vec![10, 11, 12])),
+        ];
+
+        let expected_names = [
+            ".debug_abbrev",
+            ".debug_info",
+            ".debug_line",
+            ".debug_line_str",
+        ];
+        for (i, section) in sections.iter().enumerate() {
+            assert_eq!(section.name(), expected_names[i]);
+            assert_eq!(section.size(), 8);
+            assert_eq!(section.bytecode().len(), 8);
+            assert!(!section.section_header_bytecode().is_empty());
+        }
     }
 }
