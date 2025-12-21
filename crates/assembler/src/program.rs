@@ -218,26 +218,12 @@ impl Program {
             }
 
             // Generate debug sections
-            let debug_sections: Vec<SectionType> = if let Some(ref data) = debug_data {
-                debug::generate_debug_sections(
-                    data,
-                    text_offset,
-                    &mut section_names,
-                    &mut current_offset,
-                )
-                .into_iter()
-                .enumerate()
-                .map(|(i, s)| match i {
-                    0 => SectionType::DebugAbbrev(s),
-                    1 => SectionType::DebugInfo(s),
-                    2 => SectionType::DebugLine(s),
-                    3 => SectionType::DebugLineStr(s),
-                    _ => unreachable!(),
-                })
-                .collect()
-            } else {
-                Vec::new()
-            };
+            let debug_sections = Self::generate_debug_sections(
+                &debug_data,
+                text_offset,
+                &mut section_names,
+                &mut current_offset,
+            );
 
             let mut shstrtab_section = SectionType::ShStrTab(ShStrTabSection::new(
                 (section_names
@@ -279,6 +265,18 @@ impl Program {
             let mut section_names = Vec::new();
             for section in &sections {
                 section_names.push(section.name().to_string());
+            }
+
+            // Generate debug sections
+            let debug_sections = Self::generate_debug_sections(
+                &debug_data,
+                text_offset,
+                &mut section_names,
+                &mut current_offset,
+            );
+
+            for debug_section in debug_sections {
+                sections.push(debug_section);
             }
 
             let mut shstrtab_section = ShStrTabSection::new(
@@ -330,6 +328,29 @@ impl Program {
         }
 
         bytes
+    }
+
+    fn generate_debug_sections(
+        debug_data: &Option<DebugData>,
+        text_offset: u64,
+        section_names: &mut Vec<String>,
+        current_offset: &mut u64,
+    ) -> Vec<SectionType> {
+        if let Some(data) = debug_data {
+            debug::generate_debug_sections(data, text_offset, section_names, current_offset)
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| match i {
+                    0 => SectionType::DebugAbbrev(s),
+                    1 => SectionType::DebugInfo(s),
+                    2 => SectionType::DebugLine(s),
+                    3 => SectionType::DebugLineStr(s),
+                    _ => unreachable!(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn has_rodata(&self) -> bool {
