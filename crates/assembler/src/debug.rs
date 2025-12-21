@@ -1,11 +1,11 @@
-use crate::section::DebugSection;
-use gimli::write::{
-    Address, AttributeValue, DwarfUnit, EndianVec, LineProgram, LineString, Sections,
-};
-use gimli::{
-    DW_AT_comp_dir, DW_AT_decl_file, DW_AT_decl_line, DW_AT_high_pc, DW_AT_language, DW_AT_low_pc,
-    DW_AT_name, DW_AT_producer, DW_AT_stmt_list, DW_LANG_Mips_Assembler, DW_TAG_label, Encoding,
-    Format, LineEncoding, LittleEndian, SectionId,
+use {
+    crate::section::DebugSection,
+    gimli::{
+        DW_AT_comp_dir, DW_AT_decl_file, DW_AT_decl_line, DW_AT_high_pc, DW_AT_language,
+        DW_AT_low_pc, DW_AT_name, DW_AT_producer, DW_AT_stmt_list, DW_LANG_Mips_Assembler,
+        DW_TAG_label, Encoding, Format, LineEncoding, LittleEndian, SectionId,
+        write::{Address, AttributeValue, DwarfUnit, EndianVec, LineProgram, LineString, Sections},
+    },
 };
 
 const SBPF_INSTRUCTION_LENGTH: u8 = 8;

@@ -1,7 +1,8 @@
-use gimli::{EndianSlice, RunTimeEndian, SectionId};
-use object::{Object, ObjectSection};
-use std::borrow::Cow;
-use std::collections::HashMap;
+use {
+    gimli::{EndianSlice, RunTimeEndian, SectionId},
+    object::{Object, ObjectSection},
+    std::{borrow::Cow, collections::HashMap},
+};
 
 #[derive(Debug)]
 struct LabelInfo {

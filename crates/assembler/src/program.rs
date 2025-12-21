@@ -470,4 +470,31 @@ mod tests {
         // Second should be .text
         assert_eq!(program.sections[1].name(), ".text");
     }
+
+    #[test]
+    fn test_program_sections_debug() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let debug_data = Some(DebugData {
+            filename: "test.s".to_string(),
+            directory: "/test".to_string(),
+            lines: vec![],
+            labels: vec![],
+            code_start: 0,
+            code_end: 8,
+        });
+        let program = Program::from_parse_result(parse_result, debug_data);
+
+        let debug_section_names: Vec<&str> = program
+            .sections
+            .iter()
+            .map(|s| s.name())
+            .filter(|name| name.starts_with(".debug_"))
+            .collect();
+
+        assert!(debug_section_names.contains(&".debug_abbrev"));
+        assert!(debug_section_names.contains(&".debug_info"));
+        assert!(debug_section_names.contains(&".debug_line"));
+        assert!(debug_section_names.contains(&".debug_line_str"));
+    }
 }

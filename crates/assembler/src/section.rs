@@ -683,7 +683,7 @@ impl DebugSection {
 
     pub fn bytecode(&self) -> Vec<u8> {
         let mut bytes = self.data.clone();
-        while bytes.len() % 8 != 0 {
+        while !bytes.len().is_multiple_of(8) {
             bytes.push(0);
         }
         bytes
