@@ -1,7 +1,6 @@
 use {
     crate::{
         debug::{self, DebugData},
-        debuginfo::DebugInfo,
         dynsym::{DynamicSymbol, RelDyn, RelocationType},
         header::{ElfHeader, ProgramHeader},
         parser::ParseResult,
@@ -10,7 +9,7 @@ use {
             SectionType, ShStrTabSection,
         },
     },
-    std::{collections::HashMap, fs::File, io::Write, path::Path},
+    std::{fs::File, io::Write, path::Path},
 };
 
 #[derive(Debug)]
@@ -370,15 +369,6 @@ impl Program {
         }
     }
 
-    pub fn get_debug_map(&self) -> HashMap<u64, DebugInfo> {
-        let code = self.sections.iter().find(|s| s.name() == ".text").unwrap();
-        if let SectionType::Code(code_section) = code {
-            code_section.get_debug_map().clone()
-        } else {
-            panic!("Code section not found");
-        }
-    }
-
     pub fn save_to_file(&self, input_path: &str) -> std::io::Result<()> {
         // Get the file stem (name without extension) from input path
         let path = Path::new(input_path);
@@ -435,16 +425,6 @@ mod tests {
         assert!(!bytecode.is_empty());
         // Should start with ELF magic
         assert_eq!(&bytecode[0..4], b"\x7fELF");
-    }
-
-    #[test]
-    fn test_program_get_debug_map() {
-        let source = "exit";
-        let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result, None);
-
-        let debug_map = program.get_debug_map();
-        assert!(!debug_map.is_empty());
     }
 
     #[test]

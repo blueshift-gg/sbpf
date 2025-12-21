@@ -1,12 +1,8 @@
-use {
-    crate::{
-        astnode::{ASTNode, ROData},
-        debuginfo::DebugInfo,
-        dynsym::{DynamicSymbol, RelDyn},
-        header::SectionHeader,
-        parser::Token,
-    },
-    std::collections::HashMap,
+use crate::{
+    astnode::{ASTNode, ROData},
+    dynsym::{DynamicSymbol, RelDyn},
+    header::SectionHeader,
+    parser::Token,
 };
 
 // Base Section trait
@@ -36,23 +32,15 @@ pub struct CodeSection {
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
-    debug_map: HashMap<u64, DebugInfo>,
 }
 
 impl CodeSection {
     pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
-        let mut debug_map = HashMap::new();
-        for node in &nodes {
-            if let Some((_, node_debug_map)) = node.bytecode_with_debug_map() {
-                debug_map.extend(node_debug_map);
-            }
-        }
         Self {
             name: String::from(".text"),
             nodes,
             size,
             offset: 0,
-            debug_map,
         }
     }
 
@@ -62,10 +50,6 @@ impl CodeSection {
 
     pub fn get_size(&self) -> u64 {
         self.size
-    }
-
-    pub fn get_debug_map(&self) -> &HashMap<u64, DebugInfo> {
-        &self.debug_map
     }
 
     pub fn set_offset(&mut self, offset: u64) {

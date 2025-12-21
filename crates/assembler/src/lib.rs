@@ -21,7 +21,6 @@ pub mod section;
 
 // Debug info
 pub mod debug;
-pub mod debuginfo;
 
 // WASM bindings
 #[cfg(target_arch = "wasm32")]
