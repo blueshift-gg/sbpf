@@ -7,7 +7,7 @@ use {
     },
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
-    sbpf_assembler::{assemble, errors::CompileError},
+    sbpf_assembler::{assemble, assemble_with_debug_data, errors::CompileError},
     std::{fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
@@ -42,7 +42,7 @@ impl AsDiagnostic for CompileError {
     }
 }
 
-pub fn build() -> Result<()> {
+pub fn build(debug: bool) -> Result<()> {
     // Set src/out directory
     let src = "src";
     let deploy = "deploy";
@@ -51,12 +51,27 @@ pub fn build() -> Result<()> {
     create_dir_all(deploy)?;
 
     // Function to compile assembly
-    fn compile_assembly(src: &str, deploy: &str) -> Result<()> {
+    fn compile_assembly(src: &str, deploy: &str, debug: bool) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
-        // assemble <filename>.s to bytecode
-        let bytecode = match assemble(&source_code) {
+        // Assemble with or without debug info
+        let result = if debug {
+            let filename = Path::new(src)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown.s");
+            let directory = Path::new(src)
+                .parent()
+                .and_then(|p| p.canonicalize().ok())
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| ".".to_string());
+            assemble_with_debug_data(&source_code, filename, &directory)
+        } else {
+            assemble(&source_code)
+        };
+
+        let bytecode = match result {
             Ok(bytecode) => bytecode,
             Err(errors) => {
                 for error in errors {
@@ -127,9 +142,13 @@ pub fn build() -> Result<()> {
         {
             let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
             if Path::new(&asm_file).exists() {
-                println!("⚡️ Building \"{}\"", subdir);
+                println!(
+                    "⚡️ Building \"{}\"{}",
+                    subdir,
+                    if debug { " (debug)" } else { "" }
+                );
                 let start = Instant::now();
-                compile_assembly(&asm_file, deploy)?;
+                compile_assembly(&asm_file, deploy, debug)?;
                 let duration = start.elapsed();
                 println!(
                     "✅ \"{}\" built successfully in {}ms!",
