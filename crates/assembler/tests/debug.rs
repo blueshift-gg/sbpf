@@ -13,11 +13,7 @@ struct LabelInfo {
 fn parse_dwarf_info(file_data: &[u8]) -> (HashMap<u64, u32>, Vec<LabelInfo>) {
     let object = object::File::parse(file_data).expect("Failed to parse ELF");
 
-    let endian = if object.is_little_endian() {
-        RunTimeEndian::Little
-    } else {
-        RunTimeEndian::Big
-    };
+    let endian = RunTimeEndian::Little;
 
     let load_section = |id: SectionId| -> Result<Cow<[u8]>, gimli::Error> {
         match object.section_by_name(id.name()) {
