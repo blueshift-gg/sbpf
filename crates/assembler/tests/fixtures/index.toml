@@ -1,79 +1,99 @@
 [cases.alu_32_imm]
 file = "alu_32_imm.s"
 hash = "cf304c2cb384d02b041ad90dc7837f37d633f454e3e6ad431de8d6fd71d5daa7"
+debug_hash = "9ebc025a81e0a0623e3c21ffb81c4eeb7af3ee724a8b12b1f4b0efbb17604c52"
 
 [cases.alu_32_reg]
 file = "alu_32_reg.s"
 hash = "01776829b2d174b5364b3f14aea34cd2b41c2f631be244519502807996d2239b"
+debug_hash = "1fe89c0585c53eca37d450d2b8fed9f5665d111c8231b1e72ebc1e1d1a79eba7"
 
 [cases.alu_64_imm]
 file = "alu_64_imm.s"
 hash = "897fbaab994b3e80d2b12902818c2447fabf75fa86abb4116807b80d42c59cc3"
+debug_hash = "573f9d0aeec9a993b3ae41f2dd159a62ffa1163d0b7721e7a53006cde41f0af4"
 
 [cases.alu_64_reg]
 file = "alu_64_reg.s"
 hash = "6aa6cbf02e43654aa6edc4f9baccc5ea5388f26d1f81ec7dda8893a6a2e586a0"
+debug_hash = "485f7e45fe2ec93699697668d5b3302e2dc3e1c28d933721f7908a7391ca9cd9"
 
 [cases.calls]
 file = "calls.s"
 hash = "64934ea68d9e2b5c503fabeb21ce2a133a431f2bcc16530ac87f986e9974d998"
+debug_hash = "3d636b0b51f61dc8fca1a54a4bc6f5cf2dd66dc31e39a616f33a7ea47a8ef500"
 
 [cases.callx]
 file = "callx.s"
 hash = "394d7843fbe545405be96085be387e374308dc5188857cc483df633ae31cc016"
+debug_hash = "59783147438737499e2e609edf6609ea2cea248e93d46251e10bc649867dae34"
 
 [cases.endian]
 file = "endian.s"
 hash = "af0ebc4f2d5f56c66696cdb4b3faa50e0545d31a0224541b78b85d5c58f478ea"
+debug_hash = "661c1416b578176abb3ee9798143cd230d11307b49b0c9ad54a0fa03798df989"
 
 [cases.entrypoint]
 file = "entrypoint.s"
 hash = "88ce8f70beb96446c91f367db2389c97e8aa8172f100e1bd83469c0bb383de4b"
+debug_hash = "f6c0e1e8878d18e9db9cf73112ba00ab472b8013778845eb6d4bc1059fcefeae"
 
 [cases.equ]
 file = "equ.s"
 hash = "4763e97761337179bb07738141c2d4787e277bfc20eea99c23427368424fb8aa"
+debug_hash = "47ff03e43e1fc943b426f5557c7f01261887bf31a88fb3a87f3362d2c62d1d72"
 
 [cases.internal_call_only]
 file = "internal_call_only.s"
 hash = "b8c4d7aeb8eca8b20cc5387207629ba10c0a819fe441a0f0784108803e89faad"
+debug_hash = "3f13176c56ced7a95fec0f3c77c3bcab132d8073ca79d392c97bfc73b6ba8078"
 
 [cases.jumps_imm]
 file = "jumps_imm.s"
 hash = "2cdc92d0421e71b3d4ae45baf5ec85f8b213cfee3faf119f43142153756a9e84"
+debug_hash = "1acf4e9eeb4c111ac9116a07e892c5ce43d98070851e2b616e1749bdba7cb220"
 
 [cases.jumps_reg]
 file = "jumps_reg.s"
 hash = "9397c54a33c4ad6a4459e3c2170eb24ef7282bfb79b218bde74f66ad764f36b7"
+debug_hash = "21459b1fdc2e097d19db635da7c5b2099057437e4eae7db7bb303692b4b09659"
 
 [cases.jumps_uncond]
 file = "jumps_uncond.s"
 hash = "72e86e0945fb88bac0f059c926398b059e1915200873ab4c628b5c3c35129407"
+debug_hash = "f78b5f3ecb5061eab9d437971a770648d8d670a1d8cfba3fd80103709001b50a"
 
 [cases.load]
 file = "load.s"
 hash = "e80c56ff4dfdd2d55822581202dc917beb661e82efc407dddf8b56e8c3e9071b"
+debug_hash = "2e68b0f9e3a97e6893af0febe8d84d8a864f78e3c63e221cc97704b8556c17cd"
 
 [cases.neg]
 file = "neg.s"
 hash = "8611102bfd01ef3a8842774a638dbeaf1099a5b3ec29ac5556c5c0c43cf04c1e"
+debug_hash = "ba4be327d601fefbb02a7e0473e338f6c8476063d6b7ac0cc773d0959e8ff33f"
 
 [cases.numbers]
 file = "numbers.s"
 hash = "a06715ad3cf4bb5bd825193ff77b3dae1bfdcb778916d78b92ead6cbd9c399d2"
+debug_hash = "e6a6478c57ae0d217b861103c41de72e2d6e3686ba52de64597ffd24070d2a35"
 
 [cases.offsets]
 file = "offsets.s"
 hash = "374f572eb411265ecf6c609a91e4211fa7fa8d8d193a45d1368a3b94d7c2ceb2"
+debug_hash = "fbdab0fb08943d053a0947242d2dee4b8e36998ee88347c0cf03c9c9fc028af7"
 
 [cases.rodata]
 file = "rodata.s"
 hash = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"
+debug_hash = "6ebac0087e06c8128ac79c23ed555fa06b680539b0d7f10663f47446dd6824d1"
 
 [cases.store_imm]
 file = "store_imm.s"
 hash = "30e07a5041d7787e4ff87fbd70115f20565f769bf777de8ae74c3056a5b48883"
+debug_hash = "be1b00222d48e5c4f72c21ce3039bf0e2b19b439e78bbac8309c9a563e02a88f"
 
 [cases.store_reg]
 file = "store_reg.s"
 hash = "03ddbd8ee4390cd1f1efc96d42684ba0350088d79c4586882edf6332b80fd8c0"
+debug_hash = "d427e5ce9e824cb84c154ac7cee1d7baf0ccd2943ea956dbc7688ee451fa5029"
