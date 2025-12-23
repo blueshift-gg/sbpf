@@ -1,4 +1,4 @@
-use anyhow::Result;
+use {anyhow::Result, codespan::Files};
 
 // Parser
 pub mod parser;
@@ -34,6 +34,9 @@ pub use self::{
     program::Program,
 };
 
+type LineEntry = (u64, u32); // (offset, line)
+type LabelEntry = (String, u64, u32); // (label, offset, line)
+
 pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
     let parse_result = match parse(source) {
         Ok(result) => result,
@@ -58,9 +61,8 @@ pub fn assemble_with_debug_data(
         }
     };
 
-    // Collect line entries and labels from parse result
-    let lines = collect_line_entries(source, &parse_result);
-    let labels = collect_labels(source, &parse_result);
+    // Collect line and label entries from parse result
+    let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
     let code_end = parse_result.code_section.get_size();
 
     let debug_data = DebugData {
@@ -77,48 +79,37 @@ pub fn assemble_with_debug_data(
     Ok(bytecode)
 }
 
-// Helper function to collect line entries
-fn collect_line_entries(source: &str, parse_result: &ParseResult) -> Vec<(u64, u32)> {
-    let mut line_starts = vec![0usize];
-    for (i, c) in source.char_indices() {
-        if c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
+/// Helper function to collect line and label entries
+fn collect_line_and_label_entries(
+    source: &str,
+    parse_result: &ParseResult,
+) -> (Vec<LineEntry>, Vec<LabelEntry>) {
+    let mut files: Files<&str> = Files::new();
+    let file_id = files.add("source", source);
 
-    let mut entries = Vec::new(); // Vec<(address, line)>
+    let mut line_entries = Vec::new();
+    let mut label_entries = Vec::new();
+
     for node in parse_result.code_section.get_nodes() {
-        if let ASTNode::Instruction {
-            instruction,
-            offset,
-        } = node
-        {
-            let line = line_starts.partition_point(|&start| start <= instruction.span.start) as u32;
-            entries.push((*offset, line));
+        match node {
+            ASTNode::Instruction {
+                instruction,
+                offset,
+            } => {
+                let line_index = files.line_index(file_id, instruction.span.start as u32);
+                let line_number = (line_index.to_usize() + 1) as u32;
+                line_entries.push((*offset, line_number));
+            }
+            ASTNode::Label { label, offset } => {
+                let line_index = files.line_index(file_id, label.span.start as u32);
+                let line_number = (line_index.to_usize() + 1) as u32;
+                label_entries.push((label.name.clone(), *offset, line_number));
+            }
+            _ => {}
         }
     }
 
-    entries
-}
-
-// Helper function to collect labels
-fn collect_labels(source: &str, parse_result: &ParseResult) -> Vec<(String, u64, u32)> {
-    let mut line_starts = vec![0usize];
-    for (i, c) in source.char_indices() {
-        if c == '\n' {
-            line_starts.push(i + 1);
-        }
-    }
-
-    let mut labels = Vec::new(); // Vec<(name, address, line)>
-    for node in parse_result.code_section.get_nodes() {
-        if let ASTNode::Label { label, offset } = node {
-            let line = line_starts.partition_point(|&start| start <= label.span.start) as u32;
-            labels.push((label.name.clone(), *offset, line));
-        }
-    }
-
-    labels
+    (line_entries, label_entries)
 }
 
 #[cfg(test)]

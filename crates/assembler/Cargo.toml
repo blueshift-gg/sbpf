@@ -25,6 +25,7 @@ phf_macros = "0.13.1"
 pest = "2.7"
 pest_derive = "2.7"
 gimli = { version = "0.32.3", features = ["write"] }
+codespan = "0.13.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
