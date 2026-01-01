@@ -6,13 +6,11 @@ pub mod parser;
 // Error handling and diagnostics
 pub mod errors;
 pub mod macros;
-pub mod messages;
 
 // Intermediate Representation
 pub mod ast;
 pub mod astnode;
 pub mod dynsym;
-pub mod syscall;
 
 // ELF header, program, section
 pub mod header;

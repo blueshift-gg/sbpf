@@ -54,7 +54,7 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
             return Err(to_value(&compile_errors).unwrap());
         }
     };
-    let program = Program::from_parse_result(parse_result);
+    let program = Program::from_parse_result(parse_result, None);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
 }
