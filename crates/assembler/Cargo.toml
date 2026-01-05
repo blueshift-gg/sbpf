@@ -24,6 +24,8 @@ phf = "0.13.1"
 phf_macros = "0.13.1"
 pest = "2.7"
 pest_derive = "2.7"
+gimli = { version = "0.32.3", features = ["write"] }
+codespan = "0.13.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
@@ -34,3 +36,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 blake3 = "1"
 toml = "0.8"
 serde = { version = "1.0.219", features = ["derive"] }
+object = { workspace = true }

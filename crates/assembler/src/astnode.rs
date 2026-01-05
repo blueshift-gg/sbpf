@@ -1,7 +1,7 @@
 use {
-    crate::{debuginfo::DebugInfo, errors::CompileError, parser::Token},
+    crate::{errors::CompileError, parser::Token},
     sbpf_common::{inst_param::Number, instruction::Instruction},
-    std::{collections::HashMap, ops::Range},
+    std::ops::Range,
 };
 
 #[derive(Debug, Clone)]
@@ -218,26 +218,14 @@ impl ROData {
 }
 
 impl ASTNode {
-    pub fn bytecode_with_debug_map(&self) -> Option<(Vec<u8>, HashMap<u64, DebugInfo>)> {
+    pub fn bytecode(&self) -> Option<Vec<u8>> {
         match self {
-            ASTNode::Instruction {
-                instruction,
-                offset,
-            } => {
-                // TODO: IMPLEMENT DEBUG INFO HANDLING AND DELETE THIS
-                let mut debug_map = HashMap::new();
-                let debug_info = DebugInfo::new(instruction.span.clone());
-
-                debug_map.insert(*offset, debug_info);
-
-                Some((instruction.to_bytes().unwrap(), debug_map))
-            }
+            ASTNode::Instruction { instruction, .. } => Some(instruction.to_bytes().unwrap()),
             ASTNode::ROData {
-                rodata: ROData { name: _, args, .. },
+                rodata: ROData { args, .. },
                 ..
             } => {
                 let mut bytes = Vec::new();
-                let debug_map = HashMap::<u64, DebugInfo>::new();
                 match (&args[0], &args[1]) {
                     (Token::Directive(_, _), Token::StringLiteral(str_literal, _)) => {
                         let str_bytes = str_literal.as_bytes().to_vec();
@@ -280,18 +268,12 @@ impl ASTNode {
                             panic!("Invalid ROData declaration");
                         }
                     }
-
                     _ => panic!("Invalid ROData declaration"),
                 }
-                Some((bytes, debug_map))
+                Some(bytes)
             }
             _ => None,
         }
-    }
-
-    // Keep the old bytecode method for backward compatibility
-    pub fn bytecode(&self) -> Option<Vec<u8>> {
-        self.bytecode_with_debug_map().map(|(bytes, _)| bytes)
     }
 }
 

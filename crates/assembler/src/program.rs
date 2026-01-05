@@ -1,6 +1,6 @@
 use {
     crate::{
-        debuginfo::DebugInfo,
+        debug::{self, DebugData},
         dynsym::{DynamicSymbol, RelDyn, RelocationType},
         header::{ElfHeader, ProgramHeader},
         parser::ParseResult,
@@ -9,7 +9,7 @@ use {
             SectionType, ShStrTabSection,
         },
     },
-    std::{collections::HashMap, fs::File, io::Write, path::Path},
+    std::{fs::File, io::Write, path::Path},
 };
 
 #[derive(Debug)]
@@ -28,6 +28,7 @@ impl Program {
             relocation_data,
             prog_is_static,
         }: ParseResult,
+        debug_data: Option<DebugData>,
     ) -> Self {
         let mut elf_header = ElfHeader::new();
         let mut program_headers = None;
@@ -215,6 +216,14 @@ impl Program {
                 dynamic_section.set_dynstr_size(dynstr_section.size());
             }
 
+            // Generate debug sections
+            let debug_sections = Self::generate_debug_sections(
+                &debug_data,
+                text_offset,
+                &mut section_names,
+                &mut current_offset,
+            );
+
             let mut shstrtab_section = SectionType::ShStrTab(ShStrTabSection::new(
                 (section_names
                     .iter()
@@ -244,12 +253,29 @@ impl Program {
             sections.push(dynsym_section);
             sections.push(dynstr_section);
             sections.push(rel_dyn_section);
+
+            for debug_section in debug_sections {
+                sections.push(debug_section);
+            }
+
             sections.push(shstrtab_section);
         } else {
             // Create a vector of section names
             let mut section_names = Vec::new();
             for section in &sections {
                 section_names.push(section.name().to_string());
+            }
+
+            // Generate debug sections
+            let debug_sections = Self::generate_debug_sections(
+                &debug_data,
+                text_offset,
+                &mut section_names,
+                &mut current_offset,
+            );
+
+            for debug_section in debug_sections {
+                sections.push(debug_section);
             }
 
             let mut shstrtab_section = ShStrTabSection::new(
@@ -303,6 +329,29 @@ impl Program {
         bytes
     }
 
+    fn generate_debug_sections(
+        debug_data: &Option<DebugData>,
+        text_offset: u64,
+        section_names: &mut Vec<String>,
+        current_offset: &mut u64,
+    ) -> Vec<SectionType> {
+        if let Some(data) = debug_data {
+            debug::generate_debug_sections(data, text_offset, section_names, current_offset)
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| match i {
+                    0 => SectionType::DebugAbbrev(s),
+                    1 => SectionType::DebugInfo(s),
+                    2 => SectionType::DebugLine(s),
+                    3 => SectionType::DebugLineStr(s),
+                    _ => unreachable!(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn has_rodata(&self) -> bool {
         self.sections.iter().any(|s| s.name() == ".rodata")
     }
@@ -317,15 +366,6 @@ impl Program {
             data_section.rodata()
         } else {
             panic!("ROData section not found");
-        }
-    }
-
-    pub fn get_debug_map(&self) -> HashMap<u64, DebugInfo> {
-        let code = self.sections.iter().find(|s| s.name() == ".text").unwrap();
-        if let SectionType::Code(code_section) = code {
-            code_section.get_debug_map().clone()
-        } else {
-            panic!("Code section not found");
         }
     }
 
@@ -359,7 +399,7 @@ mod tests {
     fn test_program_from_simple_source() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         // Verify basic structure
         assert!(!program.sections.is_empty());
@@ -370,7 +410,7 @@ mod tests {
     fn test_program_without_rodata() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         assert!(!program.has_rodata());
     }
@@ -379,22 +419,12 @@ mod tests {
     fn test_program_emit_bytecode() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         let bytecode = program.emit_bytecode();
         assert!(!bytecode.is_empty());
         // Should start with ELF magic
         assert_eq!(&bytecode[0..4], b"\x7fELF");
-    }
-
-    #[test]
-    fn test_program_get_debug_map() {
-        let source = "exit";
-        let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
-
-        let debug_map = program.get_debug_map();
-        assert!(!debug_map.is_empty());
     }
 
     #[test]
@@ -404,7 +434,7 @@ mod tests {
         let mut parse_result = parse(source).unwrap();
         parse_result.prog_is_static = true;
 
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
         assert!(program.program_headers.is_none());
         assert_eq!(program.elf_header.e_phnum, 0);
     }
@@ -413,11 +443,38 @@ mod tests {
     fn test_program_sections_ordering() {
         let source = "exit";
         let parse_result = parse(source).unwrap();
-        let program = Program::from_parse_result(parse_result);
+        let program = Program::from_parse_result(parse_result, None);
 
         // First section should be null
         assert_eq!(program.sections[0].name(), "");
         // Second should be .text
         assert_eq!(program.sections[1].name(), ".text");
+    }
+
+    #[test]
+    fn test_program_sections_debug() {
+        let source = "exit";
+        let parse_result = parse(source).unwrap();
+        let debug_data = Some(DebugData {
+            filename: "test.s".to_string(),
+            directory: "/test".to_string(),
+            lines: vec![],
+            labels: vec![],
+            code_start: 0,
+            code_end: 8,
+        });
+        let program = Program::from_parse_result(parse_result, debug_data);
+
+        let debug_section_names: Vec<&str> = program
+            .sections
+            .iter()
+            .map(|s| s.name())
+            .filter(|name| name.starts_with(".debug_"))
+            .collect();
+
+        assert!(debug_section_names.contains(&".debug_abbrev"));
+        assert!(debug_section_names.contains(&".debug_info"));
+        assert!(debug_section_names.contains(&".debug_line"));
+        assert!(debug_section_names.contains(&".debug_line_str"));
     }
 }

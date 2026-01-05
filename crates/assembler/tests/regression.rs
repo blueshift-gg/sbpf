@@ -14,11 +14,14 @@ struct Case {
     file: String,
     #[serde(default)]
     hash: String,
+    #[serde(default)]
+    debug_hash: String,
 }
 
 #[derive(Debug)]
 enum IssueKind {
     HashMismatch,
+    DebugHashMismatch,
     AssemblerError,
 }
 #[derive(Debug)]
@@ -78,6 +81,8 @@ fn test_regression() {
     let mut updated_entries = 0usize;
     for (name, case) in manifest.cases.iter_mut() {
         let source = read_source(&case.file);
+
+        // Test assembly
         let actual = match sbpf_assembler::assemble(&source) {
             Ok(bytes) => hash_bytes(&bytes),
             Err(e) => {
@@ -111,16 +116,51 @@ fn test_regression() {
                 });
             }
         }
+
+        // Test assembly (debug)
+        let debug_actual =
+            match sbpf_assembler::assemble_with_debug_data(&source, &case.file, "/test") {
+                Ok(bytes) => hash_bytes(&bytes),
+                Err(e) => {
+                    any_missing_or_mismatch = true;
+                    issues.push(Issue {
+                        kind: IssueKind::AssemblerError,
+                        name: name.clone(),
+                        file: case.file.clone(),
+                        expected: None,
+                        actual: None,
+                        note: Some(format!("debug assembler failed: {:?}", e)),
+                    });
+                    continue;
+                }
+            };
+
+        if debug_actual != case.debug_hash {
+            if update_hashes && case.debug_hash.is_empty() {
+                // Only update the debug_hash if it's empty.
+                case.debug_hash = debug_actual.clone();
+                updated_entries += 1;
+            } else {
+                any_missing_or_mismatch = true;
+                issues.push(Issue {
+                    kind: IssueKind::DebugHashMismatch,
+                    name: name.clone(),
+                    file: case.file.clone(),
+                    expected: Some(case.debug_hash.clone()),
+                    actual: Some(debug_actual.clone()),
+                    note: None,
+                });
+            }
+        }
     }
 
     if update_hashes && updated_entries > 0 {
-        // Update the manifest.
         write_manifest(&manifest);
     }
 
     if any_missing_or_mismatch {
-        // Print report.
         let mut mismatched = 0usize;
+        let mut debug_mismatched = 0usize;
         let mut asmerr = 0usize;
 
         eprintln!("\n===== Regression Report =====");
@@ -130,6 +170,16 @@ fn test_regression() {
                     mismatched += 1;
                     eprintln!(
                         "[Mismatch] case='{}' file='{}' expected={} actual={}",
+                        issue.name,
+                        issue.file,
+                        issue.expected.as_deref().unwrap_or("<none>"),
+                        issue.actual.as_deref().unwrap_or("<none>")
+                    );
+                }
+                IssueKind::DebugHashMismatch => {
+                    debug_mismatched += 1;
+                    eprintln!(
+                        "[Debug Mismatch] case='{}' file='{}' expected={} actual={}",
                         issue.name,
                         issue.file,
                         issue.expected.as_deref().unwrap_or("<none>"),
@@ -148,13 +198,13 @@ fn test_regression() {
             }
         }
         eprintln!(
-            "===== Summary: total={} mismatched={} assembler-error={} =====\n",
+            "===== Summary: total={} mismatched={} debug_mismatched={} assembler-error={} =====\n",
             issues.len(),
             mismatched,
+            debug_mismatched,
             asmerr
         );
 
-        // Fail the test.
         panic!("regressions detected ({}).", issues.len());
     }
 }

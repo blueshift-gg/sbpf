@@ -1,4 +1,4 @@
-use anyhow::Result;
+use {anyhow::Result, codespan::Files};
 
 // Parser
 pub mod parser;
@@ -6,13 +6,11 @@ pub mod parser;
 // Error handling and diagnostics
 pub mod errors;
 pub mod macros;
-pub mod messages;
 
 // Intermediate Representation
 pub mod ast;
 pub mod astnode;
 pub mod dynsym;
-pub mod syscall;
 
 // ELF header, program, section
 pub mod header;
@@ -20,17 +18,22 @@ pub mod program;
 pub mod section;
 
 // Debug info
-pub mod debuginfo;
+pub mod debug;
 
 // WASM bindings
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
 pub use self::{
+    astnode::ASTNode,
+    debug::DebugData,
     errors::CompileError,
     parser::{ParseResult, Token, parse},
     program::Program,
 };
+
+type LineEntry = (u64, u32); // (offset, line)
+type LabelEntry = (String, u64, u32); // (label, offset, line)
 
 pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
     let parse_result = match parse(source) {
@@ -39,9 +42,72 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
             return Err(errors);
         }
     };
-    let program = Program::from_parse_result(parse_result);
+    let program = Program::from_parse_result(parse_result, None);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
+}
+
+pub fn assemble_with_debug_data(
+    source: &str,
+    filename: &str,
+    directory: &str,
+) -> Result<Vec<u8>, Vec<CompileError>> {
+    let parse_result = match parse(source) {
+        Ok(result) => result,
+        Err(errors) => {
+            return Err(errors);
+        }
+    };
+
+    // Collect line and label entries from parse result
+    let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
+    let code_end = parse_result.code_section.get_size();
+
+    let debug_data = DebugData {
+        filename: filename.to_string(),
+        directory: directory.to_string(),
+        lines,
+        labels,
+        code_start: 0,
+        code_end,
+    };
+
+    let program = Program::from_parse_result(parse_result, Some(debug_data));
+    let bytecode = program.emit_bytecode();
+    Ok(bytecode)
+}
+
+/// Helper function to collect line and label entries
+fn collect_line_and_label_entries(
+    source: &str,
+    parse_result: &ParseResult,
+) -> (Vec<LineEntry>, Vec<LabelEntry>) {
+    let mut files: Files<&str> = Files::new();
+    let file_id = files.add("source", source);
+
+    let mut line_entries = Vec::new();
+    let mut label_entries = Vec::new();
+
+    for node in parse_result.code_section.get_nodes() {
+        match node {
+            ASTNode::Instruction {
+                instruction,
+                offset,
+            } => {
+                let line_index = files.line_index(file_id, instruction.span.start as u32);
+                let line_number = (line_index.to_usize() + 1) as u32;
+                line_entries.push((*offset, line_number));
+            }
+            ASTNode::Label { label, offset } => {
+                let line_index = files.line_index(file_id, label.span.start as u32);
+                let line_number = (line_index.to_usize() + 1) as u32;
+                label_entries.push((label.name.clone(), *offset, line_number));
+            }
+            _ => {}
+        }
+    }
+
+    (line_entries, label_entries)
 }
 
 #[cfg(test)]
@@ -204,5 +270,42 @@ mod tests {
         "#;
         let result = assemble(source);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_assemble_with_debug_data() {
+        let source = r#".equ MSG_LEN, 14
+
+.globl entrypoint
+entrypoint:
+  lddw r1, message
+  mov64 r2, MSG_LEN
+  call sol_log_
+  exit
+.rodata
+  message: .ascii "Hello, Solana!"
+"#;
+        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp");
+        assert!(result.is_ok());
+        let bytecode = result.unwrap();
+
+        // Verify the ELF has all debug sections.
+        let bytecode_str = String::from_utf8_lossy(&bytecode);
+        assert!(
+            bytecode_str.contains(".debug_abbrev"),
+            "Missing .debug_abbrev section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_info"),
+            "Missing .debug_info section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_line"),
+            "Missing .debug_line section"
+        );
+        assert!(
+            bytecode_str.contains(".debug_line_str"),
+            "Missing .debug_line_str section"
+        );
     }
 }

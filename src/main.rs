@@ -18,7 +18,7 @@ enum Commands {
     #[command(about = "Create a new project scaffold")]
     Init(InitArgs),
     #[command(about = "Compile into a Solana program executable")]
-    Build,
+    Build(BuildArgs),
     #[command(about = "Build and deploy the program")]
     Deploy(DeployArgs),
     #[command(about = "Test deployed program")]
@@ -40,6 +40,12 @@ pub struct InitArgs {
         help = "Initialize with TypeScript tests instead of Mollusk Rust tests"
     )]
     ts_tests: bool,
+}
+
+#[derive(Args)]
+struct BuildArgs {
+    #[arg(short = 'g', long, help = "Include debug information")]
+    debug: bool,
 }
 
 #[derive(Args)]
@@ -65,12 +71,11 @@ fn main() -> Result<(), Error> {
 
     match &cli.command {
         Commands::Init(args) => init(args.name.clone(), args.ts_tests),
-        Commands::Build => build(),
+        Commands::Build(args) => build(args.debug),
         Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
         Commands::Test => test(),
-        // use arg to specify if use light build
         Commands::E2E(args) => {
-            build()?;
+            build(false)?; // E2E uses release build
             deploy(args.name.clone(), args.url.clone())?;
             test()
         }
