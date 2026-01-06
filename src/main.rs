@@ -46,6 +46,8 @@ pub struct InitArgs {
 struct BuildArgs {
     #[arg(short = 'g', long, help = "Include debug information")]
     debug: bool,
+    #[arg(short = 's', long = "static-syscalls", help = "Use static syscalls")]
+    static_syscalls: bool,
 }
 
 #[derive(Args)]
@@ -71,11 +73,11 @@ fn main() -> Result<(), Error> {
 
     match &cli.command {
         Commands::Init(args) => init(args.name.clone(), args.ts_tests),
-        Commands::Build(args) => build(args.debug),
+        Commands::Build(args) => build(args.debug, args.static_syscalls),
         Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
         Commands::Test => test(),
         Commands::E2E(args) => {
-            build(false)?; // E2E uses release build
+            build(false, false)?; // E2E uses release build
             deploy(args.name.clone(), args.url.clone())?;
             test()
         }

@@ -42,7 +42,7 @@ impl AsDiagnostic for CompileError {
     }
 }
 
-pub fn build(debug: bool) -> Result<()> {
+pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
     // Set src/out directory
     let src = "src";
     let deploy = "deploy";
@@ -51,7 +51,7 @@ pub fn build(debug: bool) -> Result<()> {
     create_dir_all(deploy)?;
 
     // Function to compile assembly
-    fn compile_assembly(src: &str, deploy: &str, debug: bool) -> Result<()> {
+    fn compile_assembly(src: &str, deploy: &str, debug: bool, static_syscalls: bool) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
@@ -66,9 +66,9 @@ pub fn build(debug: bool) -> Result<()> {
                 .and_then(|p| p.canonicalize().ok())
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            assemble_with_debug_data(&source_code, filename, &directory)
+            assemble_with_debug_data(&source_code, filename, &directory, static_syscalls)
         } else {
-            assemble(&source_code)
+            assemble(&source_code, static_syscalls)
         };
 
         let bytecode = match result {
@@ -148,7 +148,7 @@ pub fn build(debug: bool) -> Result<()> {
                     if debug { " (debug)" } else { "" }
                 );
                 let start = Instant::now();
-                compile_assembly(&asm_file, deploy, debug)?;
+                compile_assembly(&asm_file, deploy, debug, static_syscalls)?;
                 let duration = start.elapsed();
                 println!(
                     "✅ \"{}\" built successfully in {}ms!",
