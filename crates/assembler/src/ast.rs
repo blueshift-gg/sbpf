@@ -16,7 +16,6 @@ pub struct AST {
     pub nodes: Vec<ASTNode>,
     pub rodata_nodes: Vec<ASTNode>,
 
-    pub entry_label: Option<String>,
     text_size: u64,
     rodata_size: u64,
 }
@@ -196,11 +195,18 @@ impl AST {
             }
         }
 
-        // Set entry point offset if an entry label was specified
-        if let Some(entry_label) = &self.entry_label
-            && let Some(offset) = label_offset_map.get(entry_label)
+        // Set entry point offset if a GlobalDecl was specified
+        let entry_label = self.nodes.iter().find_map(|node| {
+            if let ASTNode::GlobalDecl { global_decl } = node {
+                Some(global_decl.entry_label.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(entry_label) = entry_label
+            && let Some(offset) = label_offset_map.get(&entry_label)
         {
-            dynamic_symbols.add_entry_point(entry_label.clone(), *offset);
+            dynamic_symbols.add_entry_point(entry_label, *offset);
         }
 
         if !errors.is_empty() {
@@ -229,7 +235,6 @@ mod tests {
         let ast = AST::new();
         assert!(ast.nodes.is_empty());
         assert!(ast.rodata_nodes.is_empty());
-        assert!(ast.entry_label.is_none());
         assert_eq!(ast.text_size, 0);
         assert_eq!(ast.rodata_size, 0);
     }

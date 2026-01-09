@@ -260,7 +260,6 @@ fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 for globl_inner in inner.into_inner() {
                     if globl_inner.as_rule() == Rule::globl_symbol {
                         let entry_label = globl_inner.as_str().to_string();
-                        ctx.ast.entry_label = Some(entry_label.clone());
                         ctx.ast.nodes.push(ASTNode::GlobalDecl {
                             global_decl: GlobalDecl {
                                 entry_label,
