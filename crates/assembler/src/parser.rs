@@ -60,7 +60,7 @@ pub struct ParseResult {
     pub prog_is_static: bool,
 }
 
-pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
+pub fn parse(source: &str, static_syscalls: bool) -> Result<ParseResult, Vec<CompileError>> {
     let pairs = SbpfParser::parse(Rule::program, source).map_err(|e| {
         vec![CompileError::ParseError {
             error: e.to_string(),
@@ -107,9 +107,7 @@ pub fn parse(source: &str) -> Result<ParseResult, Vec<CompileError>> {
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
-    print!("{:?}", ast);
-
-    ast.build_program()
+    ast.build_program(static_syscalls)
 }
 
 fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
@@ -262,7 +260,6 @@ fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 for globl_inner in inner.into_inner() {
                     if globl_inner.as_rule() == Rule::globl_symbol {
                         let entry_label = globl_inner.as_str().to_string();
-                        ctx.ast.entry_label = Some(entry_label.clone());
                         ctx.ast.nodes.push(ASTNode::GlobalDecl {
                             global_decl: GlobalDecl {
                                 entry_label,

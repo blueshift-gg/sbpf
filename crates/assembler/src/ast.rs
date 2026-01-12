@@ -17,7 +17,6 @@ pub struct AST {
     pub nodes: Vec<ASTNode>,
     pub rodata_nodes: Vec<ASTNode>,
 
-    pub entry_label: Option<String>,
     text_size: u64,
     rodata_size: u64,
 }
@@ -103,8 +102,10 @@ impl AST {
         None
     }
 
-    //
-    pub fn build_program(&mut self) -> Result<ParseResult, Vec<CompileError>> {
+    pub fn build_program(
+        &mut self,
+        static_syscalls: bool,
+    ) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
         let mut numeric_labels: Vec<(String, u64, usize)> = Vec::new();
 
@@ -127,7 +128,7 @@ impl AST {
         // 1. resolve labels in the intruction nodes for lddw and jump
         // 2. find relocation information
 
-        let program_is_static = !self.nodes.iter().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation()));
+        let program_is_static = !self.nodes.iter().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation(static_syscalls)));
         let mut relocations = RelDynMap::new();
         let mut dynamic_symbols = DynamicSymbolMap::new();
 
@@ -169,7 +170,7 @@ impl AST {
                     inst.imm = Some(Either::Right(Number::Int(rel_offset)));
                 }
 
-                if inst.needs_relocation() {
+                if inst.needs_relocation(static_syscalls) {
                     let (reloc_type, label) = get_relocation_info(inst);
                     relocations.add_rel_dyn(*offset, reloc_type, label.clone());
                     if reloc_type == RelocationType::RSbfSyscall {
@@ -197,11 +198,18 @@ impl AST {
             }
         }
 
-        // Set entry point offset if an entry label was specified
-        if let Some(entry_label) = &self.entry_label
-            && let Some(offset) = label_offset_map.get(entry_label)
+        // Set entry point offset if a GlobalDecl was specified
+        let entry_label = self.nodes.iter().find_map(|node| {
+            if let ASTNode::GlobalDecl { global_decl } = node {
+                Some(global_decl.entry_label.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(entry_label) = entry_label
+            && let Some(offset) = label_offset_map.get(&entry_label)
         {
-            dynamic_symbols.add_entry_point(entry_label.clone(), *offset);
+            dynamic_symbols.add_entry_point(entry_label, *offset);
         }
 
         if !errors.is_empty() {
@@ -230,7 +238,6 @@ mod tests {
         let ast = AST::new();
         assert!(ast.nodes.is_empty());
         assert!(ast.rodata_nodes.is_empty());
-        assert!(ast.entry_label.is_none());
         assert_eq!(ast.text_size, 0);
         assert_eq!(ast.rodata_size, 0);
     }
@@ -329,7 +336,7 @@ mod tests {
         ast.set_text_size(8);
         ast.set_rodata_size(0);
 
-        let result = ast.build_program();
+        let result = ast.build_program(false);
         assert!(result.is_ok());
         let parse_result = result.unwrap();
         assert!(parse_result.prog_is_static);
@@ -354,7 +361,89 @@ mod tests {
         });
         ast.set_text_size(8);
 
-        let result = ast.build_program();
+        let result = ast.build_program(false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_program_static_syscalls_no_relocation() {
+        let mut ast = AST::new();
+
+        let syscall_inst = Instruction {
+            opcode: Opcode::Call,
+            dst: None,
+            src: None,
+            off: None,
+            imm: Some(Either::Left("sol_log_".to_string())),
+            span: 0..8,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: syscall_inst,
+            offset: 0,
+        });
+
+        let exit_inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 8..16,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: exit_inst,
+            offset: 8,
+        });
+
+        ast.set_text_size(16);
+        ast.set_rodata_size(0);
+
+        let result = ast.build_program(true);
+        assert!(result.is_ok());
+        let parse_result = result.unwrap();
+
+        assert!(parse_result.prog_is_static);
+        assert!(parse_result.relocation_data.get_rel_dyns().is_empty());
+    }
+
+    #[test]
+    fn test_build_program_dynamic_syscalls_with_relocation() {
+        let mut ast = AST::new();
+
+        let syscall_inst = Instruction {
+            opcode: Opcode::Call,
+            dst: None,
+            src: None,
+            off: None,
+            imm: Some(Either::Left("sol_log_".to_string())),
+            span: 0..8,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: syscall_inst,
+            offset: 0,
+        });
+
+        let exit_inst = Instruction {
+            opcode: Opcode::Exit,
+            dst: None,
+            src: None,
+            off: None,
+            imm: None,
+            span: 8..16,
+        };
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: exit_inst,
+            offset: 8,
+        });
+
+        ast.set_text_size(16);
+        ast.set_rodata_size(0);
+
+        let result = ast.build_program(false);
+        assert!(result.is_ok());
+        let parse_result = result.unwrap();
+
+        assert!(!parse_result.prog_is_static);
+        assert!(!parse_result.relocation_data.get_rel_dyns().is_empty());
     }
 }
