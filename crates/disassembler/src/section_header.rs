@@ -154,14 +154,17 @@ impl SectionHeader {
             .iter()
             .map(|s| {
                 let current_offset = s.sh_name as usize;
-                let next_index = indices.binary_search(&s.sh_name).unwrap() + 1;
-                let next_offset = *indices
-                    .get(next_index)
-                    .ok_or(DisassemblerError::InvalidString)?
-                    as usize;
 
-                let label = String::from_utf8(shstrndx_value[current_offset..next_offset].to_vec())
-                    .unwrap_or("default".to_string());
+                // Find the null terminator for this string.
+                let label_bytes = &shstrndx_value[current_offset..];
+                let null_pos = label_bytes
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(label_bytes.len());
+                let label = String::from_utf8(
+                    label_bytes[..=null_pos.min(label_bytes.len().saturating_sub(1))].to_vec(),
+                )
+                .unwrap_or("default".to_string());
 
                 let data = elf_file.data()
                     [s.sh_offset as usize..s.sh_offset as usize + s.sh_size as usize]

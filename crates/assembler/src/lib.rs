@@ -35,14 +35,14 @@ pub use self::{
 type LineEntry = (u64, u32); // (offset, line)
 type LabelEntry = (String, u64, u32); // (label, offset, line)
 
-pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
-    let parse_result = match parse(source) {
+pub fn assemble(source: &str, static_syscalls: bool) -> Result<Vec<u8>, Vec<CompileError>> {
+    let parse_result = match parse(source, static_syscalls) {
         Ok(result) => result,
         Err(errors) => {
             return Err(errors);
         }
     };
-    let program = Program::from_parse_result(parse_result, None);
+    let program = Program::from_parse_result(parse_result, None, static_syscalls);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
 }
@@ -51,8 +51,9 @@ pub fn assemble_with_debug_data(
     source: &str,
     filename: &str,
     directory: &str,
+    static_syscalls: bool,
 ) -> Result<Vec<u8>, Vec<CompileError>> {
-    let parse_result = match parse(source) {
+    let parse_result = match parse(source, static_syscalls) {
         Ok(result) => result,
         Err(errors) => {
             return Err(errors);
@@ -72,7 +73,7 @@ pub fn assemble_with_debug_data(
         code_end,
     };
 
-    let program = Program::from_parse_result(parse_result, Some(debug_data));
+    let program = Program::from_parse_result(parse_result, Some(debug_data), static_syscalls);
     let bytecode = program.emit_bytecode();
     Ok(bytecode)
 }
@@ -117,7 +118,7 @@ mod tests {
     #[test]
     fn test_assemble_success() {
         let source = "exit";
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
         let bytecode = result.unwrap();
         assert!(!bytecode.is_empty());
@@ -126,7 +127,7 @@ mod tests {
     #[test]
     fn test_assemble_parse_error() {
         let source = "invalid_xyz";
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_err());
     }
 
@@ -139,7 +140,7 @@ mod tests {
             mov64 r1, MY_CONST
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -152,7 +153,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(!errors.is_empty());
@@ -166,7 +167,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -180,7 +181,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -194,7 +195,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -208,7 +209,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -223,7 +224,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -238,7 +239,7 @@ mod tests {
             jne r1, r2, target
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -251,7 +252,7 @@ mod tests {
             mov64 r1, BASE+10
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -268,7 +269,7 @@ mod tests {
             mov64 r3, COMPUTED
             exit
         "#;
-        let result = assemble(source);
+        let result = assemble(source, false);
         assert!(result.is_ok());
     }
 
@@ -285,7 +286,7 @@ entrypoint:
 .rodata
   message: .ascii "Hello, Solana!"
 "#;
-        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp");
+        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp", false);
         assert!(result.is_ok());
         let bytecode = result.unwrap();
 

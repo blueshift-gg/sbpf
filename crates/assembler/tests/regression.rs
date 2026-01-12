@@ -83,7 +83,7 @@ fn test_regression() {
         let source = read_source(&case.file);
 
         // Test assembly
-        let actual = match sbpf_assembler::assemble(&source) {
+        let actual = match sbpf_assembler::assemble(&source, false) {
             Ok(bytes) => hash_bytes(&bytes),
             Err(e) => {
                 any_missing_or_mismatch = true;
@@ -119,7 +119,7 @@ fn test_regression() {
 
         // Test assembly (debug)
         let debug_actual =
-            match sbpf_assembler::assemble_with_debug_data(&source, &case.file, "/test") {
+            match sbpf_assembler::assemble_with_debug_data(&source, &case.file, "/test", false) {
                 Ok(bytes) => hash_bytes(&bytes),
                 Err(e) => {
                     any_missing_or_mismatch = true;

@@ -108,7 +108,7 @@ test_2:              // line 17
 "#;
 
     // Assemble with debug info
-    let bytecode = sbpf_assembler::assemble_with_debug_data(TEST_SOURCE, "test.s", "/test")
+    let bytecode = sbpf_assembler::assemble_with_debug_data(TEST_SOURCE, "test.s", "/test", false)
         .expect("Failed to assemble with debug data");
 
     // Parse DWARF info

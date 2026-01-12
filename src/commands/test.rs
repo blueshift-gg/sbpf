@@ -28,7 +28,7 @@ pub fn test() -> Result<(), Error> {
 
     if !has_so_files(deploy_dir) {
         println!("🔄 No .so files found in 'deploy' directory. Running build...");
-        crate::commands::build::build(false)?;
+        crate::commands::build::build(false, false)?;
     }
 
     let has_cargo = Path::new("Cargo.toml").exists();

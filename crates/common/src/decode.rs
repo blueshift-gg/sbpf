@@ -257,36 +257,43 @@ pub fn decode_jump_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_call_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    let mut callimm = Some(Either::Right(Number::Int(imm.into())));
-    if let Some(syscall) = SYSCALLS.get(imm as u32) {
-        if dst != 0 || src != 0 || off != 0 {
-            return Err(SBPFError::BytecodeError {
-                error: format!(
-                    "{} instruction has dst: {}, src: {}, off: {} supposed to be zeros",
-                    opcode, dst, src, off
-                ),
-                span: 0..8,
-                custom_label: None,
-            });
-        }
-        callimm = Some(Either::Left(syscall.to_string()));
-    } else if dst != 0 || src != 1 || off != 0 {
+
+    if dst != 0 || off != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
-                "{} instruction has dst: {}, src: {}, off: {} 
-                        supposed to be sixteen and zero",
-                opcode, dst, src, off
+                "{} instruction has dst: {} and off: {}, expected to be zeros",
+                opcode, dst, off
             ),
             span: 0..8,
             custom_label: None,
         });
     }
+
+    let callimm = match src {
+        0 => {
+            // Static syscall - check if syscall is registered.
+            if let Some(syscall) = SYSCALLS.get(imm as u32) {
+                Either::Left(syscall.to_string())
+            } else {
+                Either::Right(Number::Int(imm.into()))
+            }
+        }
+        1 => Either::Right(Number::Int(imm.into())),
+        _ => {
+            return Err(SBPFError::BytecodeError {
+                error: format!("{} instruction has invalid src register: {}", opcode, src),
+                span: 0..8,
+                custom_label: None,
+            });
+        }
+    };
+
     Ok(Instruction {
         opcode,
         dst: None,
         src: Some(Register { n: src }),
         off: None,
-        imm: callimm,
+        imm: Some(callimm),
         span: 0..8,
     })
 }
@@ -684,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_call_immediate_syscall_error_nonzero_src() {
+    fn test_decode_call_immediate_syscall_nonzero_src() {
         let syscall_hash = murmur3_32(REGISTERED_SYSCALLS[0]);
         let hash_bytes = syscall_hash.to_le_bytes();
 
@@ -699,8 +706,9 @@ mod tests {
             hash_bytes[3],
         ];
 
-        let result = decode_call_immediate(&bytes);
-        assert!(result.is_err());
+        let result = decode_call_immediate(&bytes).unwrap();
+        assert_eq!(result.src.unwrap().n, 1);
+        assert!(matches!(result.imm, Some(Either::Right(_))));
     }
 
     #[test]
@@ -917,5 +925,42 @@ mod tests {
             let result = decode_jump_register(&bytes).unwrap();
             assert_eq!(result.opcode, expected_opcode);
         }
+    }
+
+    #[test]
+    fn test_decode_static_syscall_unknown_hash() {
+        let unknown_hash: u32 = 0x12345678;
+        let hash_bytes = unknown_hash.to_le_bytes();
+
+        let bytes = vec![
+            0x85,
+            0x00, // src=0 (static syscall)
+            0x00,
+            0x00,
+            hash_bytes[0],
+            hash_bytes[1],
+            hash_bytes[2],
+            hash_bytes[3],
+        ];
+
+        let result = decode_call_immediate(&bytes).unwrap();
+        assert_eq!(result.opcode, Opcode::Call);
+        assert!(result.dst.is_none());
+        assert_eq!(result.src.unwrap().n, 0);
+
+        // unknown hash should be kept as numeric immediate
+        match result.imm {
+            Some(Either::Right(Number::Int(imm))) => {
+                assert_eq!(imm as u32, unknown_hash);
+            }
+            _ => panic!("Expected numeric immediate for unknown syscall hash"),
+        }
+    }
+
+    #[test]
+    fn test_decode_call_invalid_src_register() {
+        let bytes = vec![0x85, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // src=2
+        let result = decode_call_immediate(&bytes);
+        assert!(result.is_err());
     }
 }
