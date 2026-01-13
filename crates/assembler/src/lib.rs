@@ -32,51 +32,71 @@ pub use self::{
     program::Program,
 };
 
+/// Debug mode configuration for the assembler
+#[derive(Debug, Clone)]
+pub struct DebugMode {
+    /// Source filename for debug info
+    pub filename: String,
+    /// Source directory for debug info
+    pub directory: String,
+}
+
+/// Options for the assembler
+#[derive(Debug, Clone, Default)]
+pub struct AssemblerOption {
+    /// Enable static syscalls
+    pub use_static_syscalls: bool,
+    /// Optional debug mode configuration
+    pub debug_mode: Option<DebugMode>,
+}
+
+/// Assembler for SBPF assembly code
+#[derive(Debug, Clone)]
+pub struct Assembler {
+    options: AssemblerOption,
+}
+
+impl Assembler {
+    /// Create a new Assembler with the given options
+    pub fn new(options: AssemblerOption) -> Self {
+        Self { options }
+    }
+
+    /// Assemble the source code into bytecode
+    pub fn assemble(&self, source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
+        let parse_result = match parse(source, self.options.use_static_syscalls) {
+            Ok(result) => result,
+            Err(errors) => {
+                return Err(errors);
+            }
+        };
+
+        // Build debug data if debug mode is enabled
+        let debug_data = if let Some(ref debug_mode) = self.options.debug_mode {
+            let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
+            let code_end = parse_result.code_section.get_size();
+
+            Some(DebugData {
+                filename: debug_mode.filename.clone(),
+                directory: debug_mode.directory.clone(),
+                lines,
+                labels,
+                code_start: 0,
+                code_end,
+            })
+        } else {
+            None
+        };
+
+        let program =
+            Program::from_parse_result(parse_result, debug_data, self.options.use_static_syscalls);
+        let bytecode = program.emit_bytecode();
+        Ok(bytecode)
+    }
+}
+
 type LineEntry = (u64, u32); // (offset, line)
 type LabelEntry = (String, u64, u32); // (label, offset, line)
-
-pub fn assemble(source: &str, static_syscalls: bool) -> Result<Vec<u8>, Vec<CompileError>> {
-    let parse_result = match parse(source, static_syscalls) {
-        Ok(result) => result,
-        Err(errors) => {
-            return Err(errors);
-        }
-    };
-    let program = Program::from_parse_result(parse_result, None, static_syscalls);
-    let bytecode = program.emit_bytecode();
-    Ok(bytecode)
-}
-
-pub fn assemble_with_debug_data(
-    source: &str,
-    filename: &str,
-    directory: &str,
-    static_syscalls: bool,
-) -> Result<Vec<u8>, Vec<CompileError>> {
-    let parse_result = match parse(source, static_syscalls) {
-        Ok(result) => result,
-        Err(errors) => {
-            return Err(errors);
-        }
-    };
-
-    // Collect line and label entries from parse result
-    let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
-    let code_end = parse_result.code_section.get_size();
-
-    let debug_data = DebugData {
-        filename: filename.to_string(),
-        directory: directory.to_string(),
-        lines,
-        labels,
-        code_start: 0,
-        code_end,
-    };
-
-    let program = Program::from_parse_result(parse_result, Some(debug_data), static_syscalls);
-    let bytecode = program.emit_bytecode();
-    Ok(bytecode)
-}
 
 /// Helper function to collect line and label entries
 fn collect_line_and_label_entries(
@@ -112,13 +132,37 @@ fn collect_line_and_label_entries(
 }
 
 #[cfg(test)]
+pub fn assemble(source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
+    let options = AssemblerOption::default();
+    let assembler = Assembler::new(options);
+    assembler.assemble(source)
+}
+
+#[cfg(test)]
+pub fn assemble_with_debug_data(
+    source: &str,
+    filename: &str,
+    directory: &str,
+) -> Result<Vec<u8>, Vec<CompileError>> {
+    let options = AssemblerOption {
+        use_static_syscalls: false,
+        debug_mode: Some(DebugMode {
+            filename: filename.to_string(),
+            directory: directory.to_string(),
+        }),
+    };
+    let assembler = Assembler::new(options);
+    assembler.assemble(source)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_assemble_success() {
         let source = "exit";
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
         let bytecode = result.unwrap();
         assert!(!bytecode.is_empty());
@@ -127,7 +171,7 @@ mod tests {
     #[test]
     fn test_assemble_parse_error() {
         let source = "invalid_xyz";
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_err());
     }
 
@@ -140,7 +184,7 @@ mod tests {
             mov64 r1, MY_CONST
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -153,7 +197,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(!errors.is_empty());
@@ -167,7 +211,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -181,7 +225,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -195,7 +239,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -209,7 +253,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -224,7 +268,7 @@ mod tests {
         entrypoint:
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -239,7 +283,7 @@ mod tests {
             jne r1, r2, target
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -252,7 +296,7 @@ mod tests {
             mov64 r1, BASE+10
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -269,7 +313,7 @@ mod tests {
             mov64 r3, COMPUTED
             exit
         "#;
-        let result = assemble(source, false);
+        let result = assemble(source);
         assert!(result.is_ok());
     }
 
@@ -286,7 +330,7 @@ entrypoint:
 .rodata
   message: .ascii "Hello, Solana!"
 "#;
-        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp", false);
+        let result = assemble_with_debug_data(source, "hello_solana.s", "/tmp");
         assert!(result.is_ok());
         let bytecode = result.unwrap();
 

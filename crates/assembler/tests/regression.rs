@@ -83,7 +83,9 @@ fn test_regression() {
         let source = read_source(&case.file);
 
         // Test assembly
-        let actual = match sbpf_assembler::assemble(&source, false) {
+        let options = sbpf_assembler::AssemblerOption::default();
+        let assembler = sbpf_assembler::Assembler::new(options);
+        let actual = match assembler.assemble(&source) {
             Ok(bytes) => hash_bytes(&bytes),
             Err(e) => {
                 any_missing_or_mismatch = true;
@@ -118,22 +120,29 @@ fn test_regression() {
         }
 
         // Test assembly (debug)
-        let debug_actual =
-            match sbpf_assembler::assemble_with_debug_data(&source, &case.file, "/test", false) {
-                Ok(bytes) => hash_bytes(&bytes),
-                Err(e) => {
-                    any_missing_or_mismatch = true;
-                    issues.push(Issue {
-                        kind: IssueKind::AssemblerError,
-                        name: name.clone(),
-                        file: case.file.clone(),
-                        expected: None,
-                        actual: None,
-                        note: Some(format!("debug assembler failed: {:?}", e)),
-                    });
-                    continue;
-                }
-            };
+        let debug_options = sbpf_assembler::AssemblerOption {
+            use_static_syscalls: false,
+            debug_mode: Some(sbpf_assembler::DebugMode {
+                filename: case.file.clone(),
+                directory: "/test".to_string(),
+            }),
+        };
+        let debug_assembler = sbpf_assembler::Assembler::new(debug_options);
+        let debug_actual = match debug_assembler.assemble(&source) {
+            Ok(bytes) => hash_bytes(&bytes),
+            Err(e) => {
+                any_missing_or_mismatch = true;
+                issues.push(Issue {
+                    kind: IssueKind::AssemblerError,
+                    name: name.clone(),
+                    file: case.file.clone(),
+                    expected: None,
+                    actual: None,
+                    note: Some(format!("debug assembler failed: {:?}", e)),
+                });
+                continue;
+            }
+        };
 
         if debug_actual != case.debug_hash {
             if update_hashes && case.debug_hash.is_empty() {

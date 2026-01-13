@@ -7,7 +7,7 @@ use {
     },
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
-    sbpf_assembler::{assemble, assemble_with_debug_data, errors::CompileError},
+    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, errors::CompileError},
     std::{fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
@@ -55,8 +55,8 @@ pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
-        // Assemble with or without debug info
-        let result = if debug {
+        // Build assembler options
+        let debug_mode = if debug {
             let filename = Path::new(src)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -66,10 +66,21 @@ pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
                 .and_then(|p| p.canonicalize().ok())
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            assemble_with_debug_data(&source_code, filename, &directory, static_syscalls)
+            Some(DebugMode {
+                filename: filename.to_string(),
+                directory,
+            })
         } else {
-            assemble(&source_code, static_syscalls)
+            None
         };
+
+        let options = AssemblerOption {
+            use_static_syscalls: static_syscalls,
+            debug_mode,
+        };
+
+        let assembler = Assembler::new(options);
+        let result = assembler.assemble(&source_code);
 
         let bytecode = match result {
             Ok(bytecode) => bytecode,
