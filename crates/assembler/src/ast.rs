@@ -11,7 +11,7 @@ use {
     std::collections::HashMap,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AST {
     pub nodes: Vec<ASTNode>,
     pub rodata_nodes: Vec<ASTNode>,
