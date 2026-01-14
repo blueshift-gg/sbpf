@@ -2,12 +2,17 @@ use {
     crate::{
         CompileError,
         astnode::{ASTNode, ROData},
-        dynsym::{DynamicSymbolMap, RelDynMap, RelocationType, get_relocation_info},
+        dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
         parser::ParseResult,
         section::{CodeSection, DataSection},
     },
     either::Either,
-    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
+    sbpf_common::{
+        inst_param::{Number, Register},
+        instruction::Instruction,
+        opcode::Opcode,
+        syscalls_map::murmur3_32,
+    },
     std::collections::HashMap,
 };
 
@@ -127,9 +132,43 @@ impl AST {
         // 1. resolve labels in the intruction nodes for lddw and jump
         // 2. find relocation information
 
-        let program_is_static = !self.nodes.iter().any(|node| matches!(node, ASTNode::Instruction { instruction: inst, .. } if inst.needs_relocation(static_syscalls)));
         let mut relocations = RelDynMap::new();
         let mut dynamic_symbols = DynamicSymbolMap::new();
+
+        // Resolve both static and dynamic syscalls.
+        for node in self.nodes.iter_mut() {
+            if let ASTNode::Instruction {
+                instruction: inst,
+                offset,
+            } = node
+                && inst.is_syscall()
+                && let Some(Either::Left(syscall_name)) = &inst.imm
+            {
+                let syscall_name = syscall_name.clone();
+                if static_syscalls {
+                    // Static syscall: src = 0, imm = hash
+                    inst.src = Some(Register { n: 0 });
+                    inst.imm = Some(Either::Right(Number::Int(murmur3_32(&syscall_name) as i64)));
+                } else {
+                    // Dynamic syscall: src = 1, imm = -1
+                    inst.src = Some(Register { n: 1 });
+                    inst.imm = Some(Either::Right(Number::Int(-1)));
+
+                    // Add relocation for dynamic syscall
+                    relocations.add_rel_dyn(
+                        *offset,
+                        RelocationType::RSbfSyscall,
+                        syscall_name.clone(),
+                    );
+                    dynamic_symbols.add_call_target(syscall_name.clone(), *offset);
+                }
+            }
+        }
+
+        let program_is_static = !self.nodes.iter().any(|node| {
+            matches!(node, ASTNode::Instruction { instruction: inst, .. }
+                if inst.needs_relocation())
+        });
 
         let mut errors = Vec::new();
 
@@ -166,20 +205,17 @@ impl AST {
                     && let Some(target_offset) = label_offset_map.get(label)
                 {
                     let rel_offset = (*target_offset as i64 - *offset as i64) / 8 - 1;
+                    inst.src = Some(Register { n: 1 });
                     inst.imm = Some(Either::Right(Number::Int(rel_offset)));
                 }
 
-                if inst.needs_relocation(static_syscalls) {
-                    let (reloc_type, label) = get_relocation_info(inst);
-                    relocations.add_rel_dyn(*offset, reloc_type, label.clone());
-                    if reloc_type == RelocationType::RSbfSyscall {
-                        dynamic_symbols.add_call_target(label.clone(), *offset);
-                    }
-                }
                 if inst.opcode == Opcode::Lddw
                     && let Some(Either::Left(name)) = &inst.imm
                 {
                     let label = name.clone();
+                    // Add relocation for lddw
+                    relocations.add_rel_dyn(*offset, RelocationType::RSbf64Relative, label.clone());
+
                     if let Some(target_offset) = label_offset_map.get(&label) {
                         let ph_count = if program_is_static { 1 } else { 3 };
                         let ph_offset = 64 + (ph_count as u64 * 56) as i64;
