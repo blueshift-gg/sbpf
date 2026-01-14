@@ -218,11 +218,9 @@ impl ROData {
 }
 
 impl ASTNode {
-    pub fn bytecode(&self, static_syscalls: bool) -> Option<Vec<u8>> {
+    pub fn bytecode(&self) -> Option<Vec<u8>> {
         match self {
-            ASTNode::Instruction { instruction, .. } => {
-                Some(instruction.to_bytes(static_syscalls).unwrap())
-            }
+            ASTNode::Instruction { instruction, .. } => Some(instruction.to_bytes().unwrap()),
             ASTNode::ROData {
                 rodata: ROData { args, .. },
                 ..
@@ -491,7 +489,7 @@ mod tests {
             offset: 0,
         };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         assert_eq!(bytecode.unwrap().len(), 8);
     }
@@ -508,7 +506,7 @@ mod tests {
         };
         let node = ASTNode::ROData { rodata, offset: 0 };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         assert_eq!(bytecode.unwrap(), b"Hi");
     }
@@ -525,7 +523,7 @@ mod tests {
         };
         let node = ASTNode::ROData { rodata, offset: 0 };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         assert_eq!(bytecode.unwrap(), vec![0x42u8, 0x43u8]);
     }
@@ -542,7 +540,7 @@ mod tests {
         };
         let node = ASTNode::ROData { rodata, offset: 0 };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         let bytes = bytecode.unwrap();
         assert_eq!(bytes.len(), 2);
@@ -561,7 +559,7 @@ mod tests {
         };
         let node = ASTNode::ROData { rodata, offset: 0 };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         let bytes = bytecode.unwrap();
         assert_eq!(bytes.len(), 4);
@@ -579,7 +577,7 @@ mod tests {
         };
         let node = ASTNode::ROData { rodata, offset: 0 };
 
-        let bytecode = node.bytecode(false);
+        let bytecode = node.bytecode();
         assert!(bytecode.is_some());
         let bytes = bytecode.unwrap();
         assert_eq!(bytes.len(), 8);
@@ -594,7 +592,7 @@ mod tests {
             },
             offset: 0,
         };
-        assert!(node.bytecode(false).is_none());
+        assert!(node.bytecode().is_none());
     }
 
     #[test]
@@ -606,6 +604,6 @@ mod tests {
                 span: 0..7,
             },
         };
-        assert!(node.bytecode(false).is_none());
+        assert!(node.bytecode().is_none());
     }
 }

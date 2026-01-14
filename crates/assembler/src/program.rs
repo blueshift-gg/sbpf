@@ -17,7 +17,6 @@ pub struct Program {
     pub elf_header: ElfHeader,
     pub program_headers: Option<Vec<ProgramHeader>>,
     pub sections: Vec<SectionType>,
-    pub static_syscalls: bool,
 }
 
 impl Program {
@@ -30,7 +29,6 @@ impl Program {
             prog_is_static,
         }: ParseResult,
         debug_data: Option<DebugData>,
-        static_syscalls: bool,
     ) -> Self {
         let mut elf_header = ElfHeader::new();
         let mut program_headers = None;
@@ -302,7 +300,6 @@ impl Program {
             elf_header,
             program_headers,
             sections,
-            static_syscalls,
         }
     }
 
@@ -321,7 +318,7 @@ impl Program {
 
         // Emit sections
         for section in &self.sections {
-            bytes.extend(section.bytecode(self.static_syscalls));
+            bytes.extend(section.bytecode());
         }
 
         // Emit section headers
@@ -402,7 +399,7 @@ mod tests {
     fn test_program_from_simple_source() {
         let source = "exit";
         let parse_result = parse(source, false).unwrap();
-        let program = Program::from_parse_result(parse_result, None, false);
+        let program = Program::from_parse_result(parse_result, None);
 
         // Verify basic structure
         assert!(!program.sections.is_empty());
@@ -413,7 +410,7 @@ mod tests {
     fn test_program_without_rodata() {
         let source = "exit";
         let parse_result = parse(source, false).unwrap();
-        let program = Program::from_parse_result(parse_result, None, false);
+        let program = Program::from_parse_result(parse_result, None);
 
         assert!(!program.has_rodata());
     }
@@ -422,7 +419,7 @@ mod tests {
     fn test_program_emit_bytecode() {
         let source = "exit";
         let parse_result = parse(source, false).unwrap();
-        let program = Program::from_parse_result(parse_result, None, false);
+        let program = Program::from_parse_result(parse_result, None);
 
         let bytecode = program.emit_bytecode();
         assert!(!bytecode.is_empty());
@@ -437,7 +434,7 @@ mod tests {
         let mut parse_result = parse(source, false).unwrap();
         parse_result.prog_is_static = true;
 
-        let program = Program::from_parse_result(parse_result, None, false);
+        let program = Program::from_parse_result(parse_result, None);
         assert!(program.program_headers.is_none());
         assert_eq!(program.elf_header.e_phnum, 0);
     }
@@ -446,7 +443,7 @@ mod tests {
     fn test_program_sections_ordering() {
         let source = "exit";
         let parse_result = parse(source, false).unwrap();
-        let program = Program::from_parse_result(parse_result, None, false);
+        let program = Program::from_parse_result(parse_result, None);
 
         // First section should be null
         assert_eq!(program.sections[0].name(), "");
@@ -466,7 +463,7 @@ mod tests {
             code_start: 0,
             code_end: 8,
         });
-        let program = Program::from_parse_result(parse_result, debug_data, false);
+        let program = Program::from_parse_result(parse_result, debug_data);
 
         let debug_section_names: Vec<&str> = program
             .sections

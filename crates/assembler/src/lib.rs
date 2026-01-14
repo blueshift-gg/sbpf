@@ -88,8 +88,7 @@ impl Assembler {
             None
         };
 
-        let program =
-            Program::from_parse_result(parse_result, debug_data, self.options.use_static_syscalls);
+        let program = Program::from_parse_result(parse_result, debug_data);
         let bytecode = program.emit_bytecode();
         Ok(bytecode)
     }
