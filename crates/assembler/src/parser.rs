@@ -545,7 +545,7 @@ fn process_store_imm(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::store_op => opcode = Opcode::from_str(inner.as_str()).ok(),
+            Rule::store_op_imm => opcode = Opcode::from_str(inner.as_str()).ok(),
             Rule::memory_ref => {
                 let (d, o) = parse_memory_ref(inner, const_map)?;
                 dst = Some(d);
@@ -578,7 +578,7 @@ fn process_store_reg(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::store_op => opcode = Opcode::from_str(inner.as_str()).ok(),
+            Rule::store_op_reg => opcode = Opcode::from_str(inner.as_str()).ok(),
             Rule::memory_ref => {
                 let (d, o) = parse_memory_ref(inner, const_map)?;
                 dst = Some(d);

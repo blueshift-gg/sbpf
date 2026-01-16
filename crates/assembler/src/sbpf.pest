@@ -153,9 +153,10 @@ instr_load = { load_op ~ register ~ "," ~ memory_ref }
 instr_lddw = { "lddw" ~ register ~ "," ~ operand }
 
 // Memory store Operations
-store_op        = { "stb" | "sth" | "stw" | "stdw" | "stxb" | "stxh" | "stxw" | "stxdw" }
-instr_store_imm = { store_op ~ memory_ref ~ "," ~ operand }
-instr_store_reg = { store_op ~ memory_ref ~ "," ~ register }
+store_op_imm    = { "stb" | "sth" | "stw" | "stdw" }
+store_op_reg    = { "stxb" | "stxh" | "stxw" | "stxdw" }
+instr_store_imm = { store_op_imm ~ memory_ref ~ "," ~ operand }
+instr_store_reg = { store_op_reg ~ memory_ref ~ "," ~ register }
 
 // Control Flow Operations (Jumps)
 jump_op           = {
