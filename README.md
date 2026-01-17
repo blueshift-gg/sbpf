@@ -9,6 +9,7 @@
           - [Create a new project with Rust tests (default)](#create-a-new-project-with-rust-tests-default)
           - [Create a new project with TypeScript tests](#create-a-new-project-with-typescript-tests)
     - [Advanced Usage](#advanced-usage)
+    - [A Note About Versioning](#a-note-about-versioning)
     - [License](#license)
     - [Contributing](#contributing)
 
@@ -101,6 +102,12 @@ You can override the default linker with a [custom linker file](https://github.c
 src/example/example.s
 src/example/example.ld
 ```
+
+### A Note About Versioning
+
+As of the time of this writing, `sbpf` builds [SBPF v0](https://github.com/anza-xyz/sbpf/blob/v0.13.0/doc/bytecode.md#verification)
+programs, which follow upstream eBPF conventions with the exception of `callx`.
+[[ref](https://github.com/blueshift-gg/sbpf/issues/79#issuecomment-3596193259)]
 
 ### License
 
