@@ -1,5 +1,6 @@
 pub mod decode;
 pub mod errors;
+pub mod execute;
 pub mod inst_handler;
 pub mod inst_param;
 pub mod instruction;

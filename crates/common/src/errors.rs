@@ -26,6 +26,21 @@ impl SBPFError {
     }
 }
 
+#[derive(Error, Debug, Clone)]
+pub enum ExecutionError {
+    #[error("Division by zero")]
+    DivisionByZero,
+
+    #[error("Invalid operand")]
+    InvalidOperand,
+
+    #[error("Invalid instruction format")]
+    InvalidInstruction,
+
+    #[error("Call depth exceeded (max {0})")]
+    CallDepthExceeded(usize),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
