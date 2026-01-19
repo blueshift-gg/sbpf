@@ -4,7 +4,7 @@ use {
         inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
         opcode::{Opcode, OperationType},
-        syscalls::REGISTERED_SYSCALLS,
+        syscalls::{is_registered_libcall, libcall_hash, REGISTERED_SYSCALLS},
         syscalls_map::murmur3_32,
     },
     core::ops::Range,
@@ -46,6 +46,18 @@ impl Instruction {
             && let Some(Either::Left(identifier)) = &self.imm
         {
             return REGISTERED_SYSCALLS.contains(&identifier.as_str());
+        }
+        false
+    }
+
+    /// Returns true if this instruction is a call to a registered libcall.
+    /// Libcalls are functions emitted by LLVM when expanding intrinsics that
+    /// the target doesn't support natively (e.g., __multi3 for 128-bit multiplication).
+    pub fn is_libcall(&self) -> bool {
+        if self.opcode == Opcode::Call
+            && let Some(Either::Left(identifier)) = &self.imm
+        {
+            return is_registered_libcall(identifier.as_str());
         }
         false
     }
@@ -138,9 +150,15 @@ impl Instruction {
     pub fn to_bytes(&self, static_syscalls: bool) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let is_static_syscall = static_syscalls && self.is_syscall();
-        let src_val = match self.opcode {
-            Opcode::Call => u8::from(!is_static_syscall),
-            _ => self.src.as_ref().map(|r| r.n).unwrap_or(0),
+        let src_val = if self.opcode == Opcode::Call {
+            // Libcalls are encoded like static syscalls (src=0)
+            if self.is_libcall() {
+                0
+            } else {
+                u8::from(!is_static_syscall)
+            }
+        } else {
+            self.src.as_ref().map(|r| r.n).unwrap_or(0)
         };
         let off_val = match &self.off {
             Some(Either::Left(ident)) => {
@@ -153,7 +171,16 @@ impl Instruction {
             Some(Either::Left(ident)) if is_static_syscall => murmur3_32(ident) as i64,
             Some(Either::Left(_ident)) if self.is_syscall() => -1i64, // FF FF FF FF
             Some(Either::Left(ident)) => {
-                unreachable!("Identifier '{}' should have been resolved earlier", ident)
+                if self.opcode == Opcode::Call {
+                    // Libcalls are mapped to their corresponding syscall hash
+                    if let Some(hash) = libcall_hash(ident.as_str()) {
+                        hash as i64
+                    } else {
+                        -1i64 // FF FF FF FF
+                    }
+                } else {
+                    unreachable!("Identifier '{}' should have been resolved earlier", ident)
+                }
             }
             Some(Either::Right(Number::Int(imm))) | Some(Either::Right(Number::Addr(imm))) => *imm,
             None => 0,
@@ -568,8 +595,8 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "should have been resolved earlier")]
-    fn test_to_bytes_call_with_identifier() {
+    fn test_to_bytes_call_with_unresolved_identifier() {
+        // Unknown function names (not syscalls or libcalls) get encoded with imm = -1 (0xFFFFFFFF)
         let inst = Instruction {
             opcode: Opcode::Call,
             dst: None,
@@ -578,8 +605,9 @@ mod test {
             imm: Some(Either::Left("function".to_string())),
             span: 0..8,
         };
-        // This should panic because "function" does not exist
-        let _ = inst.to_bytes(false).unwrap();
+        let bytes = inst.to_bytes(false).unwrap();
+        // imm should be -1 (FF FF FF FF)
+        assert_eq!(&bytes[4..8], &[0xFF, 0xFF, 0xFF, 0xFF]);
     }
 
     #[test]

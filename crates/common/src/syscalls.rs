@@ -1,4 +1,29 @@
-use crate::syscalls_map::{SyscallMap, compute_syscall_entries_const};
+use crate::syscalls_map::{SyscallMap, compute_syscall_entries_const, murmur3_32};
+
+/// Libcalls are functions that LLVM emits when expanding intrinsics that the target
+/// doesn't support natively. 
+/// Each entry maps a libcall name to its corresponding Solana syscall name.
+/// - libcall_name: The libcall function name (e.g., "__multi3" for 128-bit multiplication)
+/// - syscall_name: The Solana syscall that implements the libcall (e.g., "sol_multi3")
+pub const REGISTERED_LIBCALLS: &[(&str, &str)] = &[
+    ("__multi3", "sol_multi3"), // 128-bit multiplication
+];
+
+/// Check if a name is a registered libcall
+pub fn is_registered_libcall(name: &str) -> bool {
+    REGISTERED_LIBCALLS
+        .iter()
+        .any(|(libcall, _)| *libcall == name)
+}
+
+/// Get the syscall hash for a libcall by computing murmur3_32 of the mapped syscall name.
+/// Returns None if not a registered libcall.
+pub fn libcall_hash(name: &str) -> Option<u32> {
+    REGISTERED_LIBCALLS
+        .iter()
+        .find(|(libcall, _)| *libcall == name)
+        .map(|(_, syscall)| murmur3_32(syscall))
+}
 
 pub const REGISTERED_SYSCALLS: &[&str] = &[
     "abort",
