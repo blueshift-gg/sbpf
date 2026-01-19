@@ -1,8 +1,8 @@
-use thiserror::Error;
+use {sbpf_common::errors::ExecutionError, thiserror::Error};
 
 /// VM errors
 #[derive(Error, Debug, Clone)]
-pub enum VmError {
+pub enum SbpfVmError {
     #[error("Division by zero")]
     DivisionByZero,
 
@@ -26,6 +26,22 @@ pub enum VmError {
 
     #[error("Execution limit reached ({0} steps)")]
     ExecutionLimitReached(u64),
+
+    #[error("Syscall error: {0}")]
+    SyscallError(String),
 }
 
-pub type VmResult<T> = Result<T, VmError>;
+pub type SbpfVmResult<T> = Result<T, SbpfVmError>;
+
+impl From<ExecutionError> for SbpfVmError {
+    fn from(err: ExecutionError) -> Self {
+        match err {
+            ExecutionError::DivisionByZero => SbpfVmError::DivisionByZero,
+            ExecutionError::InvalidOperand => SbpfVmError::InvalidOperand,
+            ExecutionError::InvalidInstruction => SbpfVmError::InvalidInstruction,
+            ExecutionError::CallDepthExceeded(n) => SbpfVmError::CallDepthExceeded(n),
+            ExecutionError::InvalidMemoryAccess(addr) => SbpfVmError::InvalidMemoryAccess(addr),
+            ExecutionError::SyscallError(s) => SbpfVmError::SyscallError(s),
+        }
+    }
+}

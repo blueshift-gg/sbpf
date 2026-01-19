@@ -224,13 +224,10 @@ impl Instruction {
                         if let Some(dst) = &self.dst {
                             param.push(format!("r{}", dst.n));
                         }
-                        if let Some(src) = &self.src {
-                            // Skip src register for syscalls
-                            let is_syscall = self.opcode == Opcode::Call
-                                && matches!(&self.imm, Some(Either::Left(_)));
-                            if !is_syscall {
-                                param.push(format!("r{}", src.n));
-                            }
+                        if let Some(src) = &self.src
+                            && self.opcode != Opcode::Call
+                        {
+                            param.push(format!("r{}", src.n));
                         }
                         if let Some(imm) = &self.imm
                             && self.opcode != Opcode::Le

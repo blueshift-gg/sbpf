@@ -49,6 +49,7 @@ repository = "https://github.com/blueshift-gg/sbpf"
 authors = [
     "Dean Little <dean@blueshift.gg>",
     "Claire Fan <claire@blueshift.gg>",
+    "Bidhan A",
 ]
 rust-version = "1.90"
 

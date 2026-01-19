@@ -6,22 +6,30 @@ mod helpers;
 mod jump;
 mod load;
 mod store;
+#[cfg(test)]
+mod test_utils;
 
-use crate::{errors::ExecutionError, instruction::Instruction, opcode::Opcode};
-use alu32::{execute_alu32_imm, execute_alu32_reg, execute_neg32};
-use alu64::{execute_alu64_imm, execute_alu64_reg, execute_neg64};
-pub use call::{execute_call_immediate, execute_call_register, execute_exit};
-use endian::execute_endian;
-pub use jump::{execute_jump, execute_jump_immediate, execute_jump_register};
-use load::{execute_lddw, execute_ldxb, execute_ldxdw, execute_ldxh, execute_ldxw};
-use store::{
-    execute_stb, execute_stdw, execute_sth, execute_stw, execute_stxb, execute_stxdw, execute_stxh,
-    execute_stxw,
+#[cfg(test)]
+pub use test_utils::{MockVm, make_test_instruction};
+use {
+    crate::{errors::ExecutionError, instruction::Instruction, opcode::Opcode},
+    alu32::{execute_alu32_imm, execute_alu32_reg, execute_neg32},
+    alu64::{execute_alu64_imm, execute_alu64_reg, execute_neg64},
+    endian::execute_endian,
+    load::{execute_lddw, execute_ldxb, execute_ldxdw, execute_ldxh, execute_ldxw},
+    store::{
+        execute_stb, execute_stdw, execute_sth, execute_stw, execute_stxb, execute_stxdw,
+        execute_stxh, execute_stxw,
+    },
+};
+pub use {
+    call::{execute_call_immediate, execute_call_register, execute_exit},
+    jump::{execute_jump, execute_jump_immediate, execute_jump_register},
 };
 
 pub type ExecutionResult<T> = Result<T, ExecutionError>;
 
-pub trait SbpfVm {
+pub trait Vm {
     fn get_register(&self, reg: usize) -> u64;
     fn set_register(&mut self, reg: usize, value: u64);
 
@@ -46,20 +54,19 @@ pub trait SbpfVm {
     fn push_frame(
         &mut self,
         return_pc: usize,
-        saved_regs: [u64; 4],
-        saved_fp: u64,
+        saved_registers: [u64; 4],
+        saved_frame_pointer: u64,
     ) -> ExecutionResult<()>;
     fn pop_frame(&mut self) -> Option<(usize, [u64; 4], u64)>;
 
     fn halt(&mut self, exit_code: u64);
-    fn is_halted(&self) -> bool;
 
-    fn stack_frame_size(&self) -> u64;
+    fn get_stack_frame_size(&self) -> u64;
 
     fn handle_syscall(&mut self, name: &str) -> ExecutionResult<u64>;
 }
 
-pub fn execute_binary_immediate(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_binary_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Add64Imm
         | Opcode::Sub64Imm
@@ -89,7 +96,7 @@ pub fn execute_binary_immediate(vm: &mut dyn SbpfVm, inst: &Instruction) -> Exec
     }
 }
 
-pub fn execute_binary_register(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_binary_register(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Add64Reg
         | Opcode::Sub64Reg
@@ -119,7 +126,7 @@ pub fn execute_binary_register(vm: &mut dyn SbpfVm, inst: &Instruction) -> Execu
     }
 }
 
-pub fn execute_unary(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_unary(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Neg64 => execute_neg64(vm, inst),
         Opcode::Neg32 => execute_neg32(vm, inst),
@@ -128,11 +135,11 @@ pub fn execute_unary(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult
     }
 }
 
-pub fn execute_load_immediate(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_load_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     execute_lddw(vm, inst)
 }
 
-pub fn execute_load_memory(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_load_memory(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Ldxb => execute_ldxb(vm, inst),
         Opcode::Ldxh => execute_ldxh(vm, inst),
@@ -142,7 +149,7 @@ pub fn execute_load_memory(vm: &mut dyn SbpfVm, inst: &Instruction) -> Execution
     }
 }
 
-pub fn execute_store_immediate(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_store_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Stb => execute_stb(vm, inst),
         Opcode::Sth => execute_sth(vm, inst),
@@ -152,7 +159,7 @@ pub fn execute_store_immediate(vm: &mut dyn SbpfVm, inst: &Instruction) -> Execu
     }
 }
 
-pub fn execute_store_register(vm: &mut dyn SbpfVm, inst: &Instruction) -> ExecutionResult<()> {
+pub fn execute_store_register(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
     match inst.opcode {
         Opcode::Stxb => execute_stxb(vm, inst),
         Opcode::Stxh => execute_stxh(vm, inst),

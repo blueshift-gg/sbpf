@@ -7,7 +7,7 @@ use crate::{
     },
     errors::{ExecutionError, SBPFError},
     execute::{
-        SbpfVm, execute_binary_immediate, execute_binary_register, execute_call_immediate,
+        Vm, execute_binary_immediate, execute_binary_register, execute_call_immediate,
         execute_call_register, execute_exit, execute_jump, execute_jump_immediate,
         execute_jump_register, execute_load_immediate, execute_load_memory,
         execute_store_immediate, execute_store_register, execute_unary,
@@ -28,7 +28,7 @@ use crate::{
 
 type DecodeFn = fn(&[u8]) -> Result<Instruction, SBPFError>;
 type ValidateFn = fn(&Instruction) -> Result<(), SBPFError>;
-pub type ExecuteFn = fn(&mut dyn SbpfVm, &Instruction) -> Result<(), ExecutionError>;
+pub type ExecuteFn = fn(&mut dyn Vm, &Instruction) -> Result<(), ExecutionError>;
 
 pub struct InstructionHandler {
     pub decode: DecodeFn,

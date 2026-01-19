@@ -39,6 +39,12 @@ pub enum ExecutionError {
 
     #[error("Call depth exceeded (max {0})")]
     CallDepthExceeded(usize),
+
+    #[error("Invalid memory access at address {0:#x}")]
+    InvalidMemoryAccess(u64),
+
+    #[error("Syscall error: {0}")]
+    SyscallError(String),
 }
 
 #[cfg(test)]

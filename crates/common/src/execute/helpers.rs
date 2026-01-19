@@ -1,6 +1,7 @@
-use crate::{errors::ExecutionError, inst_param::Number, instruction::Instruction};
-
-use super::ExecutionResult;
+use {
+    super::ExecutionResult,
+    crate::{errors::ExecutionError, inst_param::Number, instruction::Instruction},
+};
 
 pub fn get_dst(inst: &Instruction) -> ExecutionResult<usize> {
     inst.dst
@@ -39,4 +40,58 @@ pub fn get_offset(inst: &Instruction) -> ExecutionResult<i16> {
 
 pub fn calculate_address(base: u64, offset: i16) -> u64 {
     (base as i64).wrapping_add(offset as i64) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{execute::make_test_instruction, inst_param::Register, opcode::Opcode},
+        either::Either,
+    };
+
+    #[test]
+    fn test_calculate_address() {
+        assert_eq!(calculate_address(0x1000, 8), 0x1008);
+        assert_eq!(calculate_address(0x1000, -8), 0x0ff8);
+        assert_eq!(calculate_address(0x1000, 0), 0x1000);
+    }
+
+    #[test]
+    fn test_get_imm() {
+        let inst = make_test_instruction(
+            Opcode::Add64Imm,
+            Some(Register { n: 1 }),
+            None,
+            None,
+            Some(Either::Right(Number::Int(10))),
+        );
+        assert_eq!(get_imm_i64(&inst).unwrap(), 10);
+        assert_eq!(get_imm_u64(&inst).unwrap(), 10);
+    }
+
+    #[test]
+    fn test_get_offset() {
+        let inst = make_test_instruction(
+            Opcode::Ldxw,
+            Some(Register { n: 0 }),
+            Some(Register { n: 1 }),
+            Some(Either::Right(-8)),
+            None,
+        );
+        assert_eq!(get_offset(&inst).unwrap(), -8);
+    }
+
+    #[test]
+    fn test_get_registers() {
+        let inst = make_test_instruction(
+            Opcode::Add64Reg,
+            Some(Register { n: 3 }),
+            Some(Register { n: 5 }),
+            None,
+            None,
+        );
+        assert_eq!(get_dst(&inst).unwrap(), 3);
+        assert_eq!(get_src(&inst).unwrap(), 5);
+    }
 }

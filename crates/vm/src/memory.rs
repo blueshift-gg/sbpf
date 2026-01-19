@@ -1,5 +1,5 @@
 use {
-    crate::errors::{VmError, VmResult},
+    crate::errors::{SbpfVmError, SbpfVmResult},
     serde::{Deserialize, Serialize},
 };
 
@@ -48,41 +48,41 @@ impl Memory {
     }
 
     // Translate virtual address to region and offset
-    fn translate(&self, addr: u64) -> VmResult<(MemoryRegion, usize)> {
+    fn translate(&self, addr: u64) -> SbpfVmResult<(MemoryRegion, usize)> {
         if addr >= Self::INPUT_START {
             let offset = (addr - Self::INPUT_START) as usize;
             if offset < self.input.len() {
                 Ok((MemoryRegion::Input, offset))
             } else {
-                Err(VmError::MemoryOutOfBounds(addr, 0))
+                Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
         } else if addr >= Self::HEAP_START {
             let offset = (addr - Self::HEAP_START) as usize;
             if offset < self.heap.len() {
                 Ok((MemoryRegion::Heap, offset))
             } else {
-                Err(VmError::MemoryOutOfBounds(addr, 0))
+                Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
         } else if addr >= Self::STACK_START {
             let offset = (addr - Self::STACK_START) as usize;
             if offset < self.stack.len() {
                 Ok((MemoryRegion::Stack, offset))
             } else {
-                Err(VmError::MemoryOutOfBounds(addr, 0))
+                Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
         } else if addr >= Self::RODATA_START {
             let offset = (addr - Self::RODATA_START) as usize;
             if offset < self.rodata.len() {
                 Ok((MemoryRegion::Rodata, offset))
             } else {
-                Err(VmError::MemoryOutOfBounds(addr, 0))
+                Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
         } else {
-            Err(VmError::InvalidMemoryAccess(addr))
+            Err(SbpfVmError::InvalidMemoryAccess(addr))
         }
     }
 
-    fn get_slice(&self, region: MemoryRegion, offset: usize, len: usize) -> VmResult<&[u8]> {
+    fn get_slice(&self, region: MemoryRegion, offset: usize, len: usize) -> SbpfVmResult<&[u8]> {
         let data = match region {
             MemoryRegion::Input => &self.input,
             MemoryRegion::Rodata => &self.rodata,
@@ -91,7 +91,7 @@ impl Memory {
         };
 
         if offset + len > data.len() {
-            return Err(VmError::MemoryOutOfBounds(offset as u64, len));
+            return Err(SbpfVmError::MemoryOutOfBounds(offset as u64, len));
         }
 
         Ok(&data[offset..offset + len])
@@ -102,10 +102,10 @@ impl Memory {
         region: MemoryRegion,
         offset: usize,
         len: usize,
-    ) -> VmResult<&mut [u8]> {
+    ) -> SbpfVmResult<&mut [u8]> {
         // Rodata region is read-only
         if region == MemoryRegion::Rodata {
-            return Err(VmError::InvalidMemoryAccess(
+            return Err(SbpfVmError::InvalidMemoryAccess(
                 Self::RODATA_START + offset as u64,
             ));
         }
@@ -118,31 +118,31 @@ impl Memory {
         };
 
         if offset + len > data.len() {
-            return Err(VmError::MemoryOutOfBounds(offset as u64, len));
+            return Err(SbpfVmError::MemoryOutOfBounds(offset as u64, len));
         }
 
         Ok(&mut data[offset..offset + len])
     }
 
-    pub fn read_u8(&self, addr: u64) -> VmResult<u8> {
+    pub fn read_u8(&self, addr: u64) -> SbpfVmResult<u8> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice(region, offset, 1)?;
         Ok(slice[0])
     }
 
-    pub fn read_u16(&self, addr: u64) -> VmResult<u16> {
+    pub fn read_u16(&self, addr: u64) -> SbpfVmResult<u16> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice(region, offset, 2)?;
         Ok(u16::from_le_bytes([slice[0], slice[1]]))
     }
 
-    pub fn read_u32(&self, addr: u64) -> VmResult<u32> {
+    pub fn read_u32(&self, addr: u64) -> SbpfVmResult<u32> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice(region, offset, 4)?;
         Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
     }
 
-    pub fn read_u64(&self, addr: u64) -> VmResult<u64> {
+    pub fn read_u64(&self, addr: u64) -> SbpfVmResult<u64> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice(region, offset, 8)?;
         Ok(u64::from_le_bytes([
@@ -150,49 +150,49 @@ impl Memory {
         ]))
     }
 
-    pub fn read_bytes(&self, addr: u64, len: usize) -> VmResult<&[u8]> {
+    pub fn read_bytes(&self, addr: u64, len: usize) -> SbpfVmResult<&[u8]> {
         let (region, offset) = self.translate(addr)?;
         self.get_slice(region, offset, len)
     }
 
-    pub fn write_u8(&mut self, addr: u64, value: u8) -> VmResult<()> {
+    pub fn write_u8(&mut self, addr: u64, value: u8) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, 1)?;
         slice[0] = value;
         Ok(())
     }
 
-    pub fn write_u16(&mut self, addr: u64, value: u16) -> VmResult<()> {
+    pub fn write_u16(&mut self, addr: u64, value: u16) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, 2)?;
         slice.copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
 
-    pub fn write_u32(&mut self, addr: u64, value: u32) -> VmResult<()> {
+    pub fn write_u32(&mut self, addr: u64, value: u32) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, 4)?;
         slice.copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
 
-    pub fn write_u64(&mut self, addr: u64, value: u64) -> VmResult<()> {
+    pub fn write_u64(&mut self, addr: u64, value: u64) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, 8)?;
         slice.copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
 
-    pub fn write_bytes(&mut self, addr: u64, bytes: &[u8]) -> VmResult<()> {
+    pub fn write_bytes(&mut self, addr: u64, bytes: &[u8]) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, bytes.len())?;
         slice.copy_from_slice(bytes);
         Ok(())
     }
 
-    pub fn alloc(&mut self, size: usize) -> VmResult<u64> {
+    pub fn alloc(&mut self, size: usize) -> SbpfVmResult<u64> {
         if self.heap_ptr + size > self.heap.len() {
-            return Err(VmError::MemoryOutOfBounds(
+            return Err(SbpfVmError::MemoryOutOfBounds(
                 Self::HEAP_START + self.heap_ptr as u64,
                 size,
             ));
