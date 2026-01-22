@@ -81,26 +81,29 @@ impl Program {
 
         let mut section_names = Vec::new();
 
+        // Add section_names in fixed order for shstrtab
+        section_names.push(".text".to_string());
+        if has_rodata {
+            section_names.push(".rodata".to_string());
+        }
+
         if arch.is_v3() && has_rodata {
             // Data section
             let mut rodata_section = SectionType::Data(data_section);
             rodata_section.set_offset(current_offset);
             current_offset += rodata_section.size();
-            section_names.push(rodata_section.name().to_string());
             sections.push(rodata_section);
 
             // Code section
             let mut text_section = SectionType::Code(code_section);
             text_section.set_offset(current_offset);
             current_offset += text_section.size();
-            section_names.push(text_section.name().to_string());
             sections.push(text_section);
         } else {
             // Code section
             let mut text_section = SectionType::Code(code_section);
             text_section.set_offset(current_offset);
             current_offset += text_section.size();
-            section_names.push(text_section.name().to_string());
             sections.push(text_section);
 
             // Data section (if any)
@@ -108,7 +111,6 @@ impl Program {
                 let mut rodata_section = SectionType::Data(data_section);
                 rodata_section.set_offset(current_offset);
                 current_offset += rodata_section.size();
-                section_names.push(rodata_section.name().to_string());
                 sections.push(rodata_section);
             }
         }
@@ -650,7 +652,7 @@ entrypoint:
         let parse_result = parse(source, SbpfArch::V3).unwrap();
         let program = Program::from_parse_result(parse_result, None);
 
-        // c3 should not have any dynamic sections
+        // v3 should not have any dynamic sections
         let section_names: Vec<&str> = program.sections.iter().map(|s| s.name()).collect();
         assert!(!section_names.contains(&".dynamic"));
         assert!(!section_names.contains(&".dynsym"));

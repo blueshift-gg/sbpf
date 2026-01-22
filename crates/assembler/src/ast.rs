@@ -210,13 +210,23 @@ impl AST {
                     && let Some(Either::Left(name)) = &inst.imm
                 {
                     let label = name.clone();
-                    // Add relocation for lddw
-                    relocations.add_rel_dyn(*offset, RelocationType::RSbf64Relative, label.clone());
+                    // Add relocation for lddw (only for v0)
+                    if !arch.is_v3() {
+                        relocations.add_rel_dyn(
+                            *offset,
+                            RelocationType::RSbf64Relative,
+                            label.clone(),
+                        );
+                    }
 
                     if let Some(target_offset) = label_offset_map.get(&label) {
-                        let ph_count = if program_is_static { 1 } else { 3 };
-                        let ph_offset = 64 + (ph_count as u64 * 56) as i64;
-                        let abs_offset = *target_offset as i64 + ph_offset;
+                        let abs_offset = if arch.is_v3() {
+                            (*target_offset - self.text_size) as i64
+                        } else {
+                            let ph_count = if program_is_static { 1 } else { 3 };
+                            let ph_offset = 64 + (ph_count as u64 * 56) as i64;
+                            *target_offset as i64 + ph_offset
+                        };
                         // Replace label with immediate value
                         inst.imm = Some(Either::Right(Number::Addr(abs_offset)));
                     } else {

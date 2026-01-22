@@ -1,6 +1,6 @@
 use {
     crate::{
-        elf_header::{E_MACHINE_SBPF, ELFHeader},
+        elf_header::{E_MACHINE, E_MACHINE_SBPF, ELFHeader},
         errors::DisassemblerError,
         program_header::ProgramHeader,
         relocation::Relocation,
@@ -211,29 +211,57 @@ impl Program {
             .iter()
             .find(|e| e.label.starts_with(".rodata"))?;
 
-        let rodata_header = self
-            .section_headers
-            .iter()
-            .find(|h| h.sh_offset as usize == rodata_entry.offset)?;
+        // v3: use program header p_vaddr
+        // v0: use section header sh_addr
+        let vaddr = if self.is_v3() {
+            self.program_headers
+                .iter()
+                .find(|ph| {
+                    let rodata_offset = rodata_entry.offset as u64;
+                    rodata_offset >= ph.p_offset && rodata_offset < ph.p_offset + ph.p_filesz
+                })
+                .map(|ph| ph.p_vaddr)
+                .unwrap_or(0)
+        } else {
+            let rodata_header = self
+                .section_headers
+                .iter()
+                .find(|h| h.sh_offset as usize == rodata_entry.offset)?;
+            rodata_header.sh_addr
+        };
 
-        Some((rodata_entry.data.clone(), rodata_header.sh_addr))
+        Some((rodata_entry.data.clone(), vaddr))
     }
 
     /// Get the entrypoint offset
     pub fn get_entrypoint_offset(&self) -> Option<u64> {
-        let text_header = self.section_headers.iter().find(|h| {
-            self.section_header_entries
-                .iter()
-                .any(|e| e.label.eq(".text\0") && e.offset == h.sh_offset as usize)
-        })?;
-        let text_sh_addr = text_header.sh_addr;
         let e_entry = self.elf_header.e_entry;
 
-        if e_entry >= text_sh_addr {
-            Some(e_entry - text_sh_addr)
+        if self.is_v3() {
+            const V3_BYTECODE_VADDR: u64 = 1 << 32;
+            if e_entry >= V3_BYTECODE_VADDR {
+                Some(e_entry - V3_BYTECODE_VADDR)
+            } else {
+                None
+            }
         } else {
-            None
+            let text_header = self.section_headers.iter().find(|h| {
+                self.section_header_entries
+                    .iter()
+                    .any(|e| e.label.eq(".text\0") && e.offset == h.sh_offset as usize)
+            })?;
+            let text_sh_addr = text_header.sh_addr;
+
+            if e_entry >= text_sh_addr {
+                Some(e_entry - text_sh_addr)
+            } else {
+                None
+            }
         }
+    }
+
+    fn is_v3(&self) -> bool {
+        self.elf_header.e_flags == 0x03 && self.elf_header.e_machine == E_MACHINE
     }
 }
 
