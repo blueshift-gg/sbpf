@@ -1,5 +1,6 @@
 use {
     crate::{
+        SbpfArch,
         ast::AST,
         astnode::{ASTNode, ExternDecl, GlobalDecl, Label, ROData, RodataDecl},
         dynsym::{DynamicSymbolMap, RelDynMap},
@@ -58,9 +59,11 @@ pub struct ParseResult {
     // TODO: this can be removed and dynamic-ness should just be
     // determined by if there's any dynamic symbol
     pub prog_is_static: bool,
+
+    pub arch: SbpfArch,
 }
 
-pub fn parse(source: &str, static_syscalls: bool) -> Result<ParseResult, Vec<CompileError>> {
+pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
     let pairs = SbpfParser::parse(Rule::program, source).map_err(|e| {
         vec![CompileError::ParseError {
             error: e.to_string(),
@@ -107,7 +110,7 @@ pub fn parse(source: &str, static_syscalls: bool) -> Result<ParseResult, Vec<Com
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
-    ast.build_program(static_syscalls)
+    ast.build_program(arch)
 }
 
 fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {

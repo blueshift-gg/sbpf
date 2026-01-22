@@ -121,7 +121,7 @@ fn test_regression() {
 
         // Test assembly (debug)
         let debug_options = sbpf_assembler::AssemblerOption {
-            use_static_syscalls: false,
+            arch: sbpf_assembler::SbpfArch::V0,
             debug_mode: Some(sbpf_assembler::DebugMode {
                 filename: case.file.clone(),
                 directory: "/test".to_string(),

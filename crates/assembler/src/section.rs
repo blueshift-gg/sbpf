@@ -164,7 +164,8 @@ impl Section for DataSection {
     }
 
     fn size(&self) -> u64 {
-        self.size
+        // Return 8-byte aligned size
+        (self.size + 7) & !7
     }
 
     fn bytecode(&self) -> Vec<u8> {

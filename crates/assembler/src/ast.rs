@@ -1,6 +1,6 @@
 use {
     crate::{
-        CompileError,
+        CompileError, SbpfArch,
         astnode::{ASTNode, ROData},
         dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
         parser::ParseResult,
@@ -106,10 +106,7 @@ impl AST {
         None
     }
 
-    pub fn build_program(
-        &mut self,
-        static_syscalls: bool,
-    ) -> Result<ParseResult, Vec<CompileError>> {
+    pub fn build_program(&mut self, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
         let mut numeric_labels: Vec<(String, u64, usize)> = Vec::new();
 
@@ -145,7 +142,7 @@ impl AST {
                 && let Some(Either::Left(syscall_name)) = &inst.imm
             {
                 let syscall_name = syscall_name.clone();
-                if static_syscalls {
+                if arch.is_v3() {
                     // Static syscall: src = 0, imm = hash
                     inst.src = Some(Register { n: 0 });
                     inst.imm = Some(Either::Right(Number::Int(murmur3_32(&syscall_name) as i64)));
@@ -259,6 +256,7 @@ impl AST {
                 dynamic_symbols,
                 relocation_data: relocations,
                 prog_is_static: program_is_static,
+                arch,
             })
         }
     }
@@ -371,7 +369,7 @@ mod tests {
         ast.set_text_size(8);
         ast.set_rodata_size(0);
 
-        let result = ast.build_program(false);
+        let result = ast.build_program(SbpfArch::V0);
         assert!(result.is_ok());
         let parse_result = result.unwrap();
         assert!(parse_result.prog_is_static);
@@ -396,7 +394,7 @@ mod tests {
         });
         ast.set_text_size(8);
 
-        let result = ast.build_program(false);
+        let result = ast.build_program(SbpfArch::V0);
         assert!(result.is_err());
     }
 
@@ -433,7 +431,7 @@ mod tests {
         ast.set_text_size(16);
         ast.set_rodata_size(0);
 
-        let result = ast.build_program(true);
+        let result = ast.build_program(SbpfArch::V3);
         assert!(result.is_ok());
         let parse_result = result.unwrap();
 
@@ -474,7 +472,7 @@ mod tests {
         ast.set_text_size(16);
         ast.set_rodata_size(0);
 
-        let result = ast.build_program(false);
+        let result = ast.build_program(SbpfArch::V0);
         assert!(result.is_ok());
         let parse_result = result.unwrap();
 
