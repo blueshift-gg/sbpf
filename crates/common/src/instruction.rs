@@ -5,11 +5,10 @@ use {
         inst_param::{Number, Register},
         opcode::{Opcode, OperationType},
         syscalls::REGISTERED_SYSCALLS,
-        syscalls_map::murmur3_32,
     },
     core::ops::Range,
     either::Either,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Serialize}, syscall_map::murmur3_32,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -267,10 +266,9 @@ mod test {
             inst_param::{Number, Register},
             instruction::Instruction,
             opcode::Opcode,
-            syscalls_map::murmur3_32,
         },
         either::Either,
-        hex_literal::hex,
+        hex_literal::hex, syscall_map::murmur3_32,
     };
 
     #[test]

@@ -354,10 +354,7 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{syscalls::REGISTERED_SYSCALLS, syscalls_map::murmur3_32},
-    };
+    use {super::*, crate::syscalls::REGISTERED_SYSCALLS, syscall_map::murmur3_32};
 
     #[test]
     fn test_decode_load_immediate_valid() {
