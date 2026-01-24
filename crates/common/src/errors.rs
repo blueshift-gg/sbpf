@@ -26,6 +26,27 @@ impl SBPFError {
     }
 }
 
+#[derive(Error, Debug, Clone)]
+pub enum ExecutionError {
+    #[error("Division by zero")]
+    DivisionByZero,
+
+    #[error("Invalid operand")]
+    InvalidOperand,
+
+    #[error("Invalid instruction format")]
+    InvalidInstruction,
+
+    #[error("Call depth exceeded (max {0})")]
+    CallDepthExceeded(usize),
+
+    #[error("Invalid memory access at address {0:#x}")]
+    InvalidMemoryAccess(u64),
+
+    #[error("Syscall error: {0}")]
+    SyscallError(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
