@@ -8,7 +8,8 @@ use {
     },
     core::ops::Range,
     either::Either,
-    serde::{Deserialize, Serialize}, syscall_map::murmur3_32,
+    serde::{Deserialize, Serialize},
+    syscall_map::murmur3_32,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -268,7 +269,8 @@ mod test {
             opcode::Opcode,
         },
         either::Either,
-        hex_literal::hex, syscall_map::murmur3_32,
+        hex_literal::hex,
+        syscall_map::murmur3_32,
     };
 
     #[test]
