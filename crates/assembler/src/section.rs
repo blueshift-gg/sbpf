@@ -72,20 +72,21 @@ impl CodeSection {
         )
         .bytecode()
     }
-    pub fn bytecode(&self, static_syscalls: bool) -> Vec<u8> {
-        let mut bytecode = Vec::new();
-        for node in &self.nodes {
-            if let Some(node_bytes) = node.bytecode(static_syscalls) {
-                bytecode.extend(node_bytes);
-            }
-        }
-        bytecode
-    }
 }
 
 impl Section for CodeSection {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn bytecode(&self) -> Vec<u8> {
+        let mut bytecode = Vec::new();
+        for node in &self.nodes {
+            if let Some(node_bytes) = node.bytecode() {
+                bytecode.extend(node_bytes);
+            }
+        }
+        bytecode
     }
 
     fn size(&self) -> u64 {
@@ -163,13 +164,14 @@ impl Section for DataSection {
     }
 
     fn size(&self) -> u64 {
-        self.size
+        // Return 8-byte aligned size
+        (self.size + 7) & !7
     }
 
     fn bytecode(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
-            if let Some(node_bytes) = node.bytecode(false) {
+            if let Some(node_bytes) = node.bytecode() {
                 bytecode.extend(node_bytes);
             }
         }
@@ -731,9 +733,9 @@ impl SectionType {
         }
     }
 
-    pub fn bytecode(&self, static_syscalls: bool) -> Vec<u8> {
+    pub fn bytecode(&self) -> Vec<u8> {
         match self {
-            SectionType::Code(cs) => cs.bytecode(static_syscalls),
+            SectionType::Code(cs) => cs.bytecode(),
             SectionType::Data(ds) => ds.bytecode(),
             SectionType::ShStrTab(ss) => ss.bytecode(),
             SectionType::Dynamic(ds) => ds.bytecode(),
@@ -860,7 +862,7 @@ mod tests {
         }];
 
         let section = CodeSection::new(nodes, 8);
-        let bytes = section.bytecode(false);
+        let bytes = section.bytecode();
         assert_eq!(bytes.len(), 8);
     }
 
@@ -1040,7 +1042,7 @@ mod tests {
         for (i, section) in sections.iter().enumerate() {
             assert_eq!(section.name(), expected_names[i]);
             assert_eq!(section.size(), 8);
-            assert_eq!(section.bytecode(false).len(), 8);
+            assert_eq!(section.bytecode().len(), 8);
             assert!(!section.section_header_bytecode().is_empty());
         }
     }

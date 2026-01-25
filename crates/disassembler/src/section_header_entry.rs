@@ -67,7 +67,7 @@ mod test {
                 imm: Some(Either::Right(Number::Int(0))),
                 span: 0..16,
             }
-            .to_bytes(false)
+            .to_bytes()
             .unwrap(),
             Instruction {
                 opcode: Opcode::Exit,
@@ -77,7 +77,7 @@ mod test {
                 imm: None,
                 span: 0..8,
             }
-            .to_bytes(false)
+            .to_bytes()
             .unwrap(),
         ]
         .concat();

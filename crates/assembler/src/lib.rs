@@ -32,6 +32,27 @@ pub use self::{
     program::Program,
 };
 
+/// sBPF target architecture
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SbpfArch {
+    #[default]
+    V0,
+    V3,
+}
+
+impl SbpfArch {
+    pub fn is_v3(&self) -> bool {
+        matches!(self, SbpfArch::V3)
+    }
+
+    pub fn e_flags(&self) -> u32 {
+        match self {
+            SbpfArch::V0 => 0,
+            SbpfArch::V3 => 3,
+        }
+    }
+}
+
 /// Debug mode configuration for the assembler
 #[derive(Debug, Clone)]
 pub struct DebugMode {
@@ -44,8 +65,8 @@ pub struct DebugMode {
 /// Options for the assembler
 #[derive(Debug, Clone, Default)]
 pub struct AssemblerOption {
-    /// Enable static syscalls
-    pub use_static_syscalls: bool,
+    /// sBPF target architecture
+    pub arch: SbpfArch,
     /// Optional debug mode configuration
     pub debug_mode: Option<DebugMode>,
 }
@@ -62,9 +83,8 @@ impl Assembler {
         Self { options }
     }
 
-    /// Assemble the source code into bytecode
     pub fn assemble(&self, source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
-        let parse_result = match parse(source, self.options.use_static_syscalls) {
+        let parse_result = match parse(source, self.options.arch) {
             Ok(result) => result,
             Err(errors) => {
                 return Err(errors);
@@ -88,8 +108,7 @@ impl Assembler {
             None
         };
 
-        let program =
-            Program::from_parse_result(parse_result, debug_data, self.options.use_static_syscalls);
+        let program = Program::from_parse_result(parse_result, debug_data);
         let bytecode = program.emit_bytecode();
         Ok(bytecode)
     }
@@ -145,7 +164,7 @@ pub fn assemble_with_debug_data(
     directory: &str,
 ) -> Result<Vec<u8>, Vec<CompileError>> {
     let options = AssemblerOption {
-        use_static_syscalls: false,
+        arch: SbpfArch::V0,
         debug_mode: Some(DebugMode {
             filename: filename.to_string(),
             directory: directory.to_string(),

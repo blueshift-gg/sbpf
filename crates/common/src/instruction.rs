@@ -50,11 +50,12 @@ impl Instruction {
         false
     }
 
-    pub fn needs_relocation(&self, static_syscalls: bool) -> bool {
+    pub fn needs_relocation(&self) -> bool {
         match self.opcode {
             Opcode::Call => {
-                // Only dynamic syscalls need relocation.
-                !static_syscalls && self.is_syscall()
+                // Only dynamic syscalls (src = 1, imm = -1) need relocation.
+                self.src.as_ref().map(|r| r.n) == Some(1)
+                    && matches!(&self.imm, Some(Either::Right(Number::Int(-1))))
             }
             Opcode::Lddw => matches!(&self.imm, Some(Either::Left(_identifier))),
             _ => false,
@@ -135,13 +136,9 @@ impl Instruction {
         Self::from_bytes(&processed_bytes)
     }
 
-    pub fn to_bytes(&self, static_syscalls: bool) -> Result<Vec<u8>, SBPFError> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
-        let is_static_syscall = static_syscalls && self.is_syscall();
-        let src_val = match self.opcode {
-            Opcode::Call => u8::from(!is_static_syscall),
-            _ => self.src.as_ref().map(|r| r.n).unwrap_or(0),
-        };
+        let src_val = self.src.as_ref().map(|r| r.n).unwrap_or(0);
         let off_val = match &self.off {
             Some(Either::Left(ident)) => {
                 unreachable!("Identifier '{}' should have been resolved earlier", ident)
@@ -150,8 +147,6 @@ impl Instruction {
             None => 0,
         };
         let imm_val = match &self.imm {
-            Some(Either::Left(ident)) if is_static_syscall => murmur3_32(ident) as i64,
-            Some(Either::Left(_ident)) if self.is_syscall() => -1i64, // FF FF FF FF
             Some(Either::Left(ident)) => {
                 unreachable!("Identifier '{}' should have been resolved earlier", ident)
             }
@@ -274,7 +269,7 @@ mod test {
     fn serialize_e2e() {
         let b = hex!("9700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "mod64 r0, 0");
     }
 
@@ -282,7 +277,7 @@ mod test {
     fn serialize_e2e_lddw() {
         let b = hex!("18010000000000000000000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "lddw r1, 0");
     }
 
@@ -290,7 +285,7 @@ mod test {
     fn serialize_e2e_add64_imm() {
         let b = hex!("0701000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r1, 0");
     }
 
@@ -298,7 +293,7 @@ mod test {
     fn serialize_e2e_add64_reg() {
         let b = hex!("0f12000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "add64 r2, r1");
     }
 
@@ -306,7 +301,7 @@ mod test {
     fn serialize_e2e_ja() {
         let b = hex!("05000a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ja +10");
     }
 
@@ -314,7 +309,7 @@ mod test {
     fn serialize_e2e_jeq_imm() {
         let b = hex!("15030a0001000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r3, 1, +10");
     }
 
@@ -322,7 +317,7 @@ mod test {
     fn serialize_e2e_jeq_reg() {
         let b = hex!("1d210a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "jeq r1, r2, +10");
     }
 
@@ -330,7 +325,7 @@ mod test {
     fn serialize_e2e_ldxw() {
         let b = hex!("6112000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "ldxw r2, [r1+0]");
     }
 
@@ -338,7 +333,7 @@ mod test {
     fn serialize_e2e_stxw() {
         let b = hex!("6312000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stxw [r2+0], r1");
     }
 
@@ -348,7 +343,7 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Stb);
         assert!(i.src.is_none());
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stb [r0+0], 0");
     }
 
@@ -358,7 +353,7 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Sth);
         assert!(i.src.is_none());
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "sth [r1+4], 4660");
     }
 
@@ -368,7 +363,7 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Stw);
         assert!(i.src.is_none());
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stw [r1+8], 100");
     }
 
@@ -378,7 +373,7 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Stdw);
         assert!(i.src.is_none());
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "stdw [r2+16], -559038737");
     }
 
@@ -387,7 +382,7 @@ mod test {
         let b = hex!("d401000010000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "le16 r1");
     }
 
@@ -396,7 +391,7 @@ mod test {
         let b = hex!("d401000020000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "le32 r1");
     }
 
@@ -405,7 +400,7 @@ mod test {
         let b = hex!("d403000040000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "le64 r3");
     }
 
@@ -414,7 +409,7 @@ mod test {
         let b = hex!("dc01000010000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "be16 r1");
     }
 
@@ -423,7 +418,7 @@ mod test {
         let b = hex!("dc02000020000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "be32 r2");
     }
 
@@ -432,7 +427,7 @@ mod test {
         let b = hex!("dc03000040000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "be64 r3");
     }
 
@@ -440,7 +435,7 @@ mod test {
     fn serialize_e2e_neg64() {
         let b = hex!("8700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
-        assert_eq!(i.to_bytes(false).unwrap(), &b);
+        assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm().unwrap(), "neg64 r0");
     }
 
@@ -559,7 +554,7 @@ mod test {
             imm: None,
             span: 0..8,
         };
-        let bytes = inst.to_bytes(false).unwrap();
+        let bytes = inst.to_bytes().unwrap();
         assert_eq!(bytes[0], 0x8d);
         assert_eq!(bytes[4], 5);
     }
@@ -576,7 +571,7 @@ mod test {
             span: 0..8,
         };
         // This should panic because "function" does not exist
-        let _ = inst.to_bytes(false).unwrap();
+        let _ = inst.to_bytes().unwrap();
     }
 
     #[test]
@@ -590,7 +585,7 @@ mod test {
             imm: Some(Either::Right(Number::Addr(100))),
             span: 0..8,
         };
-        let bytes = inst.to_bytes(false).unwrap();
+        let bytes = inst.to_bytes().unwrap();
         assert_eq!(bytes[0], 0x07); // add64 imm opcode
         assert_eq!(
             i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
@@ -710,12 +705,12 @@ mod test {
         let inst = Instruction {
             opcode: Opcode::Call,
             dst: None,
-            src: None,
+            src: Some(Register { n: 1 }),
             off: None,
-            imm: Some(Either::Left("sol_log_".to_string())),
+            imm: Some(Either::Right(Number::Int(-1))),
             span: 0..8,
         };
-        let bytes = inst.to_bytes(false).unwrap();
+        let bytes = inst.to_bytes().unwrap();
         assert_eq!(bytes[0], 0x85);
         assert_eq!(bytes[1], 0x10);
 
@@ -725,21 +720,21 @@ mod test {
 
     #[test]
     fn test_to_bytes_syscall_static() {
+        let syscall_hash = murmur3_32("sol_log_");
         let inst = Instruction {
             opcode: Opcode::Call,
             dst: None,
-            src: None,
+            src: Some(Register { n: 0 }),
             off: None,
-            imm: Some(Either::Left("sol_log_".to_string())),
+            imm: Some(Either::Right(Number::Int(syscall_hash as i64))),
             span: 0..8,
         };
-        let bytes = inst.to_bytes(true).unwrap();
+        let bytes = inst.to_bytes().unwrap();
         assert_eq!(bytes[0], 0x85);
         assert_eq!(bytes[1], 0x00);
 
         // imm should be the murmur3_32 hash
-        let expected_imm = murmur3_32("sol_log_");
         let actual_imm = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(actual_imm, expected_imm);
+        assert_eq!(actual_imm, syscall_hash);
     }
 }
