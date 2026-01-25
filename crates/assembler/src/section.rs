@@ -918,7 +918,7 @@ mod tests {
         assert!(section.size() > 0);
 
         let bytes = section.bytecode();
-        assert!(bytes.len() > 0);
+        assert!(!bytes.is_empty());
         assert_eq!(bytes[0], 0); // First byte is null
     }
 
@@ -1024,7 +1024,7 @@ mod tests {
 
     #[test]
     fn test_debug_section_types() {
-        let sections = vec![
+        let sections = [
             SectionType::DebugAbbrev(DebugSection::new(".debug_abbrev", 0, vec![1, 2, 3])),
             SectionType::DebugInfo(DebugSection::new(".debug_info", 0, vec![4, 5, 6])),
             SectionType::DebugLine(DebugSection::new(".debug_line", 0, vec![7, 8, 9])),

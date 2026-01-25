@@ -313,8 +313,8 @@ impl Program {
         bytes.extend(self.elf_header.bytecode());
 
         // Emit program headers
-        if self.program_headers.is_some() {
-            for ph in self.program_headers.as_ref().unwrap() {
+        if let Some(program_headers) = &self.program_headers {
+            for ph in program_headers {
                 bytes.extend(ph.bytecode());
             }
         }
