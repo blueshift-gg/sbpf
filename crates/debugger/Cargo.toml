@@ -1,0 +1,18 @@
+[package]
+name = "sbpf-debugger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+either = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+gimli = { workspace = true }
+object = { workspace = true }
+
+sbpf-assembler = { workspace = true }
+sbpf-disassembler = { workspace = true }
+sbpf-common = { workspace = true }
+sbpf-vm = { workspace = true }

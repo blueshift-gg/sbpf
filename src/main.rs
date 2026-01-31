@@ -2,7 +2,7 @@ pub mod commands;
 use {
     anyhow::Error,
     clap::{Args, Parser, Subcommand},
-    commands::{build, clean, deploy, disassemble, init, test},
+    commands::{build, clean, debug, deploy, disassemble, init, test},
 };
 
 #[derive(Parser)]
@@ -29,6 +29,8 @@ enum Commands {
     Clean,
     #[command(about = "Disassemble a Solana program executable")]
     Disassemble(DisassembleArgs),
+    #[command(about = "Debug a program")]
+    Debug(DebugArgs),
 }
 
 #[derive(Args)]
@@ -68,6 +70,22 @@ struct DisassembleArgs {
     debug: bool,
 }
 
+#[derive(Args)]
+pub struct DebugArgs {
+    #[arg(long, conflicts_with = "elf")]
+    asm: Option<String>,
+    #[arg(long, conflicts_with = "asm")]
+    elf: Option<String>,
+    #[arg(long, default_value = "")]
+    input: String,
+    #[arg(long, default_value = "1000000")]
+    max_steps: u64,
+    #[arg(long, default_value = "4096")]
+    stack_size: usize,
+    #[arg(long, default_value = "32768")]
+    heap_size: usize,
+}
+
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
@@ -83,5 +101,6 @@ fn main() -> Result<(), Error> {
         }
         Commands::Clean => clean(),
         Commands::Disassemble(args) => disassemble(args.filename.clone(), args.debug),
+        Commands::Debug(args) => debug(args),
     }
 }

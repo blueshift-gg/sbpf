@@ -52,7 +52,10 @@ impl Program {
         })
     }
 
-    pub fn to_ixs(self) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
+    pub fn to_ixs(
+        self,
+        with_labels: bool,
+    ) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -122,6 +125,11 @@ impl Program {
             ixs.push(ix);
         }
 
+        let mut slot_to_idx = vec![0usize; slot_to_position.len()];
+        for (idx, &slot) in idx_to_slot.iter().enumerate() {
+            slot_to_idx[slot] = idx;
+        }
+
         // Resolve jump/call labels and collect rodata references
         let mut rodata_refs = BTreeSet::new();
 
@@ -132,10 +140,17 @@ impl Program {
             if ix.is_jump()
                 && let Some(Either::Right(off)) = &ix.off
             {
-                let current_slot = idx_to_slot[idx];
-                let target_slot = (current_slot as i64 + 1 + (*off as i64)) as usize;
-                if let Some(&target_pos) = slot_to_position.get(target_slot) {
-                    ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
+                let current_slot = idx_to_slot[idx] as i64;
+                let target_slot = current_slot + 1 + (*off as i64);
+                if target_slot >= 0
+                    && let Some(&target_pos) = slot_to_position.get(target_slot as usize)
+                {
+                    if with_labels {
+                        ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
+                    } else if let Some(&target_idx) = slot_to_idx.get(target_slot as usize) {
+                        let new_off = target_idx as i64 - (idx as i64 + 1);
+                        ix.off = Some(Either::Right(new_off as i16));
+                    }
                 }
             }
 
@@ -148,7 +163,12 @@ impl Program {
                 if target_slot >= 0
                     && let Some(&target_pos) = slot_to_position.get(target_slot as usize)
                 {
-                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                    if with_labels {
+                        ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                    } else if let Some(&target_idx) = slot_to_idx.get(target_slot as usize) {
+                        let new_rel = target_idx as i64 - (idx as i64 + 1);
+                        ix.imm = Some(Either::Right(Number::Int(new_rel)));
+                    }
                 }
             }
 
@@ -168,13 +188,15 @@ impl Program {
         let rodata = if let Some((data, base_addr)) = rodata_info {
             let rodata = RodataSection::parse(data, base_addr, &rodata_refs);
 
-            for ix in &mut ixs {
-                if ix.opcode == Opcode::Lddw
-                    && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-                {
-                    let addr = *imm as u64;
-                    if let Some(label) = rodata.get_label(addr) {
-                        ix.imm = Some(Either::Left(label.to_string()));
+            if with_labels {
+                for ix in &mut ixs {
+                    if ix.opcode == Opcode::Lddw
+                        && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+                    {
+                        let addr = *imm as u64;
+                        if let Some(label) = rodata.get_label(addr) {
+                            ix.imm = Some(Either::Left(label.to_string()));
+                        }
                     }
                 }
             }
@@ -288,7 +310,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let result = program.to_ixs();
+        let result = program.to_ixs(true);
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -335,7 +357,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs().unwrap();
+        let (ixs, _) = program.to_ixs(true).unwrap();
         assert_eq!(ixs.len(), 2); // lddw + exit
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
     }
@@ -376,7 +398,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs().unwrap();
+        let (ixs, _) = program.to_ixs(true).unwrap();
         assert_eq!(ixs.len(), 1);
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
     }

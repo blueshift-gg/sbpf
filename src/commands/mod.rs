@@ -16,4 +16,7 @@ pub use clean::*;
 pub mod disassemble;
 pub use disassemble::*;
 
+pub mod debug;
+pub use debug::*;
+
 pub mod common;
