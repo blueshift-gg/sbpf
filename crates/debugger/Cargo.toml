@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+bs58 = "0.5"
 either = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

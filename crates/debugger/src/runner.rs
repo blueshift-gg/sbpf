@@ -6,7 +6,6 @@ use sbpf_common::{inst_param::Number, opcode::Opcode};
 use sbpf_disassembler::program::Program;
 use sbpf_vm::{
     memory::Memory,
-    syscalls::SyscallHandler,
     vm::{SbpfVm, SbpfVmConfig},
 };
 
@@ -14,21 +13,21 @@ use crate::{
     debugger::Debugger,
     error::{DebuggerError, DebuggerResult},
     parser::{LineMap, rodata_from_section},
+    syscalls::DebuggerSyscallHandler,
 };
 
-pub struct DebuggerSession<H: SyscallHandler> {
-    pub debugger: Debugger<H>,
+pub struct DebuggerSession {
+    pub debugger: Debugger<DebuggerSyscallHandler>,
     pub line_map: Option<LineMap>,
     pub elf_bytes: Vec<u8>,
     pub elf_path: PathBuf,
 }
 
-pub fn load_session_from_asm<H: SyscallHandler>(
+pub fn load_session_from_asm(
     asm_path: &str,
     input: Vec<u8>,
-    syscall_handler: H,
     config: SbpfVmConfig,
-) -> DebuggerResult<DebuggerSession<H>> {
+) -> DebuggerResult<DebuggerSession> {
     let asm_path = Path::new(asm_path);
     if !asm_path.exists() {
         return Err(DebuggerError::InvalidInput(format!(
@@ -61,34 +60,26 @@ pub fn load_session_from_asm<H: SyscallHandler>(
         .assemble(&source_code)
         .map_err(|errors| DebuggerError::Assembler(format!("{:?}", errors)))?;
 
-    load_session_from_bytes(bytecode, input, syscall_handler, config, None)
+    load_session_from_bytes(bytecode, input, config, None)
 }
 
-pub fn load_session_from_elf<H: SyscallHandler>(
+pub fn load_session_from_elf(
     elf_path: &str,
     input: Vec<u8>,
-    syscall_handler: H,
     config: SbpfVmConfig,
-) -> DebuggerResult<DebuggerSession<H>> {
+) -> DebuggerResult<DebuggerSession> {
     let mut file = File::open(elf_path)?;
     let mut elf_bytes = Vec::new();
     file.read_to_end(&mut elf_bytes)?;
-    load_session_from_bytes(
-        elf_bytes,
-        input,
-        syscall_handler,
-        config,
-        Some(elf_path.into()),
-    )
+    load_session_from_bytes(elf_bytes, input, config, Some(elf_path.into()))
 }
 
-pub fn load_session_from_bytes<H: SyscallHandler>(
+pub fn load_session_from_bytes(
     elf_bytes: Vec<u8>,
     input: Vec<u8>,
-    syscall_handler: H,
     config: SbpfVmConfig,
     elf_path: Option<PathBuf>,
-) -> DebuggerResult<DebuggerSession<H>> {
+) -> DebuggerResult<DebuggerSession> {
     let program = Program::from_bytes(&elf_bytes)?;
     let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
     let (mut instructions, rodata_section) = program.to_ixs(false)?;
@@ -116,8 +107,13 @@ pub fn load_session_from_bytes<H: SyscallHandler>(
         }
     }
 
-    let mut vm =
-        SbpfVm::new_with_config(instructions, input, rodata_bytes, syscall_handler, config);
+    let mut vm = SbpfVm::new_with_config(
+        instructions,
+        input,
+        rodata_bytes,
+        DebuggerSyscallHandler::default(),
+        config,
+    );
     vm.set_entrypoint(entrypoint as usize);
 
     let mut debugger = Debugger::new(vm);

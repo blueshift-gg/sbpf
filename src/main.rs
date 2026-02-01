@@ -78,8 +78,8 @@ pub struct DebugArgs {
     elf: Option<String>,
     #[arg(long, default_value = "")]
     input: String,
-    #[arg(long, default_value = "1000000")]
-    max_steps: u64,
+    #[arg(long, default_value = "1400000")]
+    compute_unit_limit: u64,
     #[arg(long, default_value = "4096")]
     stack_size: usize,
     #[arg(long, default_value = "32768")]

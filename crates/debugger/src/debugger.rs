@@ -39,7 +39,7 @@ pub struct Debugger<H: SyscallHandler> {
 
 impl<H: SyscallHandler> Debugger<H> {
     pub fn new(vm: SbpfVm<H>) -> Self {
-        let initial_compute_budget = vm.config.max_steps;
+        let initial_compute_budget = vm.config.compute_unit_limit;
         Self {
             vm,
             breakpoints: HashSet::new(),
@@ -147,6 +147,12 @@ impl<H: SyscallHandler> Debugger<H> {
                         Ok(()) => {
                             self.at_breakpoint = false;
                             self.last_breakpoint_pc = None;
+
+                            if self.vm.halted {
+                                let exit_code = self.vm.exit_code.unwrap_or(0);
+                                return Ok(DebugEvent::Exit(exit_code));
+                            }
+
                             let new_pc = self.get_pc();
                             if self.breakpoints.contains(&new_pc) {
                                 self.at_breakpoint = true;
@@ -172,8 +178,13 @@ impl<H: SyscallHandler> Debugger<H> {
 
                 let event = match self.vm.step() {
                     Ok(()) => {
-                        let line_number = self.get_line_for_pc(current_pc);
-                        DebugEvent::Step(current_pc, line_number)
+                        if self.vm.halted {
+                            let exit_code = self.vm.exit_code.unwrap_or(0);
+                            DebugEvent::Exit(exit_code)
+                        } else {
+                            let line_number = self.get_line_for_pc(current_pc);
+                            DebugEvent::Step(current_pc, line_number)
+                        }
                     }
                     Err(e) => DebugEvent::Error(format!("{e}")),
                 };
@@ -187,6 +198,11 @@ impl<H: SyscallHandler> Debugger<H> {
                         Ok(()) => {
                             self.at_breakpoint = false;
                             self.last_breakpoint_pc = None;
+
+                            if self.vm.halted {
+                                let exit_code = self.vm.exit_code.unwrap_or(0);
+                                return Ok(DebugEvent::Exit(exit_code));
+                            }
                         }
                         Err(e) => return Ok(DebugEvent::Error(format!("{e}"))),
                     }
@@ -248,7 +264,7 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_compute_units(&self) -> u64 {
-        self.vm.compute_units_consumed
+        self.vm.compute_meter.consumed
     }
 
     pub fn get_instruction(&self) -> Option<&Instruction> {

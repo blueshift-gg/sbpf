@@ -1,9 +1,14 @@
-use crate::{errors::SbpfVmResult, memory::Memory};
+use crate::{compute::ComputeMeter, errors::SbpfVmResult, memory::Memory};
 
 /// Trait for handling syscalls
 pub trait SyscallHandler {
-    fn handle(&mut self, name: &str, registers: [u64; 5], memory: &mut Memory)
-    -> SbpfVmResult<u64>;
+    fn handle(
+        &mut self,
+        name: &str,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64>;
 }
 
 /// Mock syscall handler for testing
@@ -18,6 +23,7 @@ impl SyscallHandler for MockSyscallHandler {
         name: &str,
         _registers: [u64; 5],
         _memory: &mut Memory,
+        _compute: &mut ComputeMeter,
     ) -> SbpfVmResult<u64> {
         self.logs.push(format!("syscall: {}", name));
         Ok(0)

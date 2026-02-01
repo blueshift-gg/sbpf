@@ -151,11 +151,7 @@ impl<H: SyscallHandler> Repl<H> {
                 "compute" => {
                     let cu_used = self.dbg.get_compute_units();
                     let cu_total = self.dbg.initial_compute_budget;
-                    let cu_remaining = cu_total.saturating_sub(cu_used);
-                    println!(
-                        "Compute units: {} used / {} total ({} remaining)",
-                        cu_used, cu_total, cu_remaining
-                    );
+                    println!("Program consumed {} of {} compute units", cu_used, cu_total);
                 }
                 "help" => {
                     println!("Commands:");
