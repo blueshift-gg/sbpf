@@ -38,6 +38,18 @@ pub enum SbpfVmError {
 
     #[error("Overlapping memory regions")]
     OverlappingMemoryRegions,
+
+    #[error("Too many slices for hashing")]
+    TooManySlices,
+
+    #[error("Max seed length exceeded for PDA")]
+    MaxSeedLengthExceeded,
+
+    #[error("Invalid slice conversion")]
+    InvalidSliceConversion,
+
+    #[error("Return data too large (max 1024 bytes)")]
+    ReturnDataTooLarge,
 }
 
 pub type SbpfVmResult<T> = Result<T, SbpfVmError>;

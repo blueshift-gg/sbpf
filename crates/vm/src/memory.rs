@@ -183,6 +183,13 @@ impl Memory {
         Ok(())
     }
 
+    pub fn write_i64(&mut self, addr: u64, value: i64) -> SbpfVmResult<()> {
+        let (region, offset) = self.translate(addr)?;
+        let slice = self.get_slice_mut(region, offset, 8)?;
+        slice.copy_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
     pub fn write_bytes(&mut self, addr: u64, bytes: &[u8]) -> SbpfVmResult<()> {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, bytes.len())?;

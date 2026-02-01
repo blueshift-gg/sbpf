@@ -1,23 +1,40 @@
 use {
     crate::execution_cost::ExecutionCost,
+    blake3::Hasher as Blake3Hasher,
     sbpf_vm::{
         compute::ComputeMeter,
         errors::{SbpfVmError, SbpfVmResult},
         memory::Memory,
         syscalls::SyscallHandler,
     },
+    sha2::{Digest, Sha256},
+    sha3::Keccak256,
+    solana_sdk::{clock::Clock, epoch_schedule::EpochSchedule, pubkey::Pubkey, rent::Rent},
+    std::mem::size_of,
 };
+
+const MAX_SEED_LEN: usize = 32;
+const MAX_SEEDS: usize = 16;
+const MAX_RETURN_DATA: usize = 1024;
 
 /// Debugger syscall handler
 #[derive(Debug)]
 pub struct DebuggerSyscallHandler {
     pub costs: ExecutionCost,
+    pub clock: Clock,
+    pub rent: Rent,
+    pub epoch_schedule: EpochSchedule,
+    pub return_data: Option<(Pubkey, Vec<u8>)>,
 }
 
 impl Default for DebuggerSyscallHandler {
     fn default() -> Self {
         Self {
             costs: ExecutionCost::default(),
+            clock: Clock::default(),
+            rent: Rent::default(),
+            epoch_schedule: EpochSchedule::default(),
+            return_data: None,
         }
     }
 }
@@ -28,7 +45,14 @@ impl DebuggerSyscallHandler {
     }
 
     pub fn with_costs(costs: ExecutionCost) -> Self {
-        Self { costs }
+        Self {
+            costs,
+            ..Default::default()
+        }
+    }
+
+    pub fn get_return_data(&self) -> Option<&(Pubkey, Vec<u8>)> {
+        self.return_data.as_ref()
     }
 
     fn sol_log(
@@ -220,6 +244,367 @@ impl DebuggerSyscallHandler {
 
         Err(SbpfVmError::Abort)
     }
+
+    fn read_slices(
+        &self,
+        memory: &Memory,
+        vals_addr: u64,
+        vals_len: u64,
+    ) -> SbpfVmResult<Vec<(u64, u64)>> {
+        let mut slices = Vec::with_capacity(vals_len as usize);
+        for i in 0..vals_len {
+            let slice_addr = vals_addr.saturating_add(i.saturating_mul(16));
+            let ptr = memory.read_u64(slice_addr)?;
+            let len = memory.read_u64(slice_addr.saturating_add(8))?;
+            slices.push((ptr, len));
+        }
+        Ok(slices)
+    }
+
+    fn sol_sha256(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let vals_addr = registers[0];
+        let vals_len = registers[1];
+        let result_addr = registers[2];
+
+        if vals_len > self.costs.sha256_max_slices {
+            return Err(SbpfVmError::TooManySlices);
+        }
+
+        compute.consume(self.costs.sha256_base_cost)?;
+
+        let mut hasher = Sha256::new();
+
+        if vals_len > 0 {
+            let slices = self.read_slices(memory, vals_addr, vals_len)?;
+
+            for (ptr, len) in slices {
+                let bytes = memory.read_bytes(ptr, len as usize)?;
+
+                let cost = self.costs.mem_op_base_cost.max(
+                    self.costs
+                        .sha256_byte_cost
+                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
+                );
+                compute.consume(cost)?;
+
+                hasher.update(bytes);
+            }
+        }
+
+        let hash = hasher.finalize();
+        memory.write_bytes(result_addr, &hash)?;
+
+        Ok(0)
+    }
+
+    fn sol_keccak256(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let vals_addr = registers[0];
+        let vals_len = registers[1];
+        let result_addr = registers[2];
+
+        if vals_len > self.costs.sha256_max_slices {
+            return Err(SbpfVmError::TooManySlices);
+        }
+
+        compute.consume(self.costs.sha256_base_cost)?;
+
+        let mut hasher = Keccak256::new();
+
+        if vals_len > 0 {
+            let slices = self.read_slices(memory, vals_addr, vals_len)?;
+
+            for (ptr, len) in slices {
+                let bytes = memory.read_bytes(ptr, len as usize)?;
+
+                let cost = self.costs.mem_op_base_cost.max(
+                    self.costs
+                        .sha256_byte_cost
+                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
+                );
+                compute.consume(cost)?;
+
+                hasher.update(bytes);
+            }
+        }
+
+        let hash = hasher.finalize();
+        memory.write_bytes(result_addr, &hash)?;
+
+        Ok(0)
+    }
+
+    fn sol_blake3(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let vals_addr = registers[0];
+        let vals_len = registers[1];
+        let result_addr = registers[2];
+
+        if vals_len > self.costs.sha256_max_slices {
+            return Err(SbpfVmError::TooManySlices);
+        }
+
+        compute.consume(self.costs.sha256_base_cost)?;
+
+        let mut hasher = Blake3Hasher::new();
+
+        if vals_len > 0 {
+            let slices = self.read_slices(memory, vals_addr, vals_len)?;
+
+            for (ptr, len) in slices {
+                let bytes = memory.read_bytes(ptr, len as usize)?;
+
+                let cost = self.costs.mem_op_base_cost.max(
+                    self.costs
+                        .sha256_byte_cost
+                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
+                );
+                compute.consume(cost)?;
+
+                hasher.update(bytes);
+            }
+        }
+
+        let hash = hasher.finalize();
+        let hash_bytes: [u8; 32] = hash.into();
+        memory.write_bytes(result_addr, &hash_bytes)?;
+
+        Ok(0)
+    }
+
+    fn read_seeds(
+        &self,
+        memory: &Memory,
+        seeds_addr: u64,
+        seeds_len: u64,
+    ) -> SbpfVmResult<Vec<Vec<u8>>> {
+        if seeds_len as usize > MAX_SEEDS {
+            return Err(SbpfVmError::MaxSeedLengthExceeded);
+        }
+
+        let mut seeds = Vec::with_capacity(seeds_len as usize);
+        for i in 0..seeds_len {
+            let slice_addr = seeds_addr.saturating_add(i.saturating_mul(16));
+            let ptr = memory.read_u64(slice_addr)?;
+            let len = memory.read_u64(slice_addr.saturating_add(8))?;
+
+            if len as usize > MAX_SEED_LEN {
+                return Err(SbpfVmError::MaxSeedLengthExceeded);
+            }
+
+            let seed = memory.read_bytes(ptr, len as usize)?.to_vec();
+            seeds.push(seed);
+        }
+        Ok(seeds)
+    }
+
+    fn sol_create_program_address(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let seeds_addr = registers[0];
+        let seeds_len = registers[1];
+        let program_id_addr = registers[2];
+        let address_addr = registers[3];
+
+        compute.consume(self.costs.create_program_address_units)?;
+
+        let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
+        let program_id_bytes = memory.read_bytes(program_id_addr, 32)?;
+        let program_id = Pubkey::from(
+            <[u8; 32]>::try_from(program_id_bytes)
+                .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
+        );
+
+        let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
+
+        let Ok(new_address) = Pubkey::create_program_address(&seed_slices, &program_id) else {
+            return Ok(1); // address is on curve
+        };
+
+        memory.write_bytes(address_addr, new_address.as_ref())?;
+        Ok(0)
+    }
+
+    fn sol_try_find_program_address(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let seeds_addr = registers[0];
+        let seeds_len = registers[1];
+        let program_id_addr = registers[2];
+        let address_addr = registers[3];
+        let bump_seed_addr = registers[4];
+
+        compute.consume(self.costs.create_program_address_units)?;
+
+        let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
+        let program_id_bytes = memory.read_bytes(program_id_addr, 32)?;
+        let program_id = Pubkey::from(
+            <[u8; 32]>::try_from(program_id_bytes)
+                .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
+        );
+
+        let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
+
+        let Some((new_address, bump)) = Pubkey::try_find_program_address(&seed_slices, &program_id)
+        else {
+            return Ok(1); // no valid PDA found
+        };
+
+        memory.write_u8(bump_seed_addr, bump)?;
+        memory.write_bytes(address_addr, new_address.as_ref())?;
+        Ok(0)
+    }
+
+    fn write_sysvar_bytes<T>(
+        &self,
+        memory: &mut Memory,
+        var_addr: u64,
+        sysvar: &T,
+    ) -> SbpfVmResult<()> {
+        let sysvar_bytes =
+            unsafe { std::slice::from_raw_parts(sysvar as *const T as *const u8, size_of::<T>()) };
+        memory.write_bytes(var_addr, sysvar_bytes)
+    }
+
+    fn sol_get_clock_sysvar(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let var_addr = registers[0];
+
+        let cost = self
+            .costs
+            .sysvar_base_cost
+            .saturating_add(size_of::<Clock>() as u64);
+        compute.consume(cost)?;
+
+        self.write_sysvar_bytes(memory, var_addr, &self.clock)?;
+
+        Ok(0)
+    }
+
+    fn sol_get_rent_sysvar(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let var_addr = registers[0];
+
+        let cost = self
+            .costs
+            .sysvar_base_cost
+            .saturating_add(size_of::<Rent>() as u64);
+        compute.consume(cost)?;
+
+        self.write_sysvar_bytes(memory, var_addr, &self.rent)?;
+
+        Ok(0)
+    }
+
+    fn sol_get_epoch_schedule_sysvar(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let var_addr = registers[0];
+
+        let cost = self
+            .costs
+            .sysvar_base_cost
+            .saturating_add(size_of::<EpochSchedule>() as u64);
+        compute.consume(cost)?;
+
+        self.write_sysvar_bytes(memory, var_addr, &self.epoch_schedule)?;
+
+        Ok(0)
+    }
+
+    fn sol_set_return_data(
+        &mut self,
+        registers: [u64; 5],
+        memory: &Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let data_addr = registers[0];
+        let data_len = registers[1];
+
+        let cost = self.costs.syscall_base_cost.saturating_add(
+            data_len
+                .checked_div(self.costs.cpi_bytes_per_unit)
+                .unwrap_or(0),
+        );
+        compute.consume(cost)?;
+
+        if data_len as usize > MAX_RETURN_DATA {
+            return Err(SbpfVmError::ReturnDataTooLarge);
+        }
+
+        let data = if data_len > 0 {
+            memory.read_bytes(data_addr, data_len as usize)?.to_vec()
+        } else {
+            Vec::new()
+        };
+
+        self.return_data = Some((Pubkey::default(), data));
+
+        Ok(0)
+    }
+
+    fn sol_get_return_data(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &mut ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let data_addr = registers[0];
+        let data_len = registers[1];
+        let program_id_addr = registers[2];
+
+        let cost = self.costs.syscall_base_cost.saturating_add(
+            data_len
+                .checked_div(self.costs.cpi_bytes_per_unit)
+                .unwrap_or(0),
+        );
+        compute.consume(cost)?;
+
+        let Some((program_id, return_data)) = &self.return_data else {
+            return Ok(0); // no return data
+        };
+
+        if program_id_addr != 0 {
+            memory.write_bytes(program_id_addr, program_id.as_ref())?;
+        }
+
+        let copy_len = (data_len as usize).min(return_data.len());
+        if copy_len > 0 && data_addr != 0 {
+            memory.write_bytes(data_addr, &return_data[..copy_len])?;
+        }
+
+        Ok(return_data.len() as u64)
+    }
 }
 
 impl SyscallHandler for DebuggerSyscallHandler {
@@ -247,6 +632,30 @@ impl SyscallHandler for DebuggerSyscallHandler {
             // Abort
             "abort" => self.abort(),
             "sol_panic_" => self.sol_panic(registers, memory, compute),
+
+            // Hashing
+            "sol_sha256" => self.sol_sha256(registers, memory, compute),
+            "sol_keccak256" => self.sol_keccak256(registers, memory, compute),
+            "sol_blake3" => self.sol_blake3(registers, memory, compute),
+
+            // PDA
+            "sol_create_program_address" => {
+                self.sol_create_program_address(registers, memory, compute)
+            }
+            "sol_try_find_program_address" => {
+                self.sol_try_find_program_address(registers, memory, compute)
+            }
+
+            // Sysvars
+            "sol_get_clock_sysvar" => self.sol_get_clock_sysvar(registers, memory, compute),
+            "sol_get_rent_sysvar" => self.sol_get_rent_sysvar(registers, memory, compute),
+            "sol_get_epoch_schedule_sysvar" => {
+                self.sol_get_epoch_schedule_sysvar(registers, memory, compute)
+            }
+
+            // Return Data
+            "sol_set_return_data" => self.sol_set_return_data(registers, memory, compute),
+            "sol_get_return_data" => self.sol_get_return_data(registers, memory, compute),
 
             // Unknown syscall
             _ => {

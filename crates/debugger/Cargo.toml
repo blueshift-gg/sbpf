@@ -6,12 +6,16 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-bs58 = "0.5"
 either = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 gimli = { workspace = true }
 object = { workspace = true }
+bs58 = "0.5"
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.8"
+solana-sdk = "3.0"
 
 sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }
