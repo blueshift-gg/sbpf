@@ -7,7 +7,7 @@ pub trait SyscallHandler {
         name: &str,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: ComputeMeter,
     ) -> SbpfVmResult<u64>;
 }
 
@@ -23,7 +23,7 @@ impl SyscallHandler for MockSyscallHandler {
         name: &str,
         _registers: [u64; 5],
         _memory: &mut Memory,
-        _compute: &mut ComputeMeter,
+        _compute: ComputeMeter,
     ) -> SbpfVmResult<u64> {
         self.logs.push(format!("syscall: {}", name));
         Ok(0)

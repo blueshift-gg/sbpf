@@ -1,5 +1,12 @@
 use {
-    crate::execution_cost::ExecutionCost,
+    crate::{
+        cpi::{
+            CpiContext, execute_cpi, sync_accounts_from_caller, translate_account_infos,
+            translate_c_instruction, translate_rust_instruction, translate_signers_c,
+            translate_signers_rust,
+        },
+        execution_cost::ExecutionCost,
+    },
     blake3::Hasher as Blake3Hasher,
     sbpf_vm::{
         compute::ComputeMeter,
@@ -20,46 +27,58 @@ const MAX_RETURN_DATA: usize = 1024;
 /// Debugger syscall handler
 #[derive(Debug)]
 pub struct DebuggerSyscallHandler {
+    pub cpi_ctx: CpiContext,
+    pub current_program_id: Pubkey,
     pub costs: ExecutionCost,
+    pub compute_meter: ComputeMeter,
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
-    pub return_data: Option<(Pubkey, Vec<u8>)>,
-}
-
-impl Default for DebuggerSyscallHandler {
-    fn default() -> Self {
-        Self {
-            costs: ExecutionCost::default(),
-            clock: Clock::default(),
-            rent: Rent::default(),
-            epoch_schedule: EpochSchedule::default(),
-            return_data: None,
-        }
-    }
 }
 
 impl DebuggerSyscallHandler {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_costs(costs: ExecutionCost) -> Self {
+    pub fn new(
+        cpi_ctx: CpiContext,
+        current_program_id: Pubkey,
+        compute_meter: ComputeMeter,
+    ) -> Self {
         Self {
-            costs,
-            ..Default::default()
+            cpi_ctx,
+            current_program_id,
+            costs: ExecutionCost::default(),
+            compute_meter,
+            clock: Clock::default(),
+            rent: Rent::default(),
+            epoch_schedule: EpochSchedule::default(),
         }
     }
 
-    pub fn get_return_data(&self) -> Option<&(Pubkey, Vec<u8>)> {
-        self.return_data.as_ref()
+    pub fn with_costs(
+        cpi_ctx: CpiContext,
+        current_program_id: Pubkey,
+        costs: ExecutionCost,
+        compute_meter: ComputeMeter,
+    ) -> Self {
+        Self {
+            cpi_ctx,
+            current_program_id,
+            costs,
+            compute_meter,
+            clock: Clock::default(),
+            rent: Rent::default(),
+            epoch_schedule: EpochSchedule::default(),
+        }
+    }
+
+    pub fn get_return_data(&self) -> Option<(Pubkey, Vec<u8>)> {
+        self.cpi_ctx.borrow().return_data.clone()
     }
 
     fn sol_log(
         &mut self,
         registers: [u64; 5],
         memory: &Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let msg_ptr = registers[0];
         let msg_len = registers[1];
@@ -68,15 +87,14 @@ impl DebuggerSyscallHandler {
         compute.consume(cost)?;
 
         let msg_bytes = memory.read_bytes(msg_ptr, msg_len as usize)?;
-        let msg = String::from_utf8_lossy(&msg_bytes);
+        let msg = String::from_utf8_lossy(msg_bytes);
         println!("Program log: {}", msg);
         Ok(0)
     }
 
-    fn sol_log_64(&mut self, registers: [u64; 5], compute: &mut ComputeMeter) -> SbpfVmResult<u64> {
+    fn sol_log_64(&mut self, registers: [u64; 5], compute: &ComputeMeter) -> SbpfVmResult<u64> {
         let cost = self.costs.log_64_units;
         compute.consume(cost)?;
-
         println!(
             "Program log: {:#x}, {:#x}, {:#x}, {:#x}, {:#x}",
             registers[0], registers[1], registers[2], registers[3], registers[4]
@@ -88,7 +106,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let cost = self.costs.log_pubkey_units;
         compute.consume(cost)?;
@@ -100,7 +118,7 @@ impl DebuggerSyscallHandler {
         Ok(0)
     }
 
-    fn sol_log_compute_units(&mut self, compute: &mut ComputeMeter) -> SbpfVmResult<u64> {
+    fn sol_log_compute_units(&mut self, compute: &ComputeMeter) -> SbpfVmResult<u64> {
         let cost = self.costs.syscall_base_cost;
         compute.consume(cost)?;
 
@@ -109,15 +127,13 @@ impl DebuggerSyscallHandler {
         Ok(0)
     }
 
-    fn sol_remaining_compute_units(&mut self, compute: &mut ComputeMeter) -> SbpfVmResult<u64> {
+    fn sol_remaining_compute_units(&mut self, compute: &ComputeMeter) -> SbpfVmResult<u64> {
         let cost = self.costs.syscall_base_cost;
         compute.consume(cost)?;
-
         Ok(compute.get_remaining())
     }
 
-    // Helper for memory operations CU consumption
-    fn mem_op_consume(&self, n: u64, compute: &mut ComputeMeter) -> SbpfVmResult<()> {
+    fn mem_op_consume(&self, n: u64, compute: &ComputeMeter) -> SbpfVmResult<()> {
         let cost = self.costs.mem_op_base_cost.max(
             n.checked_div(self.costs.cpi_bytes_per_unit)
                 .unwrap_or(u64::MAX),
@@ -137,7 +153,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let dst = registers[0];
         let src = registers[1];
@@ -151,7 +167,6 @@ impl DebuggerSyscallHandler {
 
         let data = memory.read_bytes(src, n as usize)?.to_vec();
         memory.write_bytes(dst, &data)?;
-
         Ok(0)
     }
 
@@ -159,7 +174,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let dst = registers[0];
         let src = registers[1];
@@ -177,7 +192,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let dst = registers[0];
         let c = registers[1] as u8;
@@ -195,7 +210,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let s1 = registers[0];
         let s2 = registers[1];
@@ -228,7 +243,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let file_ptr = registers[0];
         let file_len = registers[1];
@@ -261,93 +276,58 @@ impl DebuggerSyscallHandler {
         Ok(slices)
     }
 
+    fn hash_slices<H: Digest>(
+        &mut self,
+        memory: &mut Memory,
+        compute: &ComputeMeter,
+        vals_addr: u64,
+        vals_len: u64,
+        result_addr: u64,
+    ) -> SbpfVmResult<u64> {
+        if vals_len > self.costs.sha256_max_slices {
+            return Err(SbpfVmError::TooManySlices);
+        }
+        compute.consume(self.costs.sha256_base_cost)?;
+
+        let mut hasher = H::new();
+        if vals_len > 0 {
+            for (ptr, len) in self.read_slices(memory, vals_addr, vals_len)? {
+                let cost = self
+                    .costs
+                    .mem_op_base_cost
+                    .max(self.costs.sha256_byte_cost.saturating_mul(len / 2));
+                compute.consume(cost)?;
+                hasher.update(memory.read_bytes(ptr, len as usize)?);
+            }
+        }
+
+        memory.write_bytes(result_addr, &hasher.finalize())?;
+        Ok(0)
+    }
+
     fn sol_sha256(
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let vals_addr = registers[0];
-        let vals_len = registers[1];
-        let result_addr = registers[2];
-
-        if vals_len > self.costs.sha256_max_slices {
-            return Err(SbpfVmError::TooManySlices);
-        }
-
-        compute.consume(self.costs.sha256_base_cost)?;
-
-        let mut hasher = Sha256::new();
-
-        if vals_len > 0 {
-            let slices = self.read_slices(memory, vals_addr, vals_len)?;
-
-            for (ptr, len) in slices {
-                let bytes = memory.read_bytes(ptr, len as usize)?;
-
-                let cost = self.costs.mem_op_base_cost.max(
-                    self.costs
-                        .sha256_byte_cost
-                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
-                );
-                compute.consume(cost)?;
-
-                hasher.update(bytes);
-            }
-        }
-
-        let hash = hasher.finalize();
-        memory.write_bytes(result_addr, &hash)?;
-
-        Ok(0)
+        self.hash_slices::<Sha256>(memory, compute, registers[0], registers[1], registers[2])
     }
 
     fn sol_keccak256(
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let vals_addr = registers[0];
-        let vals_len = registers[1];
-        let result_addr = registers[2];
-
-        if vals_len > self.costs.sha256_max_slices {
-            return Err(SbpfVmError::TooManySlices);
-        }
-
-        compute.consume(self.costs.sha256_base_cost)?;
-
-        let mut hasher = Keccak256::new();
-
-        if vals_len > 0 {
-            let slices = self.read_slices(memory, vals_addr, vals_len)?;
-
-            for (ptr, len) in slices {
-                let bytes = memory.read_bytes(ptr, len as usize)?;
-
-                let cost = self.costs.mem_op_base_cost.max(
-                    self.costs
-                        .sha256_byte_cost
-                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
-                );
-                compute.consume(cost)?;
-
-                hasher.update(bytes);
-            }
-        }
-
-        let hash = hasher.finalize();
-        memory.write_bytes(result_addr, &hash)?;
-
-        Ok(0)
+        self.hash_slices::<Keccak256>(memory, compute, registers[0], registers[1], registers[2])
     }
 
     fn sol_blake3(
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let vals_addr = registers[0];
         let vals_len = registers[1];
@@ -356,32 +336,22 @@ impl DebuggerSyscallHandler {
         if vals_len > self.costs.sha256_max_slices {
             return Err(SbpfVmError::TooManySlices);
         }
-
         compute.consume(self.costs.sha256_base_cost)?;
 
         let mut hasher = Blake3Hasher::new();
-
         if vals_len > 0 {
-            let slices = self.read_slices(memory, vals_addr, vals_len)?;
-
-            for (ptr, len) in slices {
-                let bytes = memory.read_bytes(ptr, len as usize)?;
-
-                let cost = self.costs.mem_op_base_cost.max(
-                    self.costs
-                        .sha256_byte_cost
-                        .saturating_mul(len.checked_div(2).unwrap_or(0)),
-                );
+            for (ptr, len) in self.read_slices(memory, vals_addr, vals_len)? {
+                let cost = self
+                    .costs
+                    .mem_op_base_cost
+                    .max(self.costs.sha256_byte_cost.saturating_mul(len / 2));
                 compute.consume(cost)?;
-
-                hasher.update(bytes);
+                hasher.update(memory.read_bytes(ptr, len as usize)?);
             }
         }
 
-        let hash = hasher.finalize();
-        let hash_bytes: [u8; 32] = hash.into();
-        memory.write_bytes(result_addr, &hash_bytes)?;
-
+        let hash: [u8; 32] = hasher.finalize().into();
+        memory.write_bytes(result_addr, &hash)?;
         Ok(0)
     }
 
@@ -415,7 +385,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let seeds_addr = registers[0];
         let seeds_len = registers[1];
@@ -425,27 +395,26 @@ impl DebuggerSyscallHandler {
         compute.consume(self.costs.create_program_address_units)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
-        let program_id_bytes = memory.read_bytes(program_id_addr, 32)?;
         let program_id = Pubkey::from(
-            <[u8; 32]>::try_from(program_id_bytes)
+            <[u8; 32]>::try_from(memory.read_bytes(program_id_addr, 32)?)
                 .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
         );
 
         let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
-
-        let Ok(new_address) = Pubkey::create_program_address(&seed_slices, &program_id) else {
-            return Ok(1); // address is on curve
-        };
-
-        memory.write_bytes(address_addr, new_address.as_ref())?;
-        Ok(0)
+        match Pubkey::create_program_address(&seed_slices, &program_id) {
+            Ok(addr) => {
+                memory.write_bytes(address_addr, addr.as_ref())?;
+                Ok(0)
+            }
+            Err(_) => Ok(1),
+        }
     }
 
     fn sol_try_find_program_address(
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let seeds_addr = registers[0];
         let seeds_len = registers[1];
@@ -456,51 +425,45 @@ impl DebuggerSyscallHandler {
         compute.consume(self.costs.create_program_address_units)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
-        let program_id_bytes = memory.read_bytes(program_id_addr, 32)?;
         let program_id = Pubkey::from(
-            <[u8; 32]>::try_from(program_id_bytes)
+            <[u8; 32]>::try_from(memory.read_bytes(program_id_addr, 32)?)
                 .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
         );
 
         let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
-
-        let Some((new_address, bump)) = Pubkey::try_find_program_address(&seed_slices, &program_id)
-        else {
-            return Ok(1); // no valid PDA found
-        };
-
-        memory.write_u8(bump_seed_addr, bump)?;
-        memory.write_bytes(address_addr, new_address.as_ref())?;
-        Ok(0)
+        match Pubkey::try_find_program_address(&seed_slices, &program_id) {
+            Some((addr, bump)) => {
+                memory.write_u8(bump_seed_addr, bump)?;
+                memory.write_bytes(address_addr, addr.as_ref())?;
+                Ok(0)
+            }
+            None => Ok(1),
+        }
     }
 
     fn write_sysvar_bytes<T>(
         &self,
         memory: &mut Memory,
-        var_addr: u64,
+        addr: u64,
         sysvar: &T,
     ) -> SbpfVmResult<()> {
-        let sysvar_bytes =
+        let bytes =
             unsafe { std::slice::from_raw_parts(sysvar as *const T as *const u8, size_of::<T>()) };
-        memory.write_bytes(var_addr, sysvar_bytes)
+        memory.write_bytes(addr, bytes)
     }
 
     fn sol_get_clock_sysvar(
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let var_addr = registers[0];
-
-        let cost = self
-            .costs
-            .sysvar_base_cost
-            .saturating_add(size_of::<Clock>() as u64);
-        compute.consume(cost)?;
-
-        self.write_sysvar_bytes(memory, var_addr, &self.clock)?;
-
+        compute.consume(
+            self.costs
+                .sysvar_base_cost
+                .saturating_add(size_of::<Clock>() as u64),
+        )?;
+        self.write_sysvar_bytes(memory, registers[0], &self.clock)?;
         Ok(0)
     }
 
@@ -508,18 +471,14 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let var_addr = registers[0];
-
-        let cost = self
-            .costs
-            .sysvar_base_cost
-            .saturating_add(size_of::<Rent>() as u64);
-        compute.consume(cost)?;
-
-        self.write_sysvar_bytes(memory, var_addr, &self.rent)?;
-
+        compute.consume(
+            self.costs
+                .sysvar_base_cost
+                .saturating_add(size_of::<Rent>() as u64),
+        )?;
+        self.write_sysvar_bytes(memory, registers[0], &self.rent)?;
         Ok(0)
     }
 
@@ -527,7 +486,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let var_addr = registers[0];
 
@@ -546,7 +505,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let data_addr = registers[0];
         let data_len = registers[1];
@@ -568,8 +527,7 @@ impl DebuggerSyscallHandler {
             Vec::new()
         };
 
-        self.return_data = Some((Pubkey::default(), data));
-
+        self.cpi_ctx.borrow_mut().return_data = Some((self.current_program_id, data));
         Ok(0)
     }
 
@@ -577,7 +535,7 @@ impl DebuggerSyscallHandler {
         &mut self,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
         let data_addr = registers[0];
         let data_len = registers[1];
@@ -590,8 +548,9 @@ impl DebuggerSyscallHandler {
         );
         compute.consume(cost)?;
 
-        let Some((program_id, return_data)) = &self.return_data else {
-            return Ok(0); // no return data
+        let ctx = self.cpi_ctx.borrow();
+        let Some((program_id, return_data)) = &ctx.return_data else {
+            return Ok(0);
         };
 
         if program_id_addr != 0 {
@@ -605,6 +564,173 @@ impl DebuggerSyscallHandler {
 
         Ok(return_data.len() as u64)
     }
+
+    fn sol_invoke_signed_c(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let (
+            instruction_addr,
+            account_infos_addr,
+            account_infos_len,
+            signers_seeds_addr,
+            signers_seeds_len,
+        ) = (
+            registers[0],
+            registers[1],
+            registers[2],
+            registers[3],
+            registers[4],
+        );
+
+        // Consume base CPI cost + per-byte data cost.
+        let data_len = memory.read_u64(instruction_addr + 32)?;
+        let per_byte_cost = data_len
+            .checked_div(self.costs.cpi_bytes_per_unit)
+            .unwrap_or(0);
+        let remaining_compute = {
+            let mut meter = compute.borrow_mut();
+            meter.consume(self.costs.invoke_units.saturating_add(per_byte_cost))?;
+            meter.get_remaining()
+        };
+
+        // Check CPI depth.
+        if !self.cpi_ctx.can_invoke() {
+            return Err(SbpfVmError::CpiDepthExceeded);
+        }
+
+        // Clear return data.
+        self.cpi_ctx.borrow_mut().return_data = None;
+
+        // Parse instruction.
+        let instruction = translate_c_instruction(memory, instruction_addr)?;
+
+        // Parse account infos.
+        let caller_accounts =
+            translate_account_infos(memory, account_infos_addr, account_infos_len)?;
+
+        // Parse signer seeds.
+        let derived_signers = translate_signers_c(
+            memory,
+            &self.current_program_id,
+            signers_seeds_addr,
+            signers_seeds_len,
+        )?;
+
+        // Sync caller's account state to AccountStore.
+        sync_accounts_from_caller(&self.cpi_ctx, memory, &caller_accounts)?;
+
+        println!(
+            "CPI: {} -> {} with {} accounts, {} data bytes",
+            self.current_program_id,
+            instruction.program_id,
+            instruction.accounts.len(),
+            instruction.data.len()
+        );
+        for signer in &derived_signers {
+            println!("  PDA signer: {}", signer);
+        }
+
+        // Execute the CPI.
+        execute_cpi(
+            &self.cpi_ctx,
+            &self.costs,
+            &self.clock,
+            &self.rent,
+            &self.epoch_schedule,
+            &instruction,
+            &caller_accounts,
+            &derived_signers,
+            memory,
+            &self.compute_meter,
+            remaining_compute,
+        )
+    }
+
+    fn sol_invoke_signed_rust(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let (
+            instruction_addr,
+            account_infos_addr,
+            account_infos_len,
+            signers_seeds_addr,
+            signers_seeds_len,
+        ) = (
+            registers[0],
+            registers[1],
+            registers[2],
+            registers[3],
+            registers[4],
+        );
+
+        // Consume base CPI cost + per-byte data cost.
+        let data_len = memory.read_u64(instruction_addr + 40)?;
+        let per_byte_cost = data_len
+            .checked_div(self.costs.cpi_bytes_per_unit)
+            .unwrap_or(0);
+        let remaining_compute = {
+            let mut meter = compute.borrow_mut();
+            meter.consume(self.costs.invoke_units.saturating_add(per_byte_cost))?;
+            meter.get_remaining()
+        };
+
+        // Check CPI depth.
+        if !self.cpi_ctx.can_invoke() {
+            return Err(SbpfVmError::CpiDepthExceeded);
+        }
+
+        // Clear return data.
+        self.cpi_ctx.borrow_mut().return_data = None;
+
+        // Parse instruction.
+        let instruction = translate_rust_instruction(memory, instruction_addr)?;
+
+        // Parse account infos.
+        let caller_accounts =
+            translate_account_infos(memory, account_infos_addr, account_infos_len)?;
+
+        // Parse signer seeds.
+        let derived_signers = translate_signers_rust(
+            memory,
+            &self.current_program_id,
+            signers_seeds_addr,
+            signers_seeds_len,
+        )?;
+
+        // Sync accounts.
+        sync_accounts_from_caller(&self.cpi_ctx, memory, &caller_accounts)?;
+
+        println!(
+            "CPI (Rust): {} -> {} with {} accounts",
+            self.current_program_id,
+            instruction.program_id,
+            instruction.accounts.len()
+        );
+        for signer in &derived_signers {
+            println!("  PDA signer: {}", signer);
+        }
+
+        // Execute the CPI.
+        execute_cpi(
+            &self.cpi_ctx,
+            &self.costs,
+            &self.clock,
+            &self.rent,
+            &self.epoch_schedule,
+            &instruction,
+            &caller_accounts,
+            &derived_signers,
+            memory,
+            &self.compute_meter,
+            remaining_compute,
+        )
+    }
 }
 
 impl SyscallHandler for DebuggerSyscallHandler {
@@ -613,49 +739,53 @@ impl SyscallHandler for DebuggerSyscallHandler {
         name: &str,
         registers: [u64; 5],
         memory: &mut Memory,
-        compute: &mut ComputeMeter,
+        compute: ComputeMeter,
     ) -> SbpfVmResult<u64> {
         match name {
             // Logging
-            "sol_log_" => self.sol_log(registers, memory, compute),
-            "sol_log_64_" => self.sol_log_64(registers, compute),
-            "sol_log_pubkey" => self.sol_log_pubkey(registers, memory, compute),
-            "sol_log_compute_units_" => self.sol_log_compute_units(compute),
-            "sol_remaining_compute_units" => self.sol_remaining_compute_units(compute),
+            "sol_log_" => self.sol_log(registers, memory, &compute),
+            "sol_log_64_" => self.sol_log_64(registers, &compute),
+            "sol_log_pubkey" => self.sol_log_pubkey(registers, memory, &compute),
+            "sol_log_compute_units_" => self.sol_log_compute_units(&compute),
+            "sol_remaining_compute_units" => self.sol_remaining_compute_units(&compute),
 
             // Memory
-            "sol_memcpy_" => self.sol_memcpy(registers, memory, compute),
-            "sol_memmove_" => self.sol_memmove(registers, memory, compute),
-            "sol_memset_" => self.sol_memset(registers, memory, compute),
-            "sol_memcmp_" => self.sol_memcmp(registers, memory, compute),
+            "sol_memcpy_" => self.sol_memcpy(registers, memory, &compute),
+            "sol_memmove_" => self.sol_memmove(registers, memory, &compute),
+            "sol_memset_" => self.sol_memset(registers, memory, &compute),
+            "sol_memcmp_" => self.sol_memcmp(registers, memory, &compute),
 
             // Abort
             "abort" => self.abort(),
-            "sol_panic_" => self.sol_panic(registers, memory, compute),
+            "sol_panic_" => self.sol_panic(registers, memory, &compute),
 
             // Hashing
-            "sol_sha256" => self.sol_sha256(registers, memory, compute),
-            "sol_keccak256" => self.sol_keccak256(registers, memory, compute),
-            "sol_blake3" => self.sol_blake3(registers, memory, compute),
+            "sol_sha256" => self.sol_sha256(registers, memory, &compute),
+            "sol_keccak256" => self.sol_keccak256(registers, memory, &compute),
+            "sol_blake3" => self.sol_blake3(registers, memory, &compute),
 
             // PDA
             "sol_create_program_address" => {
-                self.sol_create_program_address(registers, memory, compute)
+                self.sol_create_program_address(registers, memory, &compute)
             }
             "sol_try_find_program_address" => {
-                self.sol_try_find_program_address(registers, memory, compute)
+                self.sol_try_find_program_address(registers, memory, &compute)
             }
 
             // Sysvars
-            "sol_get_clock_sysvar" => self.sol_get_clock_sysvar(registers, memory, compute),
-            "sol_get_rent_sysvar" => self.sol_get_rent_sysvar(registers, memory, compute),
+            "sol_get_clock_sysvar" => self.sol_get_clock_sysvar(registers, memory, &compute),
+            "sol_get_rent_sysvar" => self.sol_get_rent_sysvar(registers, memory, &compute),
             "sol_get_epoch_schedule_sysvar" => {
-                self.sol_get_epoch_schedule_sysvar(registers, memory, compute)
+                self.sol_get_epoch_schedule_sysvar(registers, memory, &compute)
             }
 
             // Return Data
-            "sol_set_return_data" => self.sol_set_return_data(registers, memory, compute),
-            "sol_get_return_data" => self.sol_get_return_data(registers, memory, compute),
+            "sol_set_return_data" => self.sol_set_return_data(registers, memory, &compute),
+            "sol_get_return_data" => self.sol_get_return_data(registers, memory, &compute),
+
+            // CPI
+            "sol_invoke_signed_c" => self.sol_invoke_signed_c(registers, memory, compute),
+            "sol_invoke_signed_rust" => self.sol_invoke_signed_rust(registers, memory, compute),
 
             // Unknown syscall
             _ => {
@@ -669,28 +799,29 @@ impl SyscallHandler for DebuggerSyscallHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::cpi::CpiContext};
+
+    fn test_handler() -> DebuggerSyscallHandler {
+        DebuggerSyscallHandler::new(
+            CpiContext::new(),
+            Pubkey::new_unique(),
+            ComputeMeter::new(10_000),
+        )
+    }
 
     #[test]
     fn test_sol_log_64_cu_consumption() {
-        let mut handler = DebuggerSyscallHandler::default();
+        let mut handler = test_handler();
         let mut compute = ComputeMeter::new(1000);
-
-        let registers = [1, 2, 3, 4, 5];
-        handler.sol_log_64(registers, &mut compute).unwrap();
-
-        // should consume log_64_units (100)
-        assert_eq!(compute.consumed, 100);
+        handler.sol_log_64([1, 2, 3, 4, 5], &mut compute).unwrap();
+        assert_eq!(compute.borrow().consumed, 100);
     }
 
     #[test]
     fn test_sol_log_64_budget_exceeded() {
-        let mut handler = DebuggerSyscallHandler::default();
-        let mut compute = ComputeMeter::new(50); // less than 100
-
-        let registers = [1, 2, 3, 4, 5];
-        let result = handler.sol_log_64(registers, &mut compute);
-
+        let mut handler = test_handler();
+        let mut compute = ComputeMeter::new(50);
+        let result = handler.sol_log_64([1, 2, 3, 4, 5], &mut compute);
         assert!(matches!(
             result,
             Err(SbpfVmError::ComputeBudgetExceeded { .. })

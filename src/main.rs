@@ -78,12 +78,16 @@ pub struct DebugArgs {
     elf: Option<String>,
     #[arg(long, default_value = "")]
     input: String,
+    #[arg(long)]
+    program_id: Option<String>,
     #[arg(long, default_value = "1400000")]
     compute_unit_limit: u64,
     #[arg(long, default_value = "4096")]
     stack_size: usize,
     #[arg(long, default_value = "32768")]
     heap_size: usize,
+    #[arg(long, value_name = "PROGRAM_ID:PATH")]
+    program: Vec<String>,
 }
 
 fn main() -> Result<(), Error> {

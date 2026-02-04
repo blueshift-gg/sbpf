@@ -391,7 +391,12 @@ impl<H: SyscallHandler> Vm for SbpfVm<H> {
             self.registers[5],
         ];
         self.syscall_handler
-            .handle(name, registers, &mut self.memory, &mut self.compute_meter)
+            .handle(
+                name,
+                registers,
+                &mut self.memory,
+                self.compute_meter.clone(),
+            )
             .map_err(|e| ExecutionError::SyscallError(e.to_string()))
     }
 }
@@ -680,31 +685,31 @@ mod tests {
         vm.step().unwrap();
         assert_eq!(vm.pc, 1);
         assert_eq!(vm.registers[1], 10);
-        assert_eq!(vm.compute_meter.consumed, 1);
+        assert_eq!(vm.compute_meter.get_consumed(), 1);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 2);
         assert_eq!(vm.registers[1], 15);
-        assert_eq!(vm.compute_meter.consumed, 2);
+        assert_eq!(vm.compute_meter.get_consumed(), 2);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 3);
         assert_eq!(vm.registers[1], 45);
-        assert_eq!(vm.compute_meter.consumed, 3);
+        assert_eq!(vm.compute_meter.get_consumed(), 3);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 4);
         assert_eq!(vm.registers[1], 38);
-        assert_eq!(vm.compute_meter.consumed, 4);
+        assert_eq!(vm.compute_meter.get_consumed(), 4);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 4);
         assert_eq!(vm.registers[1], 38);
-        assert_eq!(vm.compute_meter.consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
         assert!(vm.halted);
     }
 
@@ -754,7 +759,7 @@ mod tests {
         assert!(vm.halted);
         assert_eq!(vm.registers[1], 38);
         assert_eq!(vm.pc, 4);
-        assert_eq!(vm.compute_meter.consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
     }
 
     #[test]
@@ -809,7 +814,7 @@ mod tests {
         assert_eq!(vm.registers[2], 10);
         assert_eq!(vm.registers[3], 20);
         assert_eq!(vm.registers[4], 30);
-        assert_eq!(vm.compute_meter.consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
     }
 
     #[test]

@@ -14,6 +14,8 @@ pub enum DebuggerError {
     Vm(#[from] sbpf_vm::errors::SbpfVmError),
     #[error("Assembler error: {0}")]
     Assembler(String),
+    #[error("Deserialize error: {0}")]
+    DeserializeError(String),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 }

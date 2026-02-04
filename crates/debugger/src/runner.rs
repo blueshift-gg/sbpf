@@ -1,32 +1,74 @@
-use std::{fs::File, io::Read, path::Path, path::PathBuf};
-
-use either::Either;
-use sbpf_assembler::{Assembler, AssemblerOption, DebugMode};
-use sbpf_common::{inst_param::Number, opcode::Opcode};
-use sbpf_disassembler::program::Program;
-use sbpf_vm::{
-    memory::Memory,
-    vm::{SbpfVm, SbpfVmConfig},
-};
-
-use crate::{
-    debugger::Debugger,
-    error::{DebuggerError, DebuggerResult},
-    parser::{LineMap, rodata_from_section},
-    syscalls::DebuggerSyscallHandler,
+use {
+    crate::{
+        cpi::CpiContext,
+        debugger::Debugger,
+        error::{DebuggerError, DebuggerResult},
+        parser::{LineMap, rodata_from_section},
+        syscalls::DebuggerSyscallHandler,
+    },
+    either::Either,
+    sbpf_assembler::{Assembler, AssemblerOption, DebugMode},
+    sbpf_common::{inst_param::Number, opcode::Opcode},
+    sbpf_disassembler::program::Program,
+    sbpf_vm::{
+        compute::ComputeMeter,
+        memory::Memory,
+        vm::{SbpfVm, SbpfVmConfig},
+    },
+    solana_sdk::pubkey::Pubkey,
+    std::{fs::File, io::Read, path::Path, path::PathBuf, str::FromStr},
 };
 
 pub struct DebuggerSession {
     pub debugger: Debugger<DebuggerSyscallHandler>,
+    pub cpi_ctx: CpiContext,
     pub line_map: Option<LineMap>,
     pub elf_bytes: Vec<u8>,
     pub elf_path: PathBuf,
+}
+
+impl DebuggerSession {
+    pub fn build_vm(
+        instructions: Vec<sbpf_common::instruction::Instruction>,
+        input: Vec<u8>,
+        rodata_bytes: Vec<u8>,
+        config: SbpfVmConfig,
+        program_id: Pubkey,
+        cpi_ctx: CpiContext,
+    ) -> SbpfVm<DebuggerSyscallHandler> {
+        let compute_meter = ComputeMeter::new(config.compute_unit_limit);
+        let handler = DebuggerSyscallHandler::new(cpi_ctx, program_id, compute_meter.clone());
+
+        let mut vm = SbpfVm::new_with_config(instructions, input, rodata_bytes, handler, config);
+        vm.compute_meter = compute_meter;
+        vm
+    }
+
+    pub fn load_program(&mut self, program_id: &str, elf_path: &str) -> DebuggerResult<()> {
+        let pubkey = Pubkey::from_str(program_id)
+            .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program ID: {}", e)))?;
+
+        let path = Path::new(elf_path);
+        if !path.exists() {
+            return Err(DebuggerError::InvalidInput(format!(
+                "Program file not found: {}",
+                elf_path
+            )));
+        }
+
+        self.cpi_ctx
+            .borrow_mut()
+            .program_registry
+            .load_from_file(pubkey, path)
+            .map_err(|e| DebuggerError::InvalidInput(format!("Failed to load program: {}", e)))
+    }
 }
 
 pub fn load_session_from_asm(
     asm_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
+    program_id: Option<&str>,
 ) -> DebuggerResult<DebuggerSession> {
     let asm_path = Path::new(asm_path);
     if !asm_path.exists() {
@@ -60,18 +102,19 @@ pub fn load_session_from_asm(
         .assemble(&source_code)
         .map_err(|errors| DebuggerError::Assembler(format!("{:?}", errors)))?;
 
-    load_session_from_bytes(bytecode, input, config, None)
+    load_session_from_bytes(bytecode, input, config, None, program_id)
 }
 
 pub fn load_session_from_elf(
     elf_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
+    program_id: Option<&str>,
 ) -> DebuggerResult<DebuggerSession> {
     let mut file = File::open(elf_path)?;
     let mut elf_bytes = Vec::new();
     file.read_to_end(&mut elf_bytes)?;
-    load_session_from_bytes(elf_bytes, input, config, Some(elf_path.into()))
+    load_session_from_bytes(elf_bytes, input, config, Some(elf_path.into()), program_id)
 }
 
 pub fn load_session_from_bytes(
@@ -79,6 +122,7 @@ pub fn load_session_from_bytes(
     input: Vec<u8>,
     config: SbpfVmConfig,
     elf_path: Option<PathBuf>,
+    program_id: Option<&str>,
 ) -> DebuggerResult<DebuggerSession> {
     let program = Program::from_bytes(&elf_bytes)?;
     let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
@@ -107,12 +151,20 @@ pub fn load_session_from_bytes(
         }
     }
 
-    let mut vm = SbpfVm::new_with_config(
+    let cpi_ctx = CpiContext::new();
+    let program_id = program_id
+        .map(Pubkey::from_str)
+        .transpose()
+        .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program ID: {}", e)))?
+        .unwrap_or_else(Pubkey::new_unique);
+
+    let mut vm = DebuggerSession::build_vm(
         instructions,
         input,
         rodata_bytes,
-        DebuggerSyscallHandler::default(),
         config,
+        program_id,
+        cpi_ctx.clone(),
     );
     vm.set_entrypoint(entrypoint as usize);
 
@@ -132,6 +184,7 @@ pub fn load_session_from_bytes(
     Ok(DebuggerSession {
         line_map: debugger.dwarf_line_map.clone(),
         debugger,
+        cpi_ctx,
         elf_bytes,
         elf_path: elf_path.unwrap_or_else(|| PathBuf::from("<memory>")),
     })

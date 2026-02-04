@@ -1,3 +1,4 @@
+pub mod cpi;
 pub mod debugger;
 pub mod error;
 pub mod execution_cost;

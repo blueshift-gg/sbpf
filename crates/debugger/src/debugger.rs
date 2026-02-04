@@ -1,11 +1,11 @@
-use std::collections::HashSet;
-
-use sbpf_common::instruction::Instruction;
-use sbpf_vm::{syscalls::SyscallHandler, vm::SbpfVm};
-
-use crate::{
-    error::DebuggerResult,
-    parser::{LineMap, RODataSymbol},
+use {
+    crate::{
+        error::DebuggerResult,
+        parser::{LineMap, RODataSymbol},
+    },
+    sbpf_common::instruction::Instruction,
+    sbpf_vm::{syscalls::SyscallHandler, vm::SbpfVm},
+    std::collections::HashSet,
 };
 
 #[derive(Debug)]
@@ -264,7 +264,7 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_compute_units(&self) -> u64 {
-        self.vm.compute_meter.consumed
+        self.vm.compute_meter.get_consumed()
     }
 
     pub fn get_instruction(&self) -> Option<&Instruction> {

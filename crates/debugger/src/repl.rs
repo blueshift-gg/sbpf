@@ -1,16 +1,18 @@
-use std::io::{self, Write};
+use {
+    crate::{
+        debugger::{DebugEvent, DebugMode},
+        runner::DebuggerSession,
+    },
+    std::io::{self, Write},
+};
 
-use sbpf_vm::syscalls::SyscallHandler;
-
-use crate::debugger::{DebugEvent, DebugMode, Debugger};
-
-pub struct Repl<H: SyscallHandler> {
-    pub dbg: Debugger<H>,
+pub struct Repl {
+    pub session: DebuggerSession,
 }
 
-impl<H: SyscallHandler> Repl<H> {
-    pub fn new(dbg: Debugger<H>) -> Self {
-        Self { dbg }
+impl Repl {
+    pub fn new(session: DebuggerSession) -> Self {
+        Self { session }
     }
 
     pub fn start(&mut self) {
@@ -31,7 +33,7 @@ impl<H: SyscallHandler> Repl<H> {
                 cmd if cmd.starts_with("break ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
                         if let Ok(line) = arg.parse::<usize>() {
-                            match self.dbg.set_breakpoint_at_line(line) {
+                            match self.session.debugger.set_breakpoint_at_line(line) {
                                 Ok(()) => println!("Breakpoint set at line {}", line),
                                 Err(e) => println!("Error: {}", e),
                             }
@@ -43,7 +45,7 @@ impl<H: SyscallHandler> Repl<H> {
                 cmd if cmd.starts_with("delete ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
                         if let Ok(line) = arg.parse::<usize>() {
-                            match self.dbg.remove_breakpoint_at_line(line) {
+                            match self.session.debugger.remove_breakpoint_at_line(line) {
                                 Ok(()) => println!("Breakpoint removed from line: {}", line),
                                 Err(e) => println!("Error: {}", e),
                             }
@@ -53,10 +55,10 @@ impl<H: SyscallHandler> Repl<H> {
                     }
                 }
                 "info breakpoints" | "info b" => {
-                    println!("{}", self.dbg.get_breakpoints_info());
+                    println!("{}", self.session.debugger.get_breakpoints_info());
                 }
                 "info line" => {
-                    if let Some(line) = self.dbg.get_current_line() {
+                    if let Some(line) = self.session.debugger.get_current_line() {
                         println!("Current line: {}", line);
                     } else {
                         println!("No line information available for current PC");
@@ -64,7 +66,7 @@ impl<H: SyscallHandler> Repl<H> {
                 }
                 "quit" => break,
                 "regs" => {
-                    let regs = self.dbg.get_registers();
+                    let regs = self.session.debugger.get_registers();
                     println!("+------------+--------------------+");
                     println!("| Register   | Value              |");
                     println!("+------------+--------------------+");
@@ -80,7 +82,7 @@ impl<H: SyscallHandler> Repl<H> {
                 cmd if cmd.starts_with("reg ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
                         if let Ok(idx) = arg.parse::<usize>() {
-                            if let Some(val) = self.dbg.get_register(idx) {
+                            if let Some(val) = self.session.debugger.get_register(idx) {
                                 println!("+------------+--------------------+");
                                 println!("| Register   | Value              |");
                                 println!("+------------+--------------------+");
@@ -113,7 +115,8 @@ impl<H: SyscallHandler> Repl<H> {
                                 val_str.parse::<u64>()
                             };
                             match value {
-                                Ok(val) => match self.dbg.set_register_value(idx, val) {
+                                Ok(val) => match self.session.debugger.set_register_value(idx, val)
+                                {
                                     Ok(()) => println!("Set r{} to 0x{:08x} ({})", idx, val, val),
                                     Err(e) => println!("{}", e),
                                 },
@@ -129,7 +132,7 @@ impl<H: SyscallHandler> Repl<H> {
                     }
                 }
                 "lines" => {
-                    if let Some(ref dwarf_map) = self.dbg.dwarf_line_map {
+                    if let Some(ref dwarf_map) = self.session.debugger.dwarf_line_map {
                         println!("+----------+--------------------------+");
                         println!("| Line     | Instruction Addresses    |");
                         println!("+----------+--------------------------+");
@@ -149,8 +152,8 @@ impl<H: SyscallHandler> Repl<H> {
                     }
                 }
                 "compute" => {
-                    let cu_used = self.dbg.get_compute_units();
-                    let cu_total = self.dbg.initial_compute_budget;
+                    let cu_used = self.session.debugger.get_compute_units();
+                    let cu_total = self.session.debugger.initial_compute_budget;
                     println!("Program consumed {} of {} compute units", cu_used, cu_total);
                 }
                 "help" => {
@@ -168,6 +171,7 @@ impl<H: SyscallHandler> Repl<H> {
                     println!("  compute                      - Show compute unit information");
                     println!("  help                         - Show this help");
                     println!("  quit                         - Exit debugger");
+                    println!("  sbpf debug --elf main.so --program PROGRAM_ID:path/to/callee.so");
                 }
                 _ => println!("Unknown command. Type 'help'."),
             }
@@ -175,8 +179,8 @@ impl<H: SyscallHandler> Repl<H> {
     }
 
     fn run_and_display(&mut self, mode: DebugMode) {
-        self.dbg.set_debug_mode(mode);
-        match self.dbg.run() {
+        self.session.debugger.set_debug_mode(mode);
+        match self.session.debugger.run() {
             Ok(event) => match event {
                 DebugEvent::Step(pc, line) => {
                     if let Some(line_num) = line {

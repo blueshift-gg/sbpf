@@ -1,10 +1,10 @@
-use std::{borrow::Cow, collections::HashMap, path::PathBuf};
-
-use gimli::{EndianSlice, RunTimeEndian, SectionId};
-use object::{Object, ObjectSection};
-
-use crate::error::{DebuggerError, DebuggerResult};
-use sbpf_vm::memory::Memory;
+use {
+    crate::error::{DebuggerError, DebuggerResult},
+    gimli::{EndianSlice, RunTimeEndian, SectionId},
+    object::{Object, ObjectSection},
+    sbpf_vm::memory::Memory,
+    std::{borrow::Cow, collections::HashMap, path::PathBuf},
+};
 
 #[derive(Debug, Clone)]
 pub struct RODataSymbol {
