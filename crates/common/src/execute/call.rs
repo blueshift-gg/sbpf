@@ -28,7 +28,8 @@ pub fn execute_call_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionR
                 10,
                 saved_frame_pointer.wrapping_add(vm.get_stack_frame_size()),
             );
-            vm.set_pc(*target as usize);
+            let target_pc = vm.get_pc() + 1 + *target as usize;
+            vm.set_pc(target_pc);
             Ok(())
         }
         _ => Err(ExecutionError::InvalidOperand),
@@ -129,7 +130,7 @@ mod tests {
 
         execute_call_immediate(&mut vm, &inst).unwrap();
 
-        assert_eq!(vm.pc, 10); // jumped to target
+        assert_eq!(vm.pc, 11); // jumped to target
         assert_eq!(vm.call_stack.len(), 1);
         assert_eq!(vm.call_stack[0].0, 1);
         assert_eq!(vm.call_stack[0].1[0], 100); // r6

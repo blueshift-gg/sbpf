@@ -37,11 +37,23 @@ pub struct Debugger<H: SyscallHandler> {
     pub at_breakpoint: bool,
     pub last_breakpoint_pc: Option<u64>,
     pub initial_compute_budget: u64,
+    pub instruction_offsets: Vec<u64>,
 }
 
 impl<H: SyscallHandler> Debugger<H> {
     pub fn new(vm: SbpfVm<H>) -> Self {
         let initial_compute_budget = vm.config.compute_unit_limit;
+
+        let instruction_offsets: Vec<u64> = vm
+            .program
+            .iter()
+            .scan(0u64, |offset, inst| {
+                let current = *offset;
+                *offset += inst.get_size();
+                Some(current)
+            })
+            .collect();
+
         Self {
             vm,
             breakpoints: HashSet::new(),
@@ -55,6 +67,7 @@ impl<H: SyscallHandler> Debugger<H> {
             at_breakpoint: false,
             last_breakpoint_pc: None,
             initial_compute_budget,
+            instruction_offsets,
         }
     }
 
@@ -234,14 +247,17 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_pc(&self) -> u64 {
-        let mut offset = 0u64;
-        for (idx, inst) in self.vm.program.iter().enumerate() {
-            if idx == self.vm.pc {
-                return offset;
-            }
-            offset += inst.get_size();
-        }
-        self.vm.pc as u64
+        self.instruction_offsets
+            .get(self.vm.pc)
+            .copied()
+            .unwrap_or(self.vm.pc as u64)
+    }
+
+    fn instruction_index_to_byte_offset(&self, idx: usize) -> u64 {
+        self.instruction_offsets
+            .get(idx)
+            .copied()
+            .unwrap_or(idx as u64)
     }
 
     pub fn get_registers(&self) -> &[u64] {
@@ -315,7 +331,7 @@ impl<H: SyscallHandler> Debugger<H> {
 
         // Call stack frames
         for (i, frame) in self.vm.call_stack.iter().rev().enumerate() {
-            let pc = frame.return_pc as u64;
+            let pc = self.instruction_index_to_byte_offset(frame.return_pc);
             frames.push((i + 1, pc, self.get_source_location(pc)));
         }
 
@@ -334,15 +350,17 @@ impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
         self.run_to_json()
     }
 
-    fn set_breakpoint(&mut self, _file: String, line: usize) -> Value {
+    fn set_breakpoint(&mut self, file: String, line: usize) -> Value {
         match self.set_breakpoint_at_line(line) {
             Ok(()) => json!({
                 "type": "setBreakpoint",
+                "file": file,
                 "line": line,
                 "verified": true
             }),
             Err(e) => json!({
                 "type": "setBreakpoint",
+                "file": file,
                 "line": line,
                 "verified": false,
                 "error": e
@@ -350,15 +368,17 @@ impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
         }
     }
 
-    fn remove_breakpoint(&mut self, _file: String, line: usize) -> Value {
+    fn remove_breakpoint(&mut self, file: String, line: usize) -> Value {
         match self.remove_breakpoint_at_line(line) {
             Ok(()) => json!({
                 "type": "removeBreakpoint",
+                "file": file,
                 "line": line,
                 "success": true
             }),
             Err(e) => json!({
                 "type": "removeBreakpoint",
+                "file": file,
                 "line": line,
                 "success": false,
                 "error": e

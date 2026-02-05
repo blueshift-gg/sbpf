@@ -171,7 +171,6 @@ impl Repl {
                     println!("  compute                      - Show compute unit information");
                     println!("  help                         - Show this help");
                     println!("  quit                         - Exit debugger");
-                    println!("  sbpf debug --elf main.so --program PROGRAM_ID:path/to/callee.so");
                 }
                 _ => println!("Unknown command. Type 'help'."),
             }

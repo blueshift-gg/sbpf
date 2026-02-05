@@ -32,7 +32,12 @@ pub fn generate_debug_sections(
     let mut dwarf = generate_dwarf_sections(data, text_offset, code_start, code_end);
 
     let calc_name_offset = |names: &Vec<String>| -> u32 {
-        (names.iter().map(|n| n.len() + 1).sum::<usize>() + 1) as u32
+        (names
+            .iter()
+            .filter(|n| !n.is_empty())
+            .map(|n| n.len() + 1)
+            .sum::<usize>()
+            + 1) as u32
     };
 
     let mut sections = Vec::new();

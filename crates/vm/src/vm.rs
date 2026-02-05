@@ -832,7 +832,7 @@ mod tests {
                 None,
                 None,
                 None,
-                Some(Either::Right(Number::Int(3))),
+                Some(Either::Right(Number::Int(2))),
             ),
             make_test_instruction(
                 Opcode::Lddw,
