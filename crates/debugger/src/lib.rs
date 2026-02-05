@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod cpi;
 pub mod debugger;
 pub mod error;

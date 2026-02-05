@@ -1,5 +1,7 @@
-use crate::errors::SbpfVmError;
-use std::{cell::RefCell, rc::Rc};
+use {
+    crate::errors::SbpfVmError,
+    std::{cell::RefCell, rc::Rc},
+};
 
 /// Compute meter for tracking and consuming compute units
 #[derive(Debug, Clone)]

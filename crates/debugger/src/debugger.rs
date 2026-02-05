@@ -1,10 +1,12 @@
 use {
     crate::{
+        adapter::DebuggerInterface,
         error::DebuggerResult,
         parser::{LineMap, RODataSymbol},
     },
     sbpf_common::instruction::Instruction,
     sbpf_vm::{syscalls::SyscallHandler, vm::SbpfVm},
+    serde_json::{Value, json},
     std::collections::HashSet,
 };
 
@@ -318,5 +320,192 @@ impl<H: SyscallHandler> Debugger<H> {
         }
 
         frames
+    }
+}
+
+impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
+    fn step(&mut self) -> Value {
+        self.set_debug_mode(DebugMode::Step);
+        self.run_to_json()
+    }
+
+    fn r#continue(&mut self) -> Value {
+        self.set_debug_mode(DebugMode::Continue);
+        self.run_to_json()
+    }
+
+    fn set_breakpoint(&mut self, _file: String, line: usize) -> Value {
+        match self.set_breakpoint_at_line(line) {
+            Ok(()) => json!({
+                "type": "setBreakpoint",
+                "line": line,
+                "verified": true
+            }),
+            Err(e) => json!({
+                "type": "setBreakpoint",
+                "line": line,
+                "verified": false,
+                "error": e
+            }),
+        }
+    }
+
+    fn remove_breakpoint(&mut self, _file: String, line: usize) -> Value {
+        match self.remove_breakpoint_at_line(line) {
+            Ok(()) => json!({
+                "type": "removeBreakpoint",
+                "line": line,
+                "success": true
+            }),
+            Err(e) => json!({
+                "type": "removeBreakpoint",
+                "line": line,
+                "success": false,
+                "error": e
+            }),
+        }
+    }
+
+    fn get_stack_frames(&self) -> Value {
+        let frames: Vec<Value> = self
+            .get_stack_frames()
+            .iter()
+            .map(|(index, pc, loc)| {
+                let (name, file, line, column) = match loc {
+                    Some((f, l, c)) => (f.to_string(), f.to_string(), *l, *c),
+                    None => ("?".to_string(), "?".to_string(), 0, 0),
+                };
+                json!({
+                    "index": index,
+                    "name": name,
+                    "file": file,
+                    "line": line,
+                    "column": column,
+                    "instruction": pc
+                })
+            })
+            .collect();
+        json!({ "frames": frames })
+    }
+
+    fn get_registers(&self) -> Value {
+        let regs: Vec<Value> = self
+            .get_registers()
+            .iter()
+            .enumerate()
+            .map(|(i, &value)| {
+                json!({
+                    "name": format!("r{}", i),
+                    "value": format!("0x{:016x}", value),
+                    "type": "u64"
+                })
+            })
+            .collect();
+        json!({ "registers": regs })
+    }
+
+    fn get_memory(&self, address: u64, size: usize) -> Value {
+        match self.get_memory(address, size) {
+            Some(data) => json!({
+                "address": address,
+                "size": size,
+                "data": data
+            }),
+            None => json!({
+                "address": address,
+                "size": size,
+                "data": []
+            }),
+        }
+    }
+
+    fn set_register(&mut self, index: usize, value: u64) -> Value {
+        match self.set_register_value(index, value) {
+            Ok(()) => json!({
+                "type": "setRegister",
+                "index": index,
+                "value": value,
+                "success": true
+            }),
+            Err(e) => json!({
+                "type": "setRegister",
+                "index": index,
+                "value": value,
+                "success": false,
+                "error": e
+            }),
+        }
+    }
+
+    fn get_rodata(&self) -> Value {
+        match self.get_rodata() {
+            Some(symbols) => {
+                let arr: Vec<Value> = symbols
+                    .iter()
+                    .map(|sym| {
+                        json!({
+                            "name": sym.name,
+                            "address": format!("0x{:016x}", sym.address),
+                            "value": sym.content
+                        })
+                    })
+                    .collect();
+                json!({ "rodata": arr })
+            }
+            None => json!({ "rodata": [] }),
+        }
+    }
+
+    fn clear_breakpoints(&mut self, _file: String) -> Value {
+        self.clear_breakpoints();
+        json!({"result": "ok"})
+    }
+
+    fn quit(&mut self) -> Value {
+        json!({ "type": "quit" })
+    }
+
+    fn get_compute_units(&self) -> Value {
+        let used = self.get_compute_units();
+        let total = self.initial_compute_budget;
+        let remaining = total.saturating_sub(used);
+        json!({
+            "total": total,
+            "used": used,
+            "remaining": remaining
+        })
+    }
+
+    fn run_to_json(&mut self) -> Value {
+        match self.run() {
+            Ok(event) => match event {
+                DebugEvent::Step(pc, line) => json!({
+                    "type": "step",
+                    "pc": pc,
+                    "line": line
+                }),
+                DebugEvent::Breakpoint(pc, line) => json!({
+                    "type": "breakpoint",
+                    "pc": pc,
+                    "line": line
+                }),
+                DebugEvent::Exit(code) => {
+                    let cu = DebuggerInterface::get_compute_units(self);
+                    json!({
+                        "type": "exit",
+                        "code": code,
+                        "compute_units": cu
+                    })
+                }
+                DebugEvent::Error(msg) => json!({
+                    "type": "error",
+                    "message": msg
+                }),
+            },
+            Err(e) => json!({
+                "type": "error",
+                "message": format!("{:?}", e)
+            }),
+        }
     }
 }

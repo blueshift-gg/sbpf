@@ -8,6 +8,7 @@ license.workspace = true
 anyhow = { workspace = true }
 either = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 gimli = { workspace = true }
 object = { workspace = true }

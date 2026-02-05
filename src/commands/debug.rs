@@ -2,6 +2,7 @@ use {
     crate::DebugArgs,
     anyhow::Result,
     sbpf_debugger::{
+        adapter::run_adapter_loop,
         repl::Repl,
         runner::{load_session_from_asm, load_session_from_elf, parse_input},
     },
@@ -35,11 +36,14 @@ pub fn debug(args: &DebugArgs) -> Result<()> {
     for program_spec in &args.program {
         let (program_id, path) = parse_program_spec(program_spec)?;
         session.load_program(&program_id, &path)?;
-        println!("Loaded program {} from {}", program_id, path);
     }
 
-    let mut repl = Repl::new(session);
-    repl.start();
+    if args.adapter {
+        run_adapter_loop(&mut session.debugger);
+    } else {
+        let mut repl = Repl::new(session);
+        repl.start();
+    }
 
     Ok(())
 }

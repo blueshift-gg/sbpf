@@ -16,7 +16,12 @@ use {
         vm::{SbpfVm, SbpfVmConfig},
     },
     solana_sdk::pubkey::Pubkey,
-    std::{fs::File, io::Read, path::Path, path::PathBuf, str::FromStr},
+    std::{
+        fs::File,
+        io::Read,
+        path::{Path, PathBuf},
+        str::FromStr,
+    },
 };
 
 pub struct DebuggerSession {

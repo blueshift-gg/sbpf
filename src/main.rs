@@ -72,22 +72,24 @@ struct DisassembleArgs {
 
 #[derive(Args)]
 pub struct DebugArgs {
-    #[arg(long, conflicts_with = "elf")]
+    #[arg(long, conflicts_with = "elf", help = "Path to assembly file")]
     asm: Option<String>,
-    #[arg(long, conflicts_with = "asm")]
+    #[arg(long, conflicts_with = "asm", help = "Path to elf file")]
     elf: Option<String>,
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value = "", help = "Input hex")]
     input: String,
-    #[arg(long)]
+    #[arg(long, help = "Program ID")]
     program_id: Option<String>,
-    #[arg(long, default_value = "1400000")]
+    #[arg(long, default_value = "1400000", help = "Compute unit limit")]
     compute_unit_limit: u64,
-    #[arg(long, default_value = "4096")]
+    #[arg(long, default_value = "4096", help = "Stack size")]
     stack_size: usize,
-    #[arg(long, default_value = "32768")]
+    #[arg(long, default_value = "32768", help = "Heap size")]
     heap_size: usize,
-    #[arg(long, value_name = "PROGRAM_ID:PATH")]
+    #[arg(long, value_name = "PROGRAM_ID:PATH", help = "Additional program elfs")]
     program: Vec<String>,
+    #[arg(long, help = "Run in adapter mode")]
+    adapter: bool,
 }
 
 fn main() -> Result<(), Error> {
