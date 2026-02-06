@@ -4,22 +4,20 @@ use {
             CallerAccountInfo, CpiAccountMeta, CpiContext, CpiInstruction,
             serialization::{deserialize_input, serialize_input},
         },
-        execution_cost::ExecutionCost,
         syscalls::DebuggerSyscallHandler,
     },
     either::Either,
     sbpf_common::{inst_param::Number, opcode::Opcode},
     sbpf_disassembler::program::Program,
     sbpf_vm::{
-        compute::ComputeMeter,
         errors::{SbpfVmError, SbpfVmResult},
         memory::Memory,
         vm::{SbpfVm, SbpfVmConfig},
     },
-    solana_sdk::{
-        account::Account, clock::Clock, epoch_schedule::EpochSchedule, pubkey::Pubkey, rent::Rent,
-    },
+    solana_sdk::{account::Account, pubkey::Pubkey},
 };
+
+const MAX_PERMITTED_DATA_INCREASE: usize = 10 * 1024;
 
 /// Sync account state from caller's memory to AccountStore
 pub fn sync_accounts_from_caller(
@@ -83,16 +81,30 @@ pub fn sync_accounts_to_caller(
             // Write updated lamports
             memory.write_u64(acct.lamports_addr, state.lamports)?;
 
-            // Write updated data (if size matches)
-            if state.data.len() == acct.data_len as usize {
-                memory.write_bytes(acct.data_addr, &state.data)?;
-            } else {
-                eprintln!(
-                    "CPI warning: data length mismatch for {} (caller {}, updated {})",
+            // Write updated owner
+            if acct.owner_addr != 0 {
+                memory.write_bytes(acct.owner_addr, state.owner.as_ref())?;
+            }
+
+            // Realloc check: new data must fit within original_len + 10KB.
+            let original_len = ctx.accounts.get_original_data_len(&acct.pubkey);
+            let max_allowed = original_len + MAX_PERMITTED_DATA_INCREASE;
+            if state.data.len() > max_allowed {
+                return Err(SbpfVmError::SyscallError(format!(
+                    "Sccount {} data grew from {} to {} (max {})",
                     acct.pubkey,
-                    acct.data_len,
-                    state.data.len()
-                );
+                    original_len,
+                    state.data.len(),
+                    max_allowed
+                )));
+            }
+
+            // Write data bytes.
+            memory.write_bytes(acct.data_addr, &state.data)?;
+
+            // Update data_len in caller's memory.
+            if state.data.len() != acct.data_len as usize {
+                memory.write_u64(acct.data_len_addr, state.data.len() as u64)?;
             }
         }
     }
@@ -103,17 +115,15 @@ pub fn sync_accounts_to_caller(
 /// Execute a CPI call
 pub fn execute_cpi(
     cpi_ctx: &CpiContext,
-    costs: &ExecutionCost,
-    clock: &Clock,
-    rent: &Rent,
-    epoch_schedule: &EpochSchedule,
     instruction: &CpiInstruction,
     caller_accounts: &[CallerAccountInfo],
     derived_signers: &[Pubkey],
     caller_memory: &mut Memory,
-    compute: &ComputeMeter,
     remaining_compute: u64,
 ) -> SbpfVmResult<u64> {
+    // Sync caller's account state into AccountStore before execution.
+    sync_accounts_from_caller(cpi_ctx, caller_memory, caller_accounts)?;
+
     // Get callee program ELF
     let callee_elf = {
         let ctx = cpi_ctx.borrow();
@@ -175,6 +185,8 @@ pub fn execute_cpi(
 
         serialization_accounts.push((meta.pubkey, account, is_signer, meta.is_writable));
     }
+
+    let compute = ctx.compute_meter.clone();
     drop(ctx);
 
     // Serialize input for callee
@@ -187,15 +199,10 @@ pub fn execute_cpi(
     // Increment stack height
     cpi_ctx.push();
 
-    // Create callee syscall handler (shares CpiContext)
+    // Create callee syscall handler
     let callee_handler = DebuggerSyscallHandler {
         cpi_ctx: cpi_ctx.clone(),
         current_program_id: instruction.program_id,
-        costs: costs.clone(),
-        compute_meter: compute.clone(),
-        clock: clock.clone(),
-        rent: rent.clone(),
-        epoch_schedule: epoch_schedule.clone(),
     };
 
     // Create callee VM
@@ -213,7 +220,7 @@ pub fn execute_cpi(
         callee_handler,
         config,
     );
-    callee_vm.compute_meter = compute.clone();
+    callee_vm.compute_meter = compute;
     callee_vm.set_entrypoint(entrypoint as usize);
 
     println!("  Executing callee at entrypoint {}", entrypoint);

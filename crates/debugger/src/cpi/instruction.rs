@@ -10,6 +10,7 @@ const MAX_SIGNERS: usize = 16;
 const MAX_SEEDS: usize = 16;
 const MAX_SEED_LEN: usize = 32;
 const STABLE_SLICE_SIZE: u64 = 16;
+const MAX_CPI_ACCOUNTS: u64 = 256;
 
 /// Parsed CPI instruction
 #[derive(Debug, Clone)]
@@ -34,8 +35,11 @@ pub struct CallerAccountInfo {
     pub lamports_addr: u64,
     pub data_addr: u64,
     pub data_len: u64,
+    pub data_len_addr: u64,
     pub owner: Pubkey,
+    pub owner_addr: u64,
     pub rent_epoch: u64,
+    pub is_signer: bool,
     pub is_executable: bool,
     pub is_writable: bool,
 }
@@ -50,6 +54,13 @@ pub fn translate_c_instruction(
     let accounts_len = memory.read_u64(instruction_addr + 16)?;
     let data_ptr = memory.read_u64(instruction_addr + 24)?;
     let data_len = memory.read_u64(instruction_addr + 32)?;
+
+    if accounts_len > MAX_CPI_ACCOUNTS {
+        return Err(SbpfVmError::SyscallError(format!(
+            "Too many CPI accounts: {} (max {})",
+            accounts_len, MAX_CPI_ACCOUNTS
+        )));
+    }
 
     let program_id = read_pubkey(memory, program_id_ptr)?;
 
@@ -87,6 +98,13 @@ pub fn translate_rust_instruction(
     let data_ptr = memory.read_u64(instruction_addr + 24)?;
     let data_len = memory.read_u64(instruction_addr + 40)?;
 
+    if accounts_len > MAX_CPI_ACCOUNTS {
+        return Err(SbpfVmError::SyscallError(format!(
+            "Too many CPI accounts: {} (max {})",
+            accounts_len, MAX_CPI_ACCOUNTS
+        )));
+    }
+
     let program_id = read_pubkey(memory, instruction_addr + 48)?;
 
     let mut accounts = Vec::with_capacity(accounts_len as usize);
@@ -118,6 +136,13 @@ pub fn translate_account_infos(
     account_infos_addr: u64,
     account_infos_len: u64,
 ) -> SbpfVmResult<Vec<CallerAccountInfo>> {
+    if account_infos_len > MAX_CPI_ACCOUNTS {
+        return Err(SbpfVmError::SyscallError(format!(
+            "Too many account infos: {} (max {})",
+            account_infos_len, MAX_CPI_ACCOUNTS
+        )));
+    }
+
     let mut results = Vec::with_capacity(account_infos_len as usize);
 
     for i in 0..account_infos_len {
@@ -129,6 +154,7 @@ pub fn translate_account_infos(
         let data_ptr = memory.read_u64(info_addr + 24)?;
         let owner_ptr = memory.read_u64(info_addr + 32)?;
         let rent_epoch = memory.read_u64(info_addr + 40)?;
+        let is_signer = memory.read_u8(info_addr + 48)? != 0;
         let is_writable = memory.read_u8(info_addr + 49)? != 0;
         let is_executable = memory.read_u8(info_addr + 50)? != 0;
 
@@ -140,8 +166,11 @@ pub fn translate_account_infos(
             lamports_addr: lamports_ptr,
             data_addr: data_ptr,
             data_len,
+            data_len_addr: info_addr + 16,
             owner,
+            owner_addr: owner_ptr,
             rent_epoch,
+            is_signer,
             is_executable,
             is_writable,
         });

@@ -1,11 +1,7 @@
 use {
-    crate::{
-        cpi::{
-            CpiContext, execute_cpi, sync_accounts_from_caller, translate_account_infos,
-            translate_c_instruction, translate_rust_instruction, translate_signers_c,
-            translate_signers_rust,
-        },
-        execution_cost::ExecutionCost,
+    crate::cpi::{
+        CpiContext, execute_cpi, translate_account_infos, translate_c_instruction,
+        translate_rust_instruction, translate_signers_c, translate_signers_rust,
     },
     blake3::Hasher as Blake3Hasher,
     sbpf_vm::{
@@ -16,7 +12,7 @@ use {
     },
     sha2::{Digest, Sha256},
     sha3::Keccak256,
-    solana_sdk::{clock::Clock, epoch_schedule::EpochSchedule, pubkey::Pubkey, rent::Rent},
+    solana_sdk::pubkey::Pubkey,
     std::mem::size_of,
 };
 
@@ -29,44 +25,13 @@ const MAX_RETURN_DATA: usize = 1024;
 pub struct DebuggerSyscallHandler {
     pub cpi_ctx: CpiContext,
     pub current_program_id: Pubkey,
-    pub costs: ExecutionCost,
-    pub compute_meter: ComputeMeter,
-    pub clock: Clock,
-    pub rent: Rent,
-    pub epoch_schedule: EpochSchedule,
 }
 
 impl DebuggerSyscallHandler {
-    pub fn new(
-        cpi_ctx: CpiContext,
-        current_program_id: Pubkey,
-        compute_meter: ComputeMeter,
-    ) -> Self {
+    pub fn new(cpi_ctx: CpiContext, current_program_id: Pubkey) -> Self {
         Self {
             cpi_ctx,
             current_program_id,
-            costs: ExecutionCost::default(),
-            compute_meter,
-            clock: Clock::default(),
-            rent: Rent::default(),
-            epoch_schedule: EpochSchedule::default(),
-        }
-    }
-
-    pub fn with_costs(
-        cpi_ctx: CpiContext,
-        current_program_id: Pubkey,
-        costs: ExecutionCost,
-        compute_meter: ComputeMeter,
-    ) -> Self {
-        Self {
-            cpi_ctx,
-            current_program_id,
-            costs,
-            compute_meter,
-            clock: Clock::default(),
-            rent: Rent::default(),
-            epoch_schedule: EpochSchedule::default(),
         }
     }
 
@@ -83,7 +48,7 @@ impl DebuggerSyscallHandler {
         let msg_ptr = registers[0];
         let msg_len = registers[1];
 
-        let cost = self.costs.syscall_base_cost.max(msg_len);
+        let cost = self.cpi_ctx.borrow().costs.syscall_base_cost.max(msg_len);
         compute.consume(cost)?;
 
         let msg_bytes = memory.read_bytes(msg_ptr, msg_len as usize)?;
@@ -93,7 +58,7 @@ impl DebuggerSyscallHandler {
     }
 
     fn sol_log_64(&mut self, registers: [u64; 5], compute: &ComputeMeter) -> SbpfVmResult<u64> {
-        let cost = self.costs.log_64_units;
+        let cost = self.cpi_ctx.borrow().costs.log_64_units;
         compute.consume(cost)?;
         println!(
             "Program log: {:#x}, {:#x}, {:#x}, {:#x}, {:#x}",
@@ -108,7 +73,7 @@ impl DebuggerSyscallHandler {
         memory: &Memory,
         compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let cost = self.costs.log_pubkey_units;
+        let cost = self.cpi_ctx.borrow().costs.log_pubkey_units;
         compute.consume(cost)?;
 
         let pubkey_ptr = registers[0];
@@ -119,7 +84,7 @@ impl DebuggerSyscallHandler {
     }
 
     fn sol_log_compute_units(&mut self, compute: &ComputeMeter) -> SbpfVmResult<u64> {
-        let cost = self.costs.syscall_base_cost;
+        let cost = self.cpi_ctx.borrow().costs.syscall_base_cost;
         compute.consume(cost)?;
 
         let remaining = compute.get_remaining();
@@ -128,16 +93,19 @@ impl DebuggerSyscallHandler {
     }
 
     fn sol_remaining_compute_units(&mut self, compute: &ComputeMeter) -> SbpfVmResult<u64> {
-        let cost = self.costs.syscall_base_cost;
+        let cost = self.cpi_ctx.borrow().costs.syscall_base_cost;
         compute.consume(cost)?;
         Ok(compute.get_remaining())
     }
 
     fn mem_op_consume(&self, n: u64, compute: &ComputeMeter) -> SbpfVmResult<()> {
-        let cost = self.costs.mem_op_base_cost.max(
-            n.checked_div(self.costs.cpi_bytes_per_unit)
-                .unwrap_or(u64::MAX),
-        );
+        let cost = {
+            let ctx = self.cpi_ctx.borrow();
+            ctx.costs.mem_op_base_cost.max(
+                n.checked_div(ctx.costs.cpi_bytes_per_unit)
+                    .unwrap_or(u64::MAX),
+            )
+        };
         compute.consume(cost)
     }
 
@@ -284,18 +252,24 @@ impl DebuggerSyscallHandler {
         vals_len: u64,
         result_addr: u64,
     ) -> SbpfVmResult<u64> {
-        if vals_len > self.costs.sha256_max_slices {
-            return Err(SbpfVmError::TooManySlices);
-        }
-        compute.consume(self.costs.sha256_base_cost)?;
+        let (sha256_base_cost, sha256_byte_cost, mem_op_base_cost) = {
+            let ctx = self.cpi_ctx.borrow();
+            if vals_len > ctx.costs.sha256_max_slices {
+                return Err(SbpfVmError::TooManySlices);
+            }
+            (
+                ctx.costs.sha256_base_cost,
+                ctx.costs.sha256_byte_cost,
+                ctx.costs.mem_op_base_cost,
+            )
+        };
+
+        compute.consume(sha256_base_cost)?;
 
         let mut hasher = H::new();
         if vals_len > 0 {
             for (ptr, len) in self.read_slices(memory, vals_addr, vals_len)? {
-                let cost = self
-                    .costs
-                    .mem_op_base_cost
-                    .max(self.costs.sha256_byte_cost.saturating_mul(len / 2));
+                let cost = mem_op_base_cost.max(sha256_byte_cost.saturating_mul(len / 2));
                 compute.consume(cost)?;
                 hasher.update(memory.read_bytes(ptr, len as usize)?);
             }
@@ -333,18 +307,24 @@ impl DebuggerSyscallHandler {
         let vals_len = registers[1];
         let result_addr = registers[2];
 
-        if vals_len > self.costs.sha256_max_slices {
-            return Err(SbpfVmError::TooManySlices);
-        }
-        compute.consume(self.costs.sha256_base_cost)?;
+        let (sha256_base_cost, sha256_byte_cost, mem_op_base_cost) = {
+            let ctx = self.cpi_ctx.borrow();
+            if vals_len > ctx.costs.sha256_max_slices {
+                return Err(SbpfVmError::TooManySlices);
+            }
+            (
+                ctx.costs.sha256_base_cost,
+                ctx.costs.sha256_byte_cost,
+                ctx.costs.mem_op_base_cost,
+            )
+        };
+
+        compute.consume(sha256_base_cost)?;
 
         let mut hasher = Blake3Hasher::new();
         if vals_len > 0 {
             for (ptr, len) in self.read_slices(memory, vals_addr, vals_len)? {
-                let cost = self
-                    .costs
-                    .mem_op_base_cost
-                    .max(self.costs.sha256_byte_cost.saturating_mul(len / 2));
+                let cost = mem_op_base_cost.max(sha256_byte_cost.saturating_mul(len / 2));
                 compute.consume(cost)?;
                 hasher.update(memory.read_bytes(ptr, len as usize)?);
             }
@@ -392,7 +372,8 @@ impl DebuggerSyscallHandler {
         let program_id_addr = registers[2];
         let address_addr = registers[3];
 
-        compute.consume(self.costs.create_program_address_units)?;
+        let cost = self.cpi_ctx.borrow().costs.create_program_address_units;
+        compute.consume(cost)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
         let program_id = Pubkey::from(
@@ -422,7 +403,8 @@ impl DebuggerSyscallHandler {
         let address_addr = registers[3];
         let bump_seed_addr = registers[4];
 
-        compute.consume(self.costs.create_program_address_units)?;
+        let cost = self.cpi_ctx.borrow().costs.create_program_address_units;
+        compute.consume(cost)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
         let program_id = Pubkey::from(
@@ -458,12 +440,16 @@ impl DebuggerSyscallHandler {
         memory: &mut Memory,
         compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        compute.consume(
-            self.costs
+        let (cost, clock) = {
+            let ctx = self.cpi_ctx.borrow();
+            let cost = ctx
+                .costs
                 .sysvar_base_cost
-                .saturating_add(size_of::<Clock>() as u64),
-        )?;
-        self.write_sysvar_bytes(memory, registers[0], &self.clock)?;
+                .saturating_add(size_of::<solana_sdk::clock::Clock>() as u64);
+            (cost, ctx.clock.clone())
+        };
+        compute.consume(cost)?;
+        self.write_sysvar_bytes(memory, registers[0], &clock)?;
         Ok(0)
     }
 
@@ -473,12 +459,16 @@ impl DebuggerSyscallHandler {
         memory: &mut Memory,
         compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        compute.consume(
-            self.costs
+        let (cost, rent) = {
+            let ctx = self.cpi_ctx.borrow();
+            let cost = ctx
+                .costs
                 .sysvar_base_cost
-                .saturating_add(size_of::<Rent>() as u64),
-        )?;
-        self.write_sysvar_bytes(memory, registers[0], &self.rent)?;
+                .saturating_add(size_of::<solana_sdk::rent::Rent>() as u64);
+            (cost, ctx.rent.clone())
+        };
+        compute.consume(cost)?;
+        self.write_sysvar_bytes(memory, registers[0], &rent)?;
         Ok(0)
     }
 
@@ -488,16 +478,16 @@ impl DebuggerSyscallHandler {
         memory: &mut Memory,
         compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let var_addr = registers[0];
-
-        let cost = self
-            .costs
-            .sysvar_base_cost
-            .saturating_add(size_of::<EpochSchedule>() as u64);
+        let (cost, epoch_schedule) = {
+            let ctx = self.cpi_ctx.borrow();
+            let cost = ctx
+                .costs
+                .sysvar_base_cost
+                .saturating_add(size_of::<solana_sdk::epoch_schedule::EpochSchedule>() as u64);
+            (cost, ctx.epoch_schedule.clone())
+        };
         compute.consume(cost)?;
-
-        self.write_sysvar_bytes(memory, var_addr, &self.epoch_schedule)?;
-
+        self.write_sysvar_bytes(memory, registers[0], &epoch_schedule)?;
         Ok(0)
     }
 
@@ -510,11 +500,10 @@ impl DebuggerSyscallHandler {
         let data_addr = registers[0];
         let data_len = registers[1];
 
-        let cost = self.costs.syscall_base_cost.saturating_add(
-            data_len
-                .checked_div(self.costs.cpi_bytes_per_unit)
-                .unwrap_or(0),
-        );
+        let cpi_bytes_per_unit = self.cpi_ctx.borrow().costs.cpi_bytes_per_unit;
+        let syscall_base_cost = self.cpi_ctx.borrow().costs.syscall_base_cost;
+        let cost =
+            syscall_base_cost.saturating_add(data_len.checked_div(cpi_bytes_per_unit).unwrap_or(0));
         compute.consume(cost)?;
 
         if data_len as usize > MAX_RETURN_DATA {
@@ -541,11 +530,10 @@ impl DebuggerSyscallHandler {
         let data_len = registers[1];
         let program_id_addr = registers[2];
 
-        let cost = self.costs.syscall_base_cost.saturating_add(
-            data_len
-                .checked_div(self.costs.cpi_bytes_per_unit)
-                .unwrap_or(0),
-        );
+        let cpi_bytes_per_unit = self.cpi_ctx.borrow().costs.cpi_bytes_per_unit;
+        let syscall_base_cost = self.cpi_ctx.borrow().costs.syscall_base_cost;
+        let cost =
+            syscall_base_cost.saturating_add(data_len.checked_div(cpi_bytes_per_unit).unwrap_or(0));
         compute.consume(cost)?;
 
         let ctx = self.cpi_ctx.borrow();
@@ -587,12 +575,12 @@ impl DebuggerSyscallHandler {
 
         // Consume base CPI cost + per-byte data cost.
         let data_len = memory.read_u64(instruction_addr + 32)?;
-        let per_byte_cost = data_len
-            .checked_div(self.costs.cpi_bytes_per_unit)
-            .unwrap_or(0);
+        let cpi_bytes_per_unit = self.cpi_ctx.borrow().costs.cpi_bytes_per_unit;
+        let invoke_units = self.cpi_ctx.borrow().costs.invoke_units;
+        let per_byte_cost = data_len.checked_div(cpi_bytes_per_unit).unwrap_or(0);
         let remaining_compute = {
             let mut meter = compute.borrow_mut();
-            meter.consume(self.costs.invoke_units.saturating_add(per_byte_cost))?;
+            meter.consume(invoke_units.saturating_add(per_byte_cost))?;
             meter.get_remaining()
         };
 
@@ -619,9 +607,6 @@ impl DebuggerSyscallHandler {
             signers_seeds_len,
         )?;
 
-        // Sync caller's account state to AccountStore.
-        sync_accounts_from_caller(&self.cpi_ctx, memory, &caller_accounts)?;
-
         println!(
             "CPI: {} -> {} with {} accounts, {} data bytes",
             self.current_program_id,
@@ -636,15 +621,10 @@ impl DebuggerSyscallHandler {
         // Execute the CPI.
         execute_cpi(
             &self.cpi_ctx,
-            &self.costs,
-            &self.clock,
-            &self.rent,
-            &self.epoch_schedule,
             &instruction,
             &caller_accounts,
             &derived_signers,
             memory,
-            &self.compute_meter,
             remaining_compute,
         )
     }
@@ -671,12 +651,12 @@ impl DebuggerSyscallHandler {
 
         // Consume base CPI cost + per-byte data cost.
         let data_len = memory.read_u64(instruction_addr + 40)?;
-        let per_byte_cost = data_len
-            .checked_div(self.costs.cpi_bytes_per_unit)
-            .unwrap_or(0);
+        let cpi_bytes_per_unit = self.cpi_ctx.borrow().costs.cpi_bytes_per_unit;
+        let invoke_units = self.cpi_ctx.borrow().costs.invoke_units;
+        let per_byte_cost = data_len.checked_div(cpi_bytes_per_unit).unwrap_or(0);
         let remaining_compute = {
             let mut meter = compute.borrow_mut();
-            meter.consume(self.costs.invoke_units.saturating_add(per_byte_cost))?;
+            meter.consume(invoke_units.saturating_add(per_byte_cost))?;
             meter.get_remaining()
         };
 
@@ -703,9 +683,6 @@ impl DebuggerSyscallHandler {
             signers_seeds_len,
         )?;
 
-        // Sync accounts.
-        sync_accounts_from_caller(&self.cpi_ctx, memory, &caller_accounts)?;
-
         println!(
             "CPI (Rust): {} -> {} with {} accounts",
             self.current_program_id,
@@ -719,15 +696,10 @@ impl DebuggerSyscallHandler {
         // Execute the CPI.
         execute_cpi(
             &self.cpi_ctx,
-            &self.costs,
-            &self.clock,
-            &self.rent,
-            &self.epoch_schedule,
             &instruction,
             &caller_accounts,
             &derived_signers,
             memory,
-            &self.compute_meter,
             remaining_compute,
         )
     }
@@ -789,7 +761,8 @@ impl SyscallHandler for DebuggerSyscallHandler {
 
             // Unknown syscall
             _ => {
-                compute.consume(self.costs.syscall_base_cost)?;
+                let cost = self.cpi_ctx.borrow().costs.syscall_base_cost;
+                compute.consume(cost)?;
                 eprintln!("Unknown syscall: {}", name);
                 Ok(0)
             }
@@ -803,25 +776,24 @@ mod tests {
 
     fn test_handler() -> DebuggerSyscallHandler {
         DebuggerSyscallHandler::new(
-            CpiContext::new(),
+            CpiContext::new(ComputeMeter::new(10_000)),
             Pubkey::new_unique(),
-            ComputeMeter::new(10_000),
         )
     }
 
     #[test]
     fn test_sol_log_64_cu_consumption() {
         let mut handler = test_handler();
-        let mut compute = ComputeMeter::new(1000);
-        handler.sol_log_64([1, 2, 3, 4, 5], &mut compute).unwrap();
+        let compute = ComputeMeter::new(1000);
+        handler.sol_log_64([1, 2, 3, 4, 5], &compute).unwrap();
         assert_eq!(compute.borrow().consumed, 100);
     }
 
     #[test]
     fn test_sol_log_64_budget_exceeded() {
         let mut handler = test_handler();
-        let mut compute = ComputeMeter::new(50);
-        let result = handler.sol_log_64([1, 2, 3, 4, 5], &mut compute);
+        let compute = ComputeMeter::new(50);
+        let result = handler.sol_log_64([1, 2, 3, 4, 5], &compute);
         assert!(matches!(
             result,
             Err(SbpfVmError::ComputeBudgetExceeded { .. })

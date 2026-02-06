@@ -1,5 +1,9 @@
 use {
-    solana_sdk::{account::Account, pubkey::Pubkey},
+    crate::execution_cost::ExecutionCost,
+    sbpf_vm::compute::ComputeMeter,
+    solana_sdk::{
+        account::Account, clock::Clock, epoch_schedule::EpochSchedule, pubkey::Pubkey, rent::Rent,
+    },
     std::{cell::RefCell, collections::HashMap, fs, path::Path, rc::Rc},
 };
 
@@ -8,6 +12,8 @@ pub const MAX_CPI_DEPTH: usize = 4;
 #[derive(Debug, Default)]
 pub struct AccountStore {
     accounts: HashMap<Pubkey, Account>,
+    // Tracks the original data length per account
+    original_data_lens: HashMap<Pubkey, usize>,
 }
 
 impl AccountStore {
@@ -24,7 +30,13 @@ impl AccountStore {
     }
 
     pub fn insert(&mut self, pubkey: Pubkey, account: Account) {
+        let data_len = account.data.len();
         self.accounts.insert(pubkey, account);
+        self.original_data_lens.entry(pubkey).or_insert(data_len);
+    }
+
+    pub fn get_original_data_len(&self, pubkey: &Pubkey) -> usize {
+        self.original_data_lens.get(pubkey).copied().unwrap_or(0)
     }
 
     pub fn update_lamports(&mut self, pubkey: &Pubkey, lamports: u64) -> bool {
@@ -90,23 +102,33 @@ pub struct CpiContextInner {
     pub program_registry: ProgramRegistry,
     pub accounts: AccountStore,
     pub return_data: Option<(Pubkey, Vec<u8>)>,
+    pub costs: ExecutionCost,
+    pub compute_meter: ComputeMeter,
+    pub clock: Clock,
+    pub rent: Rent,
+    pub epoch_schedule: EpochSchedule,
 }
 
-impl Default for CpiContextInner {
-    fn default() -> Self {
+impl CpiContextInner {
+    pub fn new(compute_meter: ComputeMeter) -> Self {
         Self {
             stack_height: 1,
             program_registry: ProgramRegistry::new(),
             accounts: AccountStore::new(),
             return_data: None,
+            costs: ExecutionCost::default(),
+            compute_meter,
+            clock: Clock::default(),
+            rent: Rent::default(),
+            epoch_schedule: EpochSchedule::default(),
         }
     }
 }
 
 impl CpiContext {
-    pub fn new() -> Self {
+    pub fn new(compute_meter: ComputeMeter) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(CpiContextInner::default())),
+            inner: Rc::new(RefCell::new(CpiContextInner::new(compute_meter))),
         }
     }
 
@@ -228,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_return_data_storage() {
-        let mut ctx = CpiContextInner::default();
+        let mut ctx = CpiContextInner::new(ComputeMeter::new(10_000));
         let program_id = Pubkey::new_unique();
         let data = vec![1, 2, 3, 4, 5];
 

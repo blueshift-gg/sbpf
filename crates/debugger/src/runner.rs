@@ -41,8 +41,8 @@ impl DebuggerSession {
         program_id: Pubkey,
         cpi_ctx: CpiContext,
     ) -> SbpfVm<DebuggerSyscallHandler> {
-        let compute_meter = ComputeMeter::new(config.compute_unit_limit);
-        let handler = DebuggerSyscallHandler::new(cpi_ctx, program_id, compute_meter.clone());
+        let compute_meter = cpi_ctx.borrow().compute_meter.clone();
+        let handler = DebuggerSyscallHandler::new(cpi_ctx, program_id);
 
         let mut vm = SbpfVm::new_with_config(instructions, input, rodata_bytes, handler, config);
         vm.compute_meter = compute_meter;
@@ -156,7 +156,8 @@ pub fn load_session_from_bytes(
         }
     }
 
-    let cpi_ctx = CpiContext::new();
+    let compute_meter = ComputeMeter::new(config.compute_unit_limit);
+    let cpi_ctx = CpiContext::new(compute_meter);
     let program_id = program_id
         .map(Pubkey::from_str)
         .transpose()
