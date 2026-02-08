@@ -3,22 +3,21 @@ use {
     anyhow::Result,
     sbpf_debugger::{
         adapter::run_adapter_loop,
+        input::parse_input,
         repl::Repl,
-        runner::{load_session_from_asm, load_session_from_elf, parse_input},
+        runner::{load_session_from_asm, load_session_from_elf},
     },
     sbpf_vm::vm::SbpfVmConfig,
 };
 
 pub fn debug(args: &DebugArgs) -> Result<()> {
-    let input_bytes = parse_input(&args.input)?;
+    let (input_bytes, program_id) = parse_input(&args.input)?;
     let config = SbpfVmConfig {
         compute_unit_limit: args.compute_unit_limit,
         stack_size: args.stack_size,
         heap_size: args.heap_size,
         ..SbpfVmConfig::default()
     };
-
-    let program_id = args.program_id.as_deref();
 
     let session = match (&args.asm, &args.elf) {
         (Some(asm_path), None) => {

@@ -45,6 +45,12 @@ pub struct LineMap {
     text_offset: u64,
 }
 
+impl Default for LineMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LineMap {
     pub fn new() -> Self {
         Self {
@@ -116,15 +122,15 @@ impl LineMap {
                             let mut path = PathBuf::new();
                             path.clone_from(&comp_dir);
 
-                            if file.directory_index() != 0 {
-                                if let Some(dir) = file.directory(header) {
-                                    path.push(
-                                        unit.attr_string(dir)
-                                            .map_err(DebuggerError::Dwarf)?
-                                            .to_string_lossy()
-                                            .as_ref(),
-                                    );
-                                }
+                            if file.directory_index() != 0
+                                && let Some(dir) = file.directory(header)
+                            {
+                                path.push(
+                                    unit.attr_string(dir)
+                                        .map_err(DebuggerError::Dwarf)?
+                                        .to_string_lossy()
+                                        .as_ref(),
+                                );
                             }
 
                             path.push(
@@ -150,7 +156,7 @@ impl LineMap {
                         self.address_to_line.insert(address, line as usize);
                         self.line_to_addresses
                             .entry(line as usize)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(address);
 
                         let source_loc = SourceLocation {

@@ -10,6 +10,14 @@ use {
     std::collections::HashSet,
 };
 
+pub struct StackFrame<'a> {
+    pub index: usize,
+    pub pc: u64,
+    pub file: Option<&'a str>,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+}
+
 #[derive(Debug)]
 pub enum DebugMode {
     Step,
@@ -290,10 +298,10 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_source_location(&self, pc: u64) -> Option<(&str, usize, usize)> {
-        if let Some(dwarf_map) = &self.dwarf_line_map {
-            if let Some(loc) = dwarf_map.get_source_location(pc) {
-                return Some((&loc.file, loc.line as usize, loc.column as usize));
-            }
+        if let Some(dwarf_map) = &self.dwarf_line_map
+            && let Some(loc) = dwarf_map.get_source_location(pc)
+        {
+            return Some((&loc.file, loc.line as usize, loc.column as usize));
         }
         None
     }
@@ -322,17 +330,28 @@ impl<H: SyscallHandler> Debugger<H> {
             .ok()
     }
 
-    pub fn get_stack_frames(&self) -> Vec<(usize, u64, Option<(&str, usize, usize)>)> {
+    fn make_stack_frame(&self, index: usize, pc: u64) -> StackFrame<'_> {
+        let loc = self.get_source_location(pc);
+        StackFrame {
+            index,
+            pc,
+            file: loc.map(|(f, _, _)| f),
+            line: loc.map(|(_, l, _)| l),
+            column: loc.map(|(_, _, c)| c),
+        }
+    }
+
+    pub fn get_stack_frames(&self) -> Vec<StackFrame<'_>> {
         let mut frames = Vec::new();
 
         // Current frame
         let current_pc = self.get_pc();
-        frames.push((0, current_pc, self.get_source_location(current_pc)));
+        frames.push(self.make_stack_frame(0, current_pc));
 
         // Call stack frames
         for (i, frame) in self.vm.call_stack.iter().rev().enumerate() {
             let pc = self.instruction_index_to_byte_offset(frame.return_pc);
-            frames.push((i + 1, pc, self.get_source_location(pc)));
+            frames.push(self.make_stack_frame(i + 1, pc));
         }
 
         frames
@@ -390,18 +409,18 @@ impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
         let frames: Vec<Value> = self
             .get_stack_frames()
             .iter()
-            .map(|(index, pc, loc)| {
-                let (name, file, line, column) = match loc {
-                    Some((f, l, c)) => (f.to_string(), f.to_string(), *l, *c),
-                    None => ("?".to_string(), "?".to_string(), 0, 0),
-                };
+            .map(|frame| {
+                let name = frame.file.unwrap_or("?").to_string();
+                let file = frame.file.unwrap_or("?").to_string();
+                let line = frame.line.unwrap_or(0);
+                let column = frame.column.unwrap_or(0);
                 json!({
-                    "index": index,
+                    "index": frame.index,
                     "name": name,
                     "file": file,
                     "line": line,
                     "column": column,
-                    "instruction": pc
+                    "instruction": frame.pc
                 })
             })
             .collect();

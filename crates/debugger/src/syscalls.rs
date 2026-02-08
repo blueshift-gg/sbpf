@@ -216,7 +216,7 @@ impl DebuggerSyscallHandler {
         compute.consume(file_len)?;
 
         let file_bytes = memory.read_bytes(file_ptr, file_len as usize)?;
-        let file = String::from_utf8_lossy(&file_bytes);
+        let file = String::from_utf8_lossy(file_bytes);
 
         eprintln!("Program panicked at {}:{}:{}", file, line, column);
 
@@ -293,31 +293,7 @@ impl DebuggerSyscallHandler {
         memory: &mut Memory,
         compute: &ComputeMeter,
     ) -> SbpfVmResult<u64> {
-        let vals_addr = registers[0];
-        let vals_len = registers[1];
-        let result_addr = registers[2];
-
-        if vals_len > self.costs.sha256_max_slices {
-            return Err(SbpfVmError::TooManySlices);
-        }
-
-        compute.consume(self.costs.sha256_base_cost)?;
-
-        let mut hasher = Blake3Hasher::new();
-        if vals_len > 0 {
-            for (ptr, len) in self.read_slices(memory, vals_addr, vals_len)? {
-                let cost = self
-                    .costs
-                    .mem_op_base_cost
-                    .max(self.costs.sha256_byte_cost.saturating_mul(len / 2));
-                compute.consume(cost)?;
-                hasher.update(memory.read_bytes(ptr, len as usize)?);
-            }
-        }
-
-        let hash: [u8; 32] = hasher.finalize().into();
-        memory.write_bytes(result_addr, &hash)?;
-        Ok(0)
+        self.hash_slices::<Blake3Hasher>(memory, compute, registers[0], registers[1], registers[2])
     }
 
     fn read_seeds(

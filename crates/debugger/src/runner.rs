@@ -20,7 +20,6 @@ use {
         fs::File,
         io::Read,
         path::{Path, PathBuf},
-        str::FromStr,
     },
 };
 
@@ -52,7 +51,7 @@ pub fn load_session_from_asm(
     asm_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
-    program_id: Option<&str>,
+    program_id: Pubkey,
 ) -> DebuggerResult<DebuggerSession> {
     let asm_path = Path::new(asm_path);
     if !asm_path.exists() {
@@ -93,7 +92,7 @@ pub fn load_session_from_elf(
     elf_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
-    program_id: Option<&str>,
+    program_id: Pubkey,
 ) -> DebuggerResult<DebuggerSession> {
     let mut file = File::open(elf_path)?;
     let mut elf_bytes = Vec::new();
@@ -106,7 +105,7 @@ pub fn load_session_from_bytes(
     input: Vec<u8>,
     config: SbpfVmConfig,
     elf_path: Option<PathBuf>,
-    program_id: Option<&str>,
+    program_id: Pubkey,
 ) -> DebuggerResult<DebuggerSession> {
     let program = Program::from_bytes(&elf_bytes)?;
     let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
@@ -122,24 +121,18 @@ pub fn load_session_from_bytes(
         let elf_rodata_end = elf_rodata_base + section.data.len() as u64;
 
         for ix in &mut instructions {
-            if ix.opcode == Opcode::Lddw {
-                if let Some(Either::Right(Number::Int(imm))) = &ix.imm {
-                    let addr = *imm as u64;
-                    if addr >= elf_rodata_base && addr < elf_rodata_end {
-                        let offset = addr - elf_rodata_base;
-                        let vm_addr = Memory::RODATA_START + offset;
-                        ix.imm = Some(Either::Right(Number::Int(vm_addr as i64)));
-                    }
+            if ix.opcode == Opcode::Lddw
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+            {
+                let addr = *imm as u64;
+                if addr >= elf_rodata_base && addr < elf_rodata_end {
+                    let offset = addr - elf_rodata_base;
+                    let vm_addr = Memory::RODATA_START + offset;
+                    ix.imm = Some(Either::Right(Number::Int(vm_addr as i64)));
                 }
             }
         }
     }
-
-    let program_id = program_id
-        .map(Pubkey::from_str)
-        .transpose()
-        .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program ID: {}", e)))?
-        .unwrap_or_else(Pubkey::new_unique);
 
     let mut vm = DebuggerSession::build_vm(instructions, input, rodata_bytes, config, program_id);
     vm.set_entrypoint(entrypoint as usize);
@@ -163,54 +156,4 @@ pub fn load_session_from_bytes(
         elf_bytes,
         elf_path: elf_path.unwrap_or_else(|| PathBuf::from("<memory>")),
     })
-}
-
-pub fn parse_input(input: &str) -> DebuggerResult<Vec<u8>> {
-    let input = input.trim();
-    if input.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    if input.contains('/') || input.contains('\\') || input.ends_with(".hex") {
-        let path = Path::new(input);
-        if !path.exists() {
-            return Err(DebuggerError::InvalidInput(format!(
-                "File not found: {}",
-                input
-            )));
-        }
-
-        let mut file = File::open(path).map_err(|e| DebuggerError::InvalidInput(e.to_string()))?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)
-            .map_err(|e| DebuggerError::InvalidInput(e.to_string()))?;
-        parse_hex(&content)
-    } else {
-        parse_hex(input)
-    }
-}
-
-fn parse_hex(hex: &str) -> DebuggerResult<Vec<u8>> {
-    let hex = hex.trim();
-    let hex = if hex.starts_with("0x") || hex.starts_with("0X") {
-        &hex[2..]
-    } else {
-        hex
-    };
-
-    if hex.len() % 2 != 0 {
-        return Err(DebuggerError::InvalidInput(
-            "Hex string must have even length".to_string(),
-        ));
-    }
-
-    let mut bytes = Vec::with_capacity(hex.len() / 2);
-    for i in (0..hex.len()).step_by(2) {
-        let byte_str = &hex[i..i + 2];
-        let byte = u8::from_str_radix(byte_str, 16)
-            .map_err(|_| DebuggerError::InvalidInput(format!("Invalid hex: {}", byte_str)))?;
-        bytes.push(byte);
-    }
-
-    Ok(bytes)
 }

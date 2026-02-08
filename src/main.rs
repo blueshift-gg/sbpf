@@ -76,10 +76,8 @@ pub struct DebugArgs {
     asm: Option<String>,
     #[arg(long, conflicts_with = "asm", help = "Path to elf file")]
     elf: Option<String>,
-    #[arg(long, default_value = "", help = "Input hex")]
+    #[arg(long, default_value = "", help = "Input JSON file or JSON string")]
     input: String,
-    #[arg(long, help = "Program ID")]
-    program_id: Option<String>,
     #[arg(long, default_value = "1400000", help = "Compute unit limit")]
     compute_unit_limit: u64,
     #[arg(long, default_value = "4096", help = "Stack size")]
