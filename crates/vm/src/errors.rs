@@ -47,21 +47,6 @@ pub enum SbpfVmError {
 
     #[error("Invalid slice conversion")]
     InvalidSliceConversion,
-
-    #[error("Return data too large (max 1024 bytes)")]
-    ReturnDataTooLarge,
-
-    #[error("Too many signers")]
-    TooManySigners,
-
-    #[error("Invalid seeds for PDA derivation")]
-    InvalidSeeds,
-
-    #[error("CPI depth exceeded")]
-    CpiDepthExceeded,
-
-    #[error("Program not found: {0}")]
-    ProgramNotFound(String),
 }
 
 pub type SbpfVmResult<T> = Result<T, SbpfVmError>;

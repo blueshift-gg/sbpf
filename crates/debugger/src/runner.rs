@@ -1,8 +1,8 @@
 use {
     crate::{
-        cpi::CpiContext,
         debugger::Debugger,
         error::{DebuggerError, DebuggerResult},
+        execution_cost::ExecutionCost,
         parser::{LineMap, rodata_from_section},
         syscalls::DebuggerSyscallHandler,
     },
@@ -26,7 +26,6 @@ use {
 
 pub struct DebuggerSession {
     pub debugger: Debugger<DebuggerSyscallHandler>,
-    pub cpi_ctx: CpiContext,
     pub line_map: Option<LineMap>,
     pub elf_bytes: Vec<u8>,
     pub elf_path: PathBuf,
@@ -39,33 +38,13 @@ impl DebuggerSession {
         rodata_bytes: Vec<u8>,
         config: SbpfVmConfig,
         program_id: Pubkey,
-        cpi_ctx: CpiContext,
     ) -> SbpfVm<DebuggerSyscallHandler> {
-        let compute_meter = cpi_ctx.borrow().compute_meter.clone();
-        let handler = DebuggerSyscallHandler::new(cpi_ctx, program_id);
+        let compute_meter = ComputeMeter::new(config.compute_unit_limit);
+        let handler = DebuggerSyscallHandler::new(ExecutionCost::default(), program_id);
 
         let mut vm = SbpfVm::new_with_config(instructions, input, rodata_bytes, handler, config);
         vm.compute_meter = compute_meter;
         vm
-    }
-
-    pub fn load_program(&mut self, program_id: &str, elf_path: &str) -> DebuggerResult<()> {
-        let pubkey = Pubkey::from_str(program_id)
-            .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program ID: {}", e)))?;
-
-        let path = Path::new(elf_path);
-        if !path.exists() {
-            return Err(DebuggerError::InvalidInput(format!(
-                "Program file not found: {}",
-                elf_path
-            )));
-        }
-
-        self.cpi_ctx
-            .borrow_mut()
-            .program_registry
-            .load_from_file(pubkey, path)
-            .map_err(|e| DebuggerError::InvalidInput(format!("Failed to load program: {}", e)))
     }
 }
 
@@ -156,22 +135,13 @@ pub fn load_session_from_bytes(
         }
     }
 
-    let compute_meter = ComputeMeter::new(config.compute_unit_limit);
-    let cpi_ctx = CpiContext::new(compute_meter);
     let program_id = program_id
         .map(Pubkey::from_str)
         .transpose()
         .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program ID: {}", e)))?
         .unwrap_or_else(Pubkey::new_unique);
 
-    let mut vm = DebuggerSession::build_vm(
-        instructions,
-        input,
-        rodata_bytes,
-        config,
-        program_id,
-        cpi_ctx.clone(),
-    );
+    let mut vm = DebuggerSession::build_vm(instructions, input, rodata_bytes, config, program_id);
     vm.set_entrypoint(entrypoint as usize);
 
     let mut debugger = Debugger::new(vm);
@@ -190,7 +160,6 @@ pub fn load_session_from_bytes(
     Ok(DebuggerSession {
         line_map: debugger.dwarf_line_map.clone(),
         debugger,
-        cpi_ctx,
         elf_bytes,
         elf_path: elf_path.unwrap_or_else(|| PathBuf::from("<memory>")),
     })

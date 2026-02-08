@@ -20,7 +20,7 @@ pub fn debug(args: &DebugArgs) -> Result<()> {
 
     let program_id = args.program_id.as_deref();
 
-    let mut session = match (&args.asm, &args.elf) {
+    let session = match (&args.asm, &args.elf) {
         (Some(asm_path), None) => {
             load_session_from_asm(asm_path.as_str(), input_bytes, config, program_id)?
         }
@@ -32,30 +32,13 @@ pub fn debug(args: &DebugArgs) -> Result<()> {
         }
     };
 
-    // Load additional programs for CPI (if provided).
-    for program_spec in &args.program {
-        let (program_id, path) = parse_program_spec(program_spec)?;
-        session.load_program(&program_id, &path)?;
-    }
-
     if args.adapter {
-        run_adapter_loop(&mut session.debugger);
+        let mut debugger = session.debugger;
+        run_adapter_loop(&mut debugger);
     } else {
         let mut repl = Repl::new(session);
         repl.start();
     }
 
     Ok(())
-}
-
-// Parse a program spec in the format "PROGRAM_ID:PATH"
-fn parse_program_spec(spec: &str) -> Result<(String, String)> {
-    let parts: Vec<&str> = spec.splitn(2, ':').collect();
-    if parts.len() != 2 {
-        anyhow::bail!(
-            "Invalid program format: '{}'. Expected PROGRAM_ID:PATH",
-            spec
-        );
-    }
-    Ok((parts[0].to_string(), parts[1].to_string()))
 }

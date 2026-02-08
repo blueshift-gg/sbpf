@@ -86,8 +86,6 @@ pub struct DebugArgs {
     stack_size: usize,
     #[arg(long, default_value = "32768", help = "Heap size")]
     heap_size: usize,
-    #[arg(long, value_name = "PROGRAM_ID:PATH", help = "Additional program elfs")]
-    program: Vec<String>,
     #[arg(long, help = "Run in adapter mode")]
     adapter: bool,
 }
