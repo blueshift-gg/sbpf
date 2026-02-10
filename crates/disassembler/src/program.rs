@@ -52,10 +52,7 @@ impl Program {
         })
     }
 
-    pub fn to_ixs(
-        self,
-        with_labels: bool,
-    ) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
+    pub fn to_ixs(self) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -82,9 +79,8 @@ impl Program {
             .map(|(d, addr)| (*addr, *addr + d.len() as u64))
             .unwrap_or((0, 0));
 
-        // Parse instructions and build slot/position mappings
+        // Parse instructions and build slot mappings
         let mut ixs: Vec<Instruction> = Vec::new();
-        let mut slot_to_position: Vec<u64> = Vec::new();
         let mut idx_to_slot: Vec<usize> = Vec::new();
         let mut pos: usize = 0;
         let mut slot: usize = 0;
@@ -110,11 +106,9 @@ impl Program {
                 ix.imm = Some(Either::Left(syscall_name.clone()));
             }
 
-            slot_to_position.push(pos as u64);
             idx_to_slot.push(slot);
 
             if ix.opcode == Opcode::Lddw {
-                slot_to_position.push(pos as u64 + 8);
                 pos += 16;
                 slot += 2;
             } else {
@@ -125,7 +119,7 @@ impl Program {
             ixs.push(ix);
         }
 
-        let mut slot_to_idx = vec![0usize; slot_to_position.len()];
+        let mut slot_to_idx = vec![0usize; slot];
         for (idx, &slot) in idx_to_slot.iter().enumerate() {
             slot_to_idx[slot] = idx;
         }
@@ -143,14 +137,10 @@ impl Program {
                 let current_slot = idx_to_slot[idx] as i64;
                 let target_slot = current_slot + 1 + (*off as i64);
                 if target_slot >= 0
-                    && let Some(&target_pos) = slot_to_position.get(target_slot as usize)
+                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
                 {
-                    if with_labels {
-                        ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
-                    } else if let Some(&target_idx) = slot_to_idx.get(target_slot as usize) {
-                        let new_off = target_idx as i64 - (idx as i64 + 1);
-                        ix.off = Some(Either::Right(new_off as i16));
-                    }
+                    let new_off = target_idx as i64 - (idx as i64 + 1);
+                    ix.off = Some(Either::Right(new_off as i16));
                 }
             }
 
@@ -161,14 +151,10 @@ impl Program {
                 let current_slot = idx_to_slot[idx] as i64;
                 let target_slot = current_slot + 1 + *imm;
                 if target_slot >= 0
-                    && let Some(&target_pos) = slot_to_position.get(target_slot as usize)
+                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
                 {
-                    if with_labels {
-                        ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
-                    } else if let Some(&target_idx) = slot_to_idx.get(target_slot as usize) {
-                        let new_rel = target_idx as i64 - (idx as i64 + 1);
-                        ix.imm = Some(Either::Right(Number::Int(new_rel)));
-                    }
+                    let new_rel = target_idx as i64 - (idx as i64 + 1);
+                    ix.imm = Some(Either::Right(Number::Int(new_rel)));
                 }
             }
 
@@ -184,24 +170,9 @@ impl Program {
             }
         }
 
-        // Parse rodata and replace addresses with labels
+        // Parse rodata section
         let rodata = if let Some((data, base_addr)) = rodata_info {
-            let rodata = RodataSection::parse(data, base_addr, &rodata_refs);
-
-            if with_labels {
-                for ix in &mut ixs {
-                    if ix.opcode == Opcode::Lddw
-                        && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-                    {
-                        let addr = *imm as u64;
-                        if let Some(label) = rodata.get_label(addr) {
-                            ix.imm = Some(Either::Left(label.to_string()));
-                        }
-                    }
-                }
-            }
-
-            Some(rodata)
+            Some(RodataSection::parse(data, base_addr, &rodata_refs))
         } else {
             None
         };
@@ -310,7 +281,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let result = program.to_ixs(true);
+        let result = program.to_ixs();
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -357,7 +328,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs(true).unwrap();
+        let (ixs, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 2); // lddw + exit
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
     }
@@ -398,7 +369,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs(true).unwrap();
+        let (ixs, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 1);
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
     }

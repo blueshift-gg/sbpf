@@ -109,7 +109,7 @@ pub fn load_session_from_bytes(
 ) -> DebuggerResult<DebuggerSession> {
     let program = Program::from_bytes(&elf_bytes)?;
     let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
-    let (mut instructions, rodata_section) = program.to_ixs(false)?;
+    let (mut instructions, rodata_section) = program.to_ixs()?;
     let rodata_bytes = rodata_section
         .as_ref()
         .map(|section| section.data.clone())
