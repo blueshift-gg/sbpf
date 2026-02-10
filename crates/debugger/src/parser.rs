@@ -40,7 +40,6 @@ pub struct LineMap {
     address_to_line: HashMap<u64, usize>,
     line_to_addresses: HashMap<usize, Vec<u64>>,
     source_locations: HashMap<u64, SourceLocation>,
-    line_to_address: HashMap<(String, u32), u64>,
     files: Vec<String>,
     text_offset: u64,
 }
@@ -57,7 +56,6 @@ impl LineMap {
             address_to_line: HashMap::new(),
             line_to_addresses: HashMap::new(),
             source_locations: HashMap::new(),
-            line_to_address: HashMap::new(),
             files: Vec::new(),
             text_offset: 0,
         }
@@ -166,8 +164,6 @@ impl LineMap {
                             _address: address,
                         };
                         self.source_locations.insert(address, source_loc);
-                        self.line_to_address
-                            .insert((file_path.clone(), line), address);
 
                         if !file_path.is_empty() && !self.files.contains(&file_path) {
                             self.files.push(file_path);
