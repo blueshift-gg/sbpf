@@ -109,7 +109,7 @@ test_2:              // line 17
 
     // Assemble with debug info
     let options = sbpf_assembler::AssemblerOption {
-        use_static_syscalls: false,
+        arch: sbpf_assembler::SbpfArch::V0,
         debug_mode: Some(sbpf_assembler::DebugMode {
             filename: "test.s".to_string(),
             directory: "/test".to_string(),

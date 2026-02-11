@@ -7,7 +7,7 @@ use {
         syscalls::DebuggerSyscallHandler,
     },
     either::Either,
-    sbpf_assembler::{Assembler, AssemblerOption, DebugMode},
+    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch},
     sbpf_common::{inst_param::Number, opcode::Opcode},
     sbpf_disassembler::program::Program,
     sbpf_vm::{
@@ -74,7 +74,7 @@ pub fn load_session_from_asm(
         .unwrap_or_else(|| ".".to_string());
 
     let options = AssemblerOption {
-        use_static_syscalls: false,
+        arch: SbpfArch::V0,
         debug_mode: Some(DebugMode {
             filename,
             directory,

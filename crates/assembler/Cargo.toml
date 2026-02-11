@@ -26,6 +26,7 @@ pest = "2.7"
 pest_derive = "2.7"
 gimli = { workspace = true, features = ["write"] }
 codespan = "0.13.1"
+sbpf-syscall-map = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }

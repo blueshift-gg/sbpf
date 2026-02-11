@@ -7,7 +7,7 @@ use {
     },
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
-    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, errors::CompileError},
+    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch, errors::CompileError},
     std::{fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
@@ -42,16 +42,15 @@ impl AsDiagnostic for CompileError {
     }
 }
 
-pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
+pub fn build(debug: bool, arch: SbpfArch) -> Result<()> {
     // Set src/out directory
     let src = "src";
     let deploy = "deploy";
 
     // Create necessary directories
     create_dir_all(deploy)?;
-
     // Function to compile assembly
-    fn compile_assembly(src: &str, deploy: &str, debug: bool, static_syscalls: bool) -> Result<()> {
+    fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
@@ -74,10 +73,7 @@ pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
             None
         };
 
-        let options = AssemblerOption {
-            use_static_syscalls: static_syscalls,
-            debug_mode,
-        };
+        let options = AssemblerOption { arch, debug_mode };
 
         let assembler = Assembler::new(options);
         let result = assembler.assemble(&source_code);
@@ -159,7 +155,7 @@ pub fn build(debug: bool, static_syscalls: bool) -> Result<()> {
                     if debug { " (debug)" } else { "" }
                 );
                 let start = Instant::now();
-                compile_assembly(&asm_file, deploy, debug, static_syscalls)?;
+                compile_assembly(&asm_file, deploy, debug, arch)?;
                 let duration = start.elapsed();
                 println!(
                     "✅ \"{}\" built successfully in {}ms!",

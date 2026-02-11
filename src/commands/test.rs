@@ -1,5 +1,6 @@
 use {
     anyhow::{Error, Result},
+    sbpf_assembler::SbpfArch,
     std::{fs, io, path::Path, process::Command},
 };
 
@@ -28,7 +29,7 @@ pub fn test() -> Result<(), Error> {
 
     if !has_so_files(deploy_dir) {
         println!("🔄 No .so files found in 'deploy' directory. Running build...");
-        crate::commands::build::build(false, false)?;
+        crate::commands::build::build(false, SbpfArch::V0)?;
     }
 
     let has_cargo = Path::new("Cargo.toml").exists();

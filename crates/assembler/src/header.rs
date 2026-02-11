@@ -1,3 +1,5 @@
+use crate::SbpfArch;
+
 #[derive(Debug)]
 pub struct ElfHeader {
     pub e_ident: [u8; 16], // ELF identification bytes = [127, 69, 76, 70, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -101,28 +103,32 @@ impl ProgramHeader {
     const PT_LOAD: u32 = 1;      // Loadable segment
     const PT_DYNAMIC: u32 = 2;   // Dynamic linking information
     
-    const PF_X: u32 = 1;         // Executable
-    const PF_W: u32 = 2;         // Writable
-    const PF_R: u32 = 4;         // Readable
+    pub const PF_X: u32 = 1;         // Executable
+    pub const PF_W: u32 = 2;         // Writable
+    pub const PF_R: u32 = 4;         // Readable
     
     const PAGE_SIZE: u64 = 4096;          // Standard page size
+    
+    pub const V3_RODATA_VADDR: u64 = 0 << 32;
+    pub const V3_BYTECODE_VADDR: u64 = 1 << 32;
 
-    pub fn new_load(offset: u64, size: u64, executable: bool) -> Self {
-        let flags = if executable {
-            Self::PF_R | Self::PF_X  // Read + Execute
-        } else {
-            Self::PF_R        // Read only
+    pub fn new_load(offset: u64, size: u64, executable: bool, arch: SbpfArch) -> Self {
+        let (flags, vaddr, align) = match (arch, executable) {
+            (SbpfArch::V0, true) => (Self::PF_R | Self::PF_X, offset, Self::PAGE_SIZE),
+            (SbpfArch::V0, false) => (Self::PF_R, offset, Self::PAGE_SIZE),
+            (SbpfArch::V3, true) => (Self::PF_X, Self::V3_BYTECODE_VADDR, 0),
+            (SbpfArch::V3, false) => (Self::PF_R, Self::V3_RODATA_VADDR, 0),
         };
 
         ProgramHeader {
             p_type: Self::PT_LOAD,
             p_flags: flags,
             p_offset: offset,
-            p_vaddr: offset,
-            p_paddr: offset,
+            p_vaddr: vaddr,
+            p_paddr: vaddr,
             p_filesz: size,
             p_memsz: size,
-            p_align: Self::PAGE_SIZE
+            p_align: align // p_align is ignored in v3
         }
     }
 
