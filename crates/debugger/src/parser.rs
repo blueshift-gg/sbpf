@@ -40,6 +40,7 @@ pub struct LineMap {
     address_to_line: HashMap<u64, usize>,
     line_to_addresses: HashMap<usize, Vec<u64>>,
     source_locations: HashMap<u64, SourceLocation>,
+    labels: HashMap<u64, String>,
     files: Vec<String>,
     text_offset: u64,
 }
@@ -56,6 +57,7 @@ impl LineMap {
             address_to_line: HashMap::new(),
             line_to_addresses: HashMap::new(),
             source_locations: HashMap::new(),
+            labels: HashMap::new(),
             files: Vec::new(),
             text_offset: 0,
         }
@@ -171,9 +173,36 @@ impl LineMap {
                     }
                 }
             }
+
+            // Parse labels.
+            let mut entries = unit.entries();
+            while let Some((_, entry)) = entries.next_dfs().map_err(DebuggerError::Dwarf)? {
+                if entry.tag() == gimli::DW_TAG_label
+                    && let (Some(name_attr), Some(pc_attr)) = (
+                        entry
+                            .attr_value(gimli::DW_AT_name)
+                            .map_err(DebuggerError::Dwarf)?,
+                        entry
+                            .attr_value(gimli::DW_AT_low_pc)
+                            .map_err(DebuggerError::Dwarf)?,
+                    )
+                    && let Ok(name) = unit.attr_string(name_attr)
+                    && let gimli::AttributeValue::Addr(addr) = pc_attr
+                {
+                    self.labels.insert(addr, name.to_string_lossy().to_string());
+                }
+            }
         }
 
         Ok(())
+    }
+
+    pub fn get_label_for_address(&self, address: u64) -> Option<&str> {
+        self.labels.get(&address).map(|s| s.as_str())
+    }
+
+    pub fn get_text_offset(&self) -> u64 {
+        self.text_offset
     }
 
     pub fn get_line_for_address(&self, address: u64) -> Option<usize> {

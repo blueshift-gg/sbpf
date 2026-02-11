@@ -86,7 +86,7 @@ debug_hash = "fbdab0fb08943d053a0947242d2dee4b8e36998ee88347c0cf03c9c9fc028af7"
 [cases.rodata]
 file = "rodata.s"
 hash = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"
-debug_hash = "6ebac0087e06c8128ac79c23ed555fa06b680539b0d7f10663f47446dd6824d1"
+debug_hash = "3927b5d5bfc535e48f24f0abb2edccacf6be74bc33a0966af11028af7cc2e1f8"
 
 [cases.store_imm]
 file = "store_imm.s"

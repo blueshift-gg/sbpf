@@ -144,7 +144,18 @@ pub fn load_session_from_bytes(
 
     // Set rodata symbols from the disassembler's parsed section
     if let Some(ref section) = rodata_section {
-        let rodata_symbols = rodata_from_section(section);
+        let mut rodata_symbols = rodata_from_section(section);
+        // Replace generated labels with actual labels from DWARF info (if available).
+        if let Some(ref line_map) = debugger.dwarf_line_map {
+            let text_offset = line_map.get_text_offset();
+            for sym in &mut rodata_symbols {
+                let rodata_offset = sym.address - Memory::RODATA_START;
+                let addr = rodata_offset + text_offset;
+                if let Some(name) = line_map.get_label_for_address(addr) {
+                    sym.name = name.to_string();
+                }
+            }
+        }
         if !rodata_symbols.is_empty() {
             debugger.set_rodata(rodata_symbols);
         }

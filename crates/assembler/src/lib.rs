@@ -128,6 +128,14 @@ fn collect_line_and_label_entries(
         }
     }
 
+    for node in parse_result.data_section.get_nodes() {
+        if let ASTNode::ROData { rodata, offset } = node {
+            let line_index = files.line_index(file_id, rodata.span.start as u32);
+            let line_number = (line_index.to_usize() + 1) as u32;
+            label_entries.push((rodata.name.clone(), *offset, line_number));
+        }
+    }
+
     (line_entries, label_entries)
 }
 
