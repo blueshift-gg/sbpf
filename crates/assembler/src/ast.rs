@@ -267,6 +267,7 @@ impl AST {
                 relocation_data: relocations,
                 prog_is_static: program_is_static,
                 arch,
+                debug_sections: Vec::default(),
             })
         }
     }
