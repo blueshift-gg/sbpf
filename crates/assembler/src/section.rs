@@ -640,10 +640,10 @@ impl Section for RelDynSection {
 }
 #[derive(Debug, Clone)]
 pub struct DebugSection {
-    pub name: String,
-    pub name_offset: u32,
-    pub data: Vec<u8>,
-    pub offset: u64,
+    name: String,
+    name_offset: u32,
+    data: Vec<u8>,
+    offset: u64,
 }
 
 impl DebugSection {
