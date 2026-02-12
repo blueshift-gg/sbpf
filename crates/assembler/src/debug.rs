@@ -20,6 +20,10 @@ pub struct DebugData {
     pub code_end: u64,
 }
 
+fn calc_name_offset(names: &[String]) -> u32 {
+    (names.iter().map(|n| n.len() + 1).sum::<usize>() + 1) as u32
+}
+
 /// Generate DebugSections from debug data
 pub fn generate_debug_sections(
     data: &DebugData,
@@ -30,10 +34,6 @@ pub fn generate_debug_sections(
     let code_start = data.code_start + text_offset;
     let code_end = data.code_end + text_offset;
     let mut dwarf = generate_dwarf_sections(data, text_offset, code_start, code_end);
-
-    let calc_name_offset = |names: &Vec<String>| -> u32 {
-        (names.iter().map(|n| n.len() + 1).sum::<usize>() + 1) as u32
-    };
 
     let mut sections = Vec::new();
 
@@ -194,10 +194,6 @@ pub fn reuse_debug_sections(
     section_names: &mut Vec<String>,
     current_offset: &mut u64,
 ) -> Vec<SectionType> {
-    let calc_name_offset = |names: &Vec<String>| -> u32 {
-        (names.iter().map(|n| n.len() + 1).sum::<usize>() + 1) as u32
-    };
-
     // reuse debug sections that came from byteparsing
     let mut sections = Vec::default();
     for mut debug_section in parsed_debug_sections.into_iter() {
