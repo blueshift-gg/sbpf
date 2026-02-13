@@ -197,25 +197,25 @@ pub fn reuse_debug_sections(
     // reuse debug sections that came from byteparsing
     let mut sections = Vec::default();
     for mut debug_section in parsed_debug_sections.into_iter() {
-        debug_section.name_offset = calc_name_offset(section_names);
-        section_names.push(debug_section.name.clone());
+        debug_section.set_name_offset(calc_name_offset(section_names));
+        section_names.push(debug_section.name().to_string());
         debug_section.set_offset(*current_offset);
         *current_offset += debug_section.size();
-        if debug_section.name == SectionId::DebugAbbrev.name() {
+        if debug_section.name() == SectionId::DebugAbbrev.name() {
             sections.push(SectionType::DebugAbbrev(debug_section));
-        } else if debug_section.name == SectionId::DebugInfo.name() {
+        } else if debug_section.name() == SectionId::DebugInfo.name() {
             sections.push(SectionType::DebugInfo(debug_section));
-        } else if debug_section.name == SectionId::DebugLine.name() {
+        } else if debug_section.name() == SectionId::DebugLine.name() {
             sections.push(SectionType::DebugLine(debug_section));
-        } else if debug_section.name == SectionId::DebugLineStr.name() {
+        } else if debug_section.name() == SectionId::DebugLineStr.name() {
             sections.push(SectionType::DebugLineStr(debug_section));
-        } else if debug_section.name == SectionId::DebugStr.name() {
+        } else if debug_section.name() == SectionId::DebugStr.name() {
             sections.push(SectionType::DebugStr(debug_section));
-        } else if debug_section.name == SectionId::DebugFrame.name() {
+        } else if debug_section.name() == SectionId::DebugFrame.name() {
             sections.push(SectionType::DebugFrame(debug_section));
-        } else if debug_section.name == SectionId::DebugLoc.name() {
+        } else if debug_section.name() == SectionId::DebugLoc.name() {
             sections.push(SectionType::DebugLoc(debug_section));
-        } else if debug_section.name == SectionId::DebugRanges.name() {
+        } else if debug_section.name() == SectionId::DebugRanges.name() {
             sections.push(SectionType::DebugRanges(debug_section));
         } else {
             eprintln!(

@@ -682,6 +682,14 @@ impl DebugSection {
         self.offset
     }
 
+    pub fn set_name_offset(&mut self, name_offset: u32) {
+        self.name_offset = name_offset;
+    }
+
+    pub fn name_offset(&self) -> u32 {
+        self.name_offset
+    }
+
     pub fn section_header_bytecode(&self) -> Vec<u8> {
         SectionHeader::new(
             self.name_offset,
