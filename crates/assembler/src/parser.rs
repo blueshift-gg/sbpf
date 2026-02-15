@@ -5,7 +5,7 @@ use {
         astnode::{ASTNode, ExternDecl, GlobalDecl, Label, ROData, RodataDecl},
         dynsym::{DynamicSymbolMap, RelDynMap},
         errors::CompileError,
-        section::{CodeSection, DataSection},
+        section::{CodeSection, DataSection, DebugSection},
     },
     either::Either,
     pest::{Parser, iterators::Pair},
@@ -61,6 +61,9 @@ pub struct ParseResult {
     pub prog_is_static: bool,
 
     pub arch: SbpfArch,
+
+    // Debug sections we came across while byteparsing
+    pub debug_sections: Vec<DebugSection>,
 }
 
 pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
