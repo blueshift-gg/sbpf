@@ -1,5 +1,6 @@
 use {
     anyhow::{Error, Result},
+    clap::{Args, ValueEnum},
     codespan_reporting::{
         diagnostic::{Diagnostic, Label},
         files::SimpleFile,
@@ -11,6 +12,37 @@ use {
     std::{fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
+
+#[derive(Args, Default)]
+pub struct BuildArgs {
+    #[arg(short = 'g', long, help = "Include debug information")]
+    pub debug: bool,
+    #[arg(
+        short = 'a',
+        long,
+        default_value = "v0",
+        help = "Target architecture (v0 or v3)"
+    )]
+    arch: ArchArg,
+    #[arg(short = 'd', long, help = "Output deploy directory")]
+    pub deploy_dir: Option<String>,
+}
+
+#[derive(Clone, Copy, ValueEnum, Default)]
+pub enum ArchArg {
+    #[default]
+    V0,
+    V3,
+}
+
+impl From<ArchArg> for SbpfArch {
+    fn from(arg: ArchArg) -> Self {
+        match arg {
+            ArchArg::V0 => SbpfArch::V0,
+            ArchArg::V3 => SbpfArch::V3,
+        }
+    }
+}
 
 pub trait AsDiagnostic {
     // currently only support single source file reporting
@@ -42,10 +74,10 @@ impl AsDiagnostic for CompileError {
     }
 }
 
-pub fn build(debug: bool, arch: SbpfArch) -> Result<()> {
+pub fn build(args: BuildArgs) -> Result<()> {
     // Set src/out directory
     let src = "src";
-    let deploy = "deploy";
+    let deploy = args.deploy_dir.as_deref().unwrap_or("deploy");
 
     // Create necessary directories
     create_dir_all(deploy)?;
@@ -152,10 +184,10 @@ pub fn build(debug: bool, arch: SbpfArch) -> Result<()> {
                 println!(
                     "⚡️ Building \"{}\"{}",
                     subdir,
-                    if debug { " (debug)" } else { "" }
+                    if args.debug { " (debug)" } else { "" }
                 );
                 let start = Instant::now();
-                compile_assembly(&asm_file, deploy, debug, arch)?;
+                compile_assembly(&asm_file, deploy, args.debug, args.arch.into())?;
                 let duration = start.elapsed();
                 println!(
                     "✅ \"{}\" built successfully in {}ms!",

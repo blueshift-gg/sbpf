@@ -1,9 +1,15 @@
 pub mod commands;
 use {
     anyhow::Error,
-    clap::{Args, Parser, Subcommand, ValueEnum},
-    commands::{build, clean, deploy, disassemble, init, test},
-    sbpf_assembler::SbpfArch,
+    clap::{Parser, Subcommand},
+    commands::{
+        build::{BuildArgs, build},
+        clean::clean,
+        deploy::{DeployArgs, deploy},
+        disassemble::{DisassembleArgs, disassemble},
+        init::{InitArgs, init},
+        test::test,
+    },
 };
 
 #[derive(Parser)]
@@ -32,77 +38,20 @@ enum Commands {
     Disassemble(DisassembleArgs),
 }
 
-#[derive(Args)]
-pub struct InitArgs {
-    name: Option<String>,
-    #[arg(
-        short,
-        long = "ts-tests",
-        help = "Initialize with TypeScript tests instead of Mollusk Rust tests"
-    )]
-    ts_tests: bool,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-pub enum ArchArg {
-    V0,
-    V3,
-}
-
-impl From<ArchArg> for SbpfArch {
-    fn from(arg: ArchArg) -> Self {
-        match arg {
-            ArchArg::V0 => SbpfArch::V0,
-            ArchArg::V3 => SbpfArch::V3,
-        }
-    }
-}
-
-#[derive(Args)]
-struct BuildArgs {
-    #[arg(short = 'g', long, help = "Include debug information")]
-    debug: bool,
-    #[arg(
-        short = 'a',
-        long,
-        default_value = "v0",
-        help = "Target architecture (v0 or v3)"
-    )]
-    arch: ArchArg,
-}
-
-#[derive(Args)]
-struct DeployArgs {
-    name: Option<String>,
-    url: Option<String>,
-}
-
-#[derive(Args)]
-struct LinkArgs {
-    source: Option<String>,
-}
-
-#[derive(Args)]
-struct DisassembleArgs {
-    filename: String,
-    #[arg(short, long)]
-    debug: bool,
-}
-
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
-    match &cli.command {
-        Commands::Init(args) => init(args.name.clone(), args.ts_tests),
-        Commands::Build(args) => build(args.debug, args.arch.into()),
-        Commands::Deploy(args) => deploy(args.name.clone(), args.url.clone()),
+    match cli.command {
+        Commands::Init(args) => init(args),
+        Commands::Build(args) => build(args),
+        Commands::Deploy(args) => deploy(args),
         Commands::Test => test(),
         Commands::E2E(args) => {
-            build(false, SbpfArch::V0)?; // E2E uses release build
-            deploy(args.name.clone(), args.url.clone())?;
+            build(BuildArgs::default())?;
+            deploy(args)?;
             test()
         }
         Commands::Clean => clean(),
-        Commands::Disassemble(args) => disassemble(args.filename.clone(), args.debug),
+        Commands::Disassemble(args) => disassemble(args),
     }
 }

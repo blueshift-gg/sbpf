@@ -1,17 +1,25 @@
 use {
     anyhow::{Error, Result},
+    clap::Args,
     either::Either,
     sbpf_disassembler::program::Program,
     std::{collections::HashSet, fs::File, io::Read},
 };
 
-pub fn disassemble(filename: String, debug: bool) -> Result<(), Error> {
-    let mut file = File::open(filename)?;
+#[derive(Args)]
+pub struct DisassembleArgs {
+    pub filename: String,
+    #[arg(short, long)]
+    pub debug: bool,
+}
+
+pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
+    let mut file = File::open(&args.filename)?;
     let mut b = vec![];
     file.read_to_end(&mut b)?;
     let program = Program::from_bytes(b.as_ref())?;
 
-    let output = disassemble_program(program, debug)?;
+    let output = disassemble_program(program, args.debug)?;
     print!("{}", output);
     Ok(())
 }

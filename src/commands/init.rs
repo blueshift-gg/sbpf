@@ -3,6 +3,7 @@ use {
         CARGO_TOML, GITIGNORE, PACKAGE_JSON, PROGRAM, README, RUST_TESTS, TS_TESTS, TSCONFIG,
     },
     anyhow::{Error, Result},
+    clap::Args,
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
     std::{
@@ -12,9 +13,20 @@ use {
     },
 };
 
-pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
-    let project_name = match name {
-        Some(name) => name.clone(),
+#[derive(Args)]
+pub struct InitArgs {
+    pub name: Option<String>,
+    #[arg(
+        short,
+        long = "ts-tests",
+        help = "Initialize with TypeScript tests instead of Mollusk Rust tests"
+    )]
+    pub ts_tests: bool,
+}
+
+pub fn init(args: InitArgs) -> Result<(), Error> {
+    let project_name = match &args.name {
+        Some(name) => name.to_string(),
         None => loop {
             print!("What is the name of your project? ");
             io::stdout().flush()?;
@@ -60,7 +72,7 @@ pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
             serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..]).to_string(),
         )?;
 
-        if ts_tests {
+        if args.ts_tests {
             fs::write(
                 project_path.join("package.json"),
                 PACKAGE_JSON.replace("default_project_name", &project_name),
@@ -92,7 +104,7 @@ pub fn init(name: Option<String>, ts_tests: bool) -> Result<(), Error> {
         println!(
             "✅ Project '{}' initialized successfully with {} tests",
             project_name,
-            if ts_tests { "TypeScript" } else { "Rust" }
+            if args.ts_tests { "TypeScript" } else { "Rust" }
         );
         Ok(())
     } else {
