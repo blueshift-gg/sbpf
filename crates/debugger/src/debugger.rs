@@ -4,7 +4,8 @@ use {
         error::DebuggerResult,
         parser::{LineMap, RODataSymbol},
     },
-    sbpf_common::instruction::Instruction,
+    either::Either,
+    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
     sbpf_vm::{syscalls::SyscallHandler, vm::SbpfVm},
     serde_json::{Value, json},
     std::collections::HashSet,
@@ -20,14 +21,14 @@ pub struct StackFrame<'a> {
 
 #[derive(Debug)]
 pub enum DebugMode {
-    Step,
+    Next,
     Continue,
 }
 
 #[derive(Debug)]
 pub enum DebugEvent {
     Breakpoint(u64, Option<usize>),
-    Step(u64, Option<usize>),
+    Next(u64, Option<usize>),
     Exit(u64),
     Error(String),
 }
@@ -162,7 +163,7 @@ impl<H: SyscallHandler> Debugger<H> {
 
     pub fn run(&mut self) -> DebuggerResult<DebugEvent> {
         match self.debug_mode {
-            DebugMode::Step => {
+            DebugMode::Next => {
                 let current_pc = self.get_pc();
 
                 if self.at_breakpoint {
@@ -184,7 +185,7 @@ impl<H: SyscallHandler> Debugger<H> {
                                 return Ok(DebugEvent::Breakpoint(new_pc, line_number));
                             }
                             let line_number = self.get_line_for_pc(new_pc);
-                            return Ok(DebugEvent::Step(new_pc, line_number));
+                            return Ok(DebugEvent::Next(new_pc, line_number));
                         }
                         Err(e) => return Ok(DebugEvent::Error(format!("{e}"))),
                     }
@@ -205,8 +206,9 @@ impl<H: SyscallHandler> Debugger<H> {
                             let exit_code = self.vm.exit_code.unwrap_or(0);
                             DebugEvent::Exit(exit_code)
                         } else {
-                            let line_number = self.get_line_for_pc(current_pc);
-                            DebugEvent::Step(current_pc, line_number)
+                            let new_pc = self.get_pc();
+                            let line_number = self.get_line_for_pc(new_pc);
+                            DebugEvent::Next(new_pc, line_number)
                         }
                     }
                     Err(e) => DebugEvent::Error(format!("{e}")),
@@ -297,6 +299,27 @@ impl<H: SyscallHandler> Debugger<H> {
         self.vm.program.get(self.vm.pc)
     }
 
+    pub fn get_instruction_asm(&self) -> Option<String> {
+        let inst = self.get_instruction()?;
+        let mut asm = inst.to_asm().ok()?;
+
+        // Resolve rodata label.
+        if inst.opcode == Opcode::Lddw
+            && let Some(Either::Right(Number::Int(imm))) = &inst.imm
+            && let Some(ref rodata_symbols) = self.rodata
+        {
+            let addr = *imm as u64;
+            for sym in rodata_symbols {
+                if sym.address == addr {
+                    asm = asm.replace(&imm.to_string(), &sym.name);
+                    break;
+                }
+            }
+        }
+
+        Some(asm)
+    }
+
     pub fn get_source_location(&self, pc: u64) -> Option<(&str, usize, usize)> {
         if let Some(dwarf_map) = &self.dwarf_line_map
             && let Some(loc) = dwarf_map.get_source_location(pc)
@@ -359,8 +382,8 @@ impl<H: SyscallHandler> Debugger<H> {
 }
 
 impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
-    fn step(&mut self) -> Value {
-        self.set_debug_mode(DebugMode::Step);
+    fn next(&mut self) -> Value {
+        self.set_debug_mode(DebugMode::Next);
         self.run_to_json()
     }
 
@@ -518,8 +541,8 @@ impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
     fn run_to_json(&mut self) -> Value {
         match self.run() {
             Ok(event) => match event {
-                DebugEvent::Step(pc, line) => json!({
-                    "type": "step",
+                DebugEvent::Next(pc, line) => json!({
+                    "type": "next",
                     "pc": pc,
                     "line": line
                 }),

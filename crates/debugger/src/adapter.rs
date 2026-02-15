@@ -5,7 +5,7 @@ use {
 };
 
 pub trait DebuggerInterface {
-    fn step(&mut self) -> Value;
+    fn next(&mut self) -> Value;
     fn r#continue(&mut self) -> Value;
     fn set_breakpoint(&mut self, file: String, line: usize) -> Value;
     fn remove_breakpoint(&mut self, file: String, line: usize) -> Value;
@@ -59,7 +59,7 @@ pub fn run_adapter_loop<T: DebuggerInterface>(debugger: &mut T) {
             Ok(cmd) => {
                 response.request_id = cmd.request_id.clone();
                 let result = match cmd.command.as_str() {
-                    "step" => debugger.step(),
+                    "next" => debugger.next(),
                     "continue" => debugger.r#continue(),
                     "setBreakpoint" => {
                         if let Some(args) = cmd.args {

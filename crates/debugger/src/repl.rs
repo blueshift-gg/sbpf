@@ -28,9 +28,9 @@ impl Repl {
             }
             let cmd = input.trim();
             match cmd {
-                "step" | "s" => self.run_and_display(DebugMode::Step),
+                "next" | "n" => self.run_and_display(DebugMode::Next),
                 "continue" | "c" => self.run_and_display(DebugMode::Continue),
-                cmd if cmd.starts_with("break ") => {
+                cmd if cmd.starts_with("break ") || cmd.starts_with("b ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
                         if let Ok(line) = arg.parse::<usize>() {
                             match self.session.debugger.set_breakpoint_at_line(line) {
@@ -42,11 +42,11 @@ impl Repl {
                         }
                     }
                 }
-                cmd if cmd.starts_with("delete ") => {
+                cmd if cmd.starts_with("delete ") || cmd.starts_with("d ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
                         if let Ok(line) = arg.parse::<usize>() {
                             match self.session.debugger.remove_breakpoint_at_line(line) {
-                                Ok(()) => println!("Breakpoint removed from line: {}", line),
+                                Ok(()) => println!("Breakpoint removed from line {}", line),
                                 Err(e) => println!("Error: {}", e),
                             }
                         } else {
@@ -59,12 +59,15 @@ impl Repl {
                 }
                 "info line" => {
                     if let Some(line) = self.session.debugger.get_current_line() {
-                        println!("Current line: {}", line);
-                    } else {
-                        println!("No line information available for current PC");
+                        let asm = self
+                            .session
+                            .debugger
+                            .get_instruction_asm()
+                            .unwrap_or_default();
+                        println!("{}\t{}", line, asm);
                     }
                 }
-                "quit" => break,
+                "quit" | "q" => break,
                 "regs" => {
                     let regs = self.session.debugger.get_registers();
                     println!("+------------+--------------------+");
@@ -158,10 +161,10 @@ impl Repl {
                 }
                 "help" => {
                     println!("Commands:");
-                    println!("  step (s)                     - Execute one instruction");
+                    println!("  next (n)                     - Execute one instruction");
                     println!("  continue (c)                 - Continue execution");
-                    println!("  break <line>                 - Set breakpoint at line number");
-                    println!("  delete <line>                - Remove breakpoint at line");
+                    println!("  break (b) <line>             - Set breakpoint at line number");
+                    println!("  delete (d) <line>            - Remove breakpoint at line");
                     println!("  info breakpoints (info b)    - Show all breakpoints");
                     println!("  info line                    - Show current line info");
                     println!("  regs                         - Show all registers");
@@ -170,7 +173,7 @@ impl Repl {
                     println!("  lines                        - Show line to PC mapping");
                     println!("  compute                      - Show compute unit information");
                     println!("  help                         - Show this help");
-                    println!("  quit                         - Exit debugger");
+                    println!("  quit (q)                     - Exit debugger");
                 }
                 _ => println!("Unknown command. Type 'help'."),
             }
@@ -181,18 +184,25 @@ impl Repl {
         self.session.debugger.set_debug_mode(mode);
         match self.session.debugger.run() {
             Ok(event) => match event {
-                DebugEvent::Step(pc, line) => {
+                DebugEvent::Next(_pc, line) => {
                     if let Some(line_num) = line {
-                        println!("Step at PC 0x{:08x} (line {})", pc, line_num);
-                    } else {
-                        println!("Step at PC 0x{:08x}", pc);
+                        let asm = self
+                            .session
+                            .debugger
+                            .get_instruction_asm()
+                            .unwrap_or_default();
+                        println!("{}\t{}", line_num, asm);
                     }
                 }
-                DebugEvent::Breakpoint(pc, line) => {
+                DebugEvent::Breakpoint(_pc, line) => {
                     if let Some(line_num) = line {
-                        println!("Breakpoint hit at PC 0x{:08x} (line {})", pc, line_num);
-                    } else {
-                        println!("Breakpoint hit at PC 0x{:08x}", pc);
+                        let asm = self
+                            .session
+                            .debugger
+                            .get_instruction_asm()
+                            .unwrap_or_default();
+                        println!("Breakpoint hit at line {}", line_num);
+                        println!("{}\t{}", line_num, asm);
                     }
                 }
                 DebugEvent::Exit(code) => {
