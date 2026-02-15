@@ -1,7 +1,14 @@
 use {
     anyhow::{Error, Result},
+    clap::Args,
     std::{io, path::Path, process::Command},
 };
+
+#[derive(Args, Default)]
+pub struct DeployArgs {
+    pub name: Option<String>,
+    pub url: Option<String>,
+}
 
 fn deploy_program(program_name: &str, url: &str) -> Result<(), Error> {
     let program_id_file = format!("./deploy/{}-keypair.json", program_name);
@@ -54,12 +61,12 @@ fn deploy_all_programs(url: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn deploy(name: Option<String>, url: Option<String>) -> Result<(), Error> {
-    let url = url.unwrap_or_else(|| "localhost".to_string());
+pub fn deploy(args: DeployArgs) -> Result<(), Error> {
+    let url = args.url.as_deref().unwrap_or("localhost");
 
-    if let Some(program_name) = name {
-        deploy_program(&program_name, &url)
+    if let Some(program_name) = args.name.as_deref() {
+        deploy_program(program_name, url)
     } else {
-        deploy_all_programs(&url)
+        deploy_all_programs(url)
     }
 }
