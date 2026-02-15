@@ -1,12 +1,12 @@
 use {
     crate::{
-        debug::{self, DebugData},
+        debug::{self, DebugData, reuse_debug_sections},
         dynsym::{DynamicSymbol, RelDyn, RelocationType},
         header::{ElfHeader, ProgramHeader},
         parser::ParseResult,
         section::{
-            DynStrSection, DynSymSection, DynamicSection, NullSection, RelDynSection, Section,
-            SectionType, ShStrTabSection,
+            DebugSection, DynStrSection, DynSymSection, DynamicSection, NullSection, RelDynSection,
+            Section, SectionType, ShStrTabSection,
         },
     },
     std::{fs::File, io::Write, path::Path},
@@ -28,6 +28,7 @@ impl Program {
             relocation_data,
             prog_is_static,
             arch,
+            debug_sections,
         }: ParseResult,
         debug_data: Option<DebugData>,
     ) -> Self {
@@ -122,6 +123,7 @@ impl Program {
         if arch.is_v3() {
             // Generate debug sections
             let debug_sections = Self::generate_debug_sections(
+                debug_sections,
                 &debug_data,
                 text_offset,
                 &mut section_names,
@@ -298,6 +300,7 @@ impl Program {
 
             // Generate debug sections
             let debug_sections = Self::generate_debug_sections(
+                debug_sections,
                 &debug_data,
                 text_offset,
                 &mut section_names,
@@ -350,6 +353,7 @@ impl Program {
 
             // Generate debug sections
             let debug_sections = Self::generate_debug_sections(
+                debug_sections,
                 &debug_data,
                 text_offset,
                 &mut section_names,
@@ -412,6 +416,7 @@ impl Program {
     }
 
     fn generate_debug_sections(
+        parsed_debug_sections: Vec<DebugSection>,
         debug_data: &Option<DebugData>,
         text_offset: u64,
         section_names: &mut Vec<String>,
@@ -430,7 +435,7 @@ impl Program {
                 })
                 .collect()
         } else {
-            Vec::new()
+            reuse_debug_sections(parsed_debug_sections, section_names, current_offset)
         }
     }
 

@@ -682,6 +682,14 @@ impl DebugSection {
         self.offset
     }
 
+    pub fn set_name_offset(&mut self, name_offset: u32) {
+        self.name_offset = name_offset;
+    }
+
+    pub fn name_offset(&self) -> u32 {
+        self.name_offset
+    }
+
     pub fn section_header_bytecode(&self) -> Vec<u8> {
         SectionHeader::new(
             self.name_offset,
@@ -713,6 +721,10 @@ pub enum SectionType {
     DebugInfo(DebugSection),
     DebugLine(DebugSection),
     DebugLineStr(DebugSection),
+    DebugStr(DebugSection),
+    DebugFrame(DebugSection),
+    DebugLoc(DebugSection),
+    DebugRanges(DebugSection),
 }
 
 impl SectionType {
@@ -730,6 +742,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.name(),
             SectionType::DebugLine(ds) => ds.name(),
             SectionType::DebugLineStr(ds) => ds.name(),
+            SectionType::DebugStr(ds) => ds.name(),
+            SectionType::DebugFrame(ds) => ds.name(),
+            SectionType::DebugLoc(ds) => ds.name(),
+            SectionType::DebugRanges(ds) => ds.name(),
         }
     }
 
@@ -747,6 +763,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.bytecode(),
             SectionType::DebugLine(ds) => ds.bytecode(),
             SectionType::DebugLineStr(ds) => ds.bytecode(),
+            SectionType::DebugStr(ds) => ds.bytecode(),
+            SectionType::DebugFrame(ds) => ds.bytecode(),
+            SectionType::DebugLoc(ds) => ds.bytecode(),
+            SectionType::DebugRanges(ds) => ds.bytecode(),
         }
     }
 
@@ -764,6 +784,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.size(),
             SectionType::DebugLine(ds) => ds.size(),
             SectionType::DebugLineStr(ds) => ds.size(),
+            SectionType::DebugStr(ds) => ds.size(),
+            SectionType::DebugFrame(ds) => ds.size(),
+            SectionType::DebugLoc(ds) => ds.size(),
+            SectionType::DebugRanges(ds) => ds.size(),
         }
     }
 
@@ -781,6 +805,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.section_header_bytecode(),
             SectionType::DebugLine(ds) => ds.section_header_bytecode(),
             SectionType::DebugLineStr(ds) => ds.section_header_bytecode(),
+            SectionType::DebugStr(ds) => ds.section_header_bytecode(),
+            SectionType::DebugFrame(ds) => ds.section_header_bytecode(),
+            SectionType::DebugLoc(ds) => ds.section_header_bytecode(),
+            SectionType::DebugRanges(ds) => ds.section_header_bytecode(),
         }
     }
 
@@ -798,6 +826,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.set_offset(offset),
             SectionType::DebugLine(ds) => ds.set_offset(offset),
             SectionType::DebugLineStr(ds) => ds.set_offset(offset),
+            SectionType::DebugStr(ds) => ds.set_offset(offset),
+            SectionType::DebugFrame(ds) => ds.set_offset(offset),
+            SectionType::DebugLoc(ds) => ds.set_offset(offset),
+            SectionType::DebugRanges(ds) => ds.set_offset(offset),
         }
     }
 
@@ -815,6 +847,10 @@ impl SectionType {
             SectionType::DebugInfo(ds) => ds.offset(),
             SectionType::DebugLine(ds) => ds.offset(),
             SectionType::DebugLineStr(ds) => ds.offset(),
+            SectionType::DebugStr(ds) => ds.offset(),
+            SectionType::DebugFrame(ds) => ds.offset(),
+            SectionType::DebugLoc(ds) => ds.offset(),
+            SectionType::DebugRanges(ds) => ds.offset(),
         }
     }
 }
