@@ -2,6 +2,7 @@ use {
     anyhow::{Error, Result},
     clap::Args,
     either::Either,
+    sbpf_common::{inst_param::Number, opcode::Opcode},
     sbpf_disassembler::program::Program,
     std::{collections::HashSet, fs::File, io::Read},
 };
@@ -32,7 +33,7 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
     } else {
         let entrypoint_offset = program.get_entrypoint_offset();
 
-        let (ixs, rodata) = program.to_ixs()?;
+        let (mut ixs, rodata) = program.to_ixs()?;
 
         // Build position map
         let positions: Vec<u64> = ixs
@@ -47,19 +48,23 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
         // Collect all target positions
         let mut jmp_targets: HashSet<u64> = HashSet::new();
         let mut fn_targets: HashSet<u64> = HashSet::new();
-        for ix in &ixs {
-            if let Some(Either::Left(label)) = &ix.off
-                && label.starts_with("jmp_")
-                && let Ok(pos) = u64::from_str_radix(&label[4..], 16)
+        for (idx, ix) in ixs.iter().enumerate() {
+            if ix.is_jump()
+                && let Some(Either::Right(off)) = &ix.off
             {
-                jmp_targets.insert(pos);
+                let target_idx = (idx as i64 + 1 + *off as i64) as usize;
+                if let Some(&target_pos) = positions.get(target_idx) {
+                    jmp_targets.insert(target_pos);
+                }
             }
 
-            if let Some(Either::Left(label)) = &ix.imm
-                && label.starts_with("fn_")
-                && let Ok(pos) = u64::from_str_radix(&label[3..], 16)
+            if ix.opcode == Opcode::Call
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
             {
-                fn_targets.insert(pos);
+                let target_idx = (idx as i64 + 1 + *imm) as usize;
+                if let Some(&target_pos) = positions.get(target_idx) {
+                    fn_targets.insert(target_pos);
+                }
             }
         }
 
@@ -67,7 +72,7 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
         output.push_str(".globl entrypoint\n");
 
         let mut in_labeled_block = false;
-        for (idx, ix) in ixs.iter().enumerate() {
+        for (idx, ix) in ixs.iter_mut().enumerate() {
             let pos = positions[idx];
             let is_fn_target = fn_targets.contains(&pos);
             let is_jmp_target = jmp_targets.contains(&pos);
@@ -86,6 +91,33 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
                     output.push_str(&format!("jmp_{:04x}:\n", pos));
                 }
                 in_labeled_block = true;
+            }
+
+            // Replace numeric values with labels for display.
+            if ix.is_jump()
+                && let Some(Either::Right(off)) = &ix.off
+            {
+                let target_idx = (idx as i64 + 1 + *off as i64) as usize;
+                if let Some(&target_pos) = positions.get(target_idx) {
+                    ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
+                }
+            }
+
+            if ix.opcode == Opcode::Call
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+            {
+                let target_idx = (idx as i64 + 1 + *imm) as usize;
+                if let Some(&target_pos) = positions.get(target_idx) {
+                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                }
+            }
+
+            if ix.opcode == Opcode::Lddw
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+                && let Some(rodata) = &rodata
+                && let Some(label) = rodata.get_label(*imm as u64)
+            {
+                ix.imm = Some(Either::Left(label.to_string()));
             }
 
             // Indent instructions under labels

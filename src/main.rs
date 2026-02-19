@@ -5,6 +5,7 @@ use {
     commands::{
         build::{BuildArgs, build},
         clean::clean,
+        debug::{DebugArgs, debug},
         deploy::{DeployArgs, deploy},
         disassemble::{DisassembleArgs, disassemble},
         init::{InitArgs, init},
@@ -36,6 +37,8 @@ enum Commands {
     Clean,
     #[command(about = "Disassemble a Solana program executable")]
     Disassemble(DisassembleArgs),
+    #[command(about = "Debug a program")]
+    Debug(DebugArgs),
 }
 
 fn main() -> Result<(), Error> {
@@ -52,6 +55,7 @@ fn main() -> Result<(), Error> {
             test()
         }
         Commands::Clean => clean(),
+        Commands::Debug(args) => debug(args),
         Commands::Disassemble(args) => disassemble(args),
     }
 }

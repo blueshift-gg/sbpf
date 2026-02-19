@@ -21,7 +21,12 @@ pub struct DebugData {
 }
 
 fn calc_name_offset(names: &[String]) -> u32 {
-    (names.iter().map(|n| n.len() + 1).sum::<usize>() + 1) as u32
+    (names
+        .iter()
+        .filter(|n| !n.is_empty())
+        .map(|n| n.len() + 1)
+        .sum::<usize>()
+        + 1) as u32
 }
 
 /// Generate DebugSections from debug data

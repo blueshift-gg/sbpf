@@ -24,7 +24,7 @@ phf = "0.13.1"
 phf_macros = "0.13.1"
 pest = "2.7"
 pest_derive = "2.7"
-gimli = { version = "0.32.3", features = ["write"] }
+gimli = { workspace = true, features = ["write"] }
 codespan = "0.13.1"
 sbpf-syscall-map = { workspace = true }
 

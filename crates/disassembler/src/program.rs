@@ -79,9 +79,8 @@ impl Program {
             .map(|(d, addr)| (*addr, *addr + d.len() as u64))
             .unwrap_or((0, 0));
 
-        // Parse instructions and build slot/position mappings
+        // Parse instructions and build slot mappings
         let mut ixs: Vec<Instruction> = Vec::new();
-        let mut slot_to_position: Vec<u64> = Vec::new();
         let mut idx_to_slot: Vec<usize> = Vec::new();
         let mut pos: usize = 0;
         let mut slot: usize = 0;
@@ -107,11 +106,9 @@ impl Program {
                 ix.imm = Some(Either::Left(syscall_name.clone()));
             }
 
-            slot_to_position.push(pos as u64);
             idx_to_slot.push(slot);
 
             if ix.opcode == Opcode::Lddw {
-                slot_to_position.push(pos as u64 + 8);
                 pos += 16;
                 slot += 2;
             } else {
@@ -120,6 +117,11 @@ impl Program {
             }
 
             ixs.push(ix);
+        }
+
+        let mut slot_to_idx = vec![0usize; slot];
+        for (idx, &slot) in idx_to_slot.iter().enumerate() {
+            slot_to_idx[slot] = idx;
         }
 
         // Resolve jump/call labels and collect rodata references
@@ -132,10 +134,13 @@ impl Program {
             if ix.is_jump()
                 && let Some(Either::Right(off)) = &ix.off
             {
-                let current_slot = idx_to_slot[idx];
-                let target_slot = (current_slot as i64 + 1 + (*off as i64)) as usize;
-                if let Some(&target_pos) = slot_to_position.get(target_slot) {
-                    ix.off = Some(Either::Left(format!("jmp_{:04x}", target_pos)));
+                let current_slot = idx_to_slot[idx] as i64;
+                let target_slot = current_slot + 1 + (*off as i64);
+                if target_slot >= 0
+                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
+                {
+                    let new_off = target_idx as i64 - (idx as i64 + 1);
+                    ix.off = Some(Either::Right(new_off as i16));
                 }
             }
 
@@ -146,9 +151,10 @@ impl Program {
                 let current_slot = idx_to_slot[idx] as i64;
                 let target_slot = current_slot + 1 + *imm;
                 if target_slot >= 0
-                    && let Some(&target_pos) = slot_to_position.get(target_slot as usize)
+                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
                 {
-                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                    let new_rel = target_idx as i64 - (idx as i64 + 1);
+                    ix.imm = Some(Either::Right(Number::Int(new_rel)));
                 }
             }
 
@@ -164,22 +170,9 @@ impl Program {
             }
         }
 
-        // Parse rodata and replace addresses with labels
+        // Parse rodata section
         let rodata = if let Some((data, base_addr)) = rodata_info {
-            let rodata = RodataSection::parse(data, base_addr, &rodata_refs);
-
-            for ix in &mut ixs {
-                if ix.opcode == Opcode::Lddw
-                    && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-                {
-                    let addr = *imm as u64;
-                    if let Some(label) = rodata.get_label(addr) {
-                        ix.imm = Some(Either::Left(label.to_string()));
-                    }
-                }
-            }
-
-            Some(rodata)
+            Some(RodataSection::parse(data, base_addr, &rodata_refs))
         } else {
             None
         };

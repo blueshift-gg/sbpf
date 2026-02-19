@@ -1,0 +1,24 @@
+[package]
+name = "sbpf-debugger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+either = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+gimli = { workspace = true }
+object = { workspace = true }
+bs58 = "0.5"
+sha2 = "0.10"
+sha3 = "0.10"
+blake3 = "1.8"
+solana-sdk = "3.0"
+
+sbpf-assembler = { workspace = true }
+sbpf-disassembler = { workspace = true }
+sbpf-common = { workspace = true }
+sbpf-vm = { workspace = true }

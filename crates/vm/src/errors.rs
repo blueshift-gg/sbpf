@@ -29,6 +29,24 @@ pub enum SbpfVmError {
 
     #[error("Syscall error: {0}")]
     SyscallError(String),
+
+    #[error("Compute budget exceeded: limit {limit}, consumed {consumed}")]
+    ComputeBudgetExceeded { limit: u64, consumed: u64 },
+
+    #[error("Program aborted")]
+    Abort,
+
+    #[error("Overlapping memory regions")]
+    OverlappingMemoryRegions,
+
+    #[error("Too many slices for hashing")]
+    TooManySlices,
+
+    #[error("Max seed length exceeded for PDA")]
+    MaxSeedLengthExceeded,
+
+    #[error("Invalid slice conversion")]
+    InvalidSliceConversion,
 }
 
 pub type SbpfVmResult<T> = Result<T, SbpfVmError>;

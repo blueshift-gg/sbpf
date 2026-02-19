@@ -26,6 +26,7 @@ termcolor = "1.4"
 sbpf-assembler = { workspace = true }
 sbpf-common = { workspace = true }
 sbpf-disassembler = { workspace = true }
+sbpf-debugger = { workspace = true }
 sbpf-vm = { workspace = true }
 
 [dev-dependencies]
@@ -36,6 +37,7 @@ members = [
     "crates/assembler",
     "crates/common",
     "crates/disassembler",
+    "crates/debugger",
     "crates/sbpf-syscall-map",
     "crates/vm",
 ]
@@ -58,6 +60,7 @@ anyhow = "1.0.86"
 either = { version = "1.15.0", features = ["serde"] }
 num-derive = "0.4"
 num-traits = "0.2"
+gimli = { version = "0.32.3", features = ["write"] }
 object = "0.37.3"
 serde_json = "1.0.122"
 serde = { version = "1.0", features = ["derive"] }
@@ -65,6 +68,7 @@ thiserror = "2.0.12"
 
 sbpf-assembler = { path = "crates/assembler", version = "0.1.6" }
 sbpf-disassembler = { path = "crates/disassembler", version = "0.1.6" }
+sbpf-debugger = { path = "crates/debugger", version = "0.1.6" }
 sbpf-common = { path = "crates/common", version = "0.1.6" }
 sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.6" }
 sbpf-vm = { path = "crates/vm", version = "0.1.6" }

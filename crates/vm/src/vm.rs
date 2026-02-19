@@ -1,5 +1,6 @@
 use {
     crate::{
+        compute::ComputeMeter,
         errors::{SbpfVmError, SbpfVmResult},
         memory::Memory,
         syscalls::SyscallHandler,
@@ -17,7 +18,7 @@ use {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SbpfVmConfig {
     pub max_call_depth: usize,
-    pub max_steps: u64,
+    pub compute_unit_limit: u64,
     pub stack_size: usize,
     pub heap_size: usize,
 }
@@ -26,7 +27,7 @@ impl Default for SbpfVmConfig {
     fn default() -> Self {
         Self {
             max_call_depth: 64,
-            max_steps: 1_000_000,
+            compute_unit_limit: 1_400_000,
             stack_size: Memory::DEFAULT_STACK_SIZE,
             heap_size: Memory::DEFAULT_HEAP_SIZE,
         }
@@ -51,7 +52,7 @@ pub struct SbpfVm<H: SyscallHandler> {
     pub program: Vec<Instruction>,
     pub halted: bool,
     pub exit_code: Option<u64>,
-    pub compute_units_consumed: u64,
+    pub compute_meter: ComputeMeter,
     pub syscall_handler: H,
 }
 
@@ -85,7 +86,6 @@ impl<H: SyscallHandler> SbpfVm<H> {
         registers[10] = memory.initial_frame_pointer();
 
         Self {
-            config,
             registers,
             pc: 0,
             call_stack: Vec::new(),
@@ -93,8 +93,9 @@ impl<H: SyscallHandler> SbpfVm<H> {
             program,
             halted: false,
             exit_code: None,
-            compute_units_consumed: 0,
+            compute_meter: ComputeMeter::new(config.compute_unit_limit),
             syscall_handler,
+            config,
         }
     }
 
@@ -106,7 +107,7 @@ impl<H: SyscallHandler> SbpfVm<H> {
         self.call_stack.clear();
         self.halted = false;
         self.exit_code = None;
-        self.compute_units_consumed = 0;
+        self.compute_meter.reset();
         self.memory.reset_heap();
     }
 
@@ -124,6 +125,10 @@ impl<H: SyscallHandler> SbpfVm<H> {
         self.pc < self.program.len()
     }
 
+    pub fn get_remaining(&self) -> u64 {
+        self.compute_meter.get_remaining()
+    }
+
     pub fn step(&mut self) -> SbpfVmResult<()> {
         if self.halted {
             return Ok(());
@@ -133,11 +138,11 @@ impl<H: SyscallHandler> SbpfVm<H> {
             return Err(SbpfVmError::PcOutOfBounds(self.pc));
         }
 
+        self.compute_meter.consume(1)?;
+
         let inst = self.current_instruction()?.clone();
         self.execute_instruction(&inst)?;
 
-        self.compute_units_consumed += 1;
-        // TODO: Handle dynamic CU costs for syscalls
         Ok(())
     }
 
@@ -256,13 +261,15 @@ impl<H: SyscallHandler> SbpfVm<H> {
     pub fn run(&mut self) -> SbpfVmResult<()> {
         let mut steps = 0;
 
-        while !self.halted && steps < self.config.max_steps {
+        while !self.halted && steps < self.config.compute_unit_limit {
             self.step()?;
             steps += 1;
         }
 
-        if !self.halted && steps >= self.config.max_steps {
-            return Err(SbpfVmError::ExecutionLimitReached(self.config.max_steps));
+        if !self.halted && steps >= self.config.compute_unit_limit {
+            return Err(SbpfVmError::ExecutionLimitReached(
+                self.config.compute_unit_limit,
+            ));
         }
 
         Ok(())
@@ -384,7 +391,12 @@ impl<H: SyscallHandler> Vm for SbpfVm<H> {
             self.registers[5],
         ];
         self.syscall_handler
-            .handle(name, registers, &mut self.memory)
+            .handle(
+                name,
+                registers,
+                &mut self.memory,
+                self.compute_meter.clone(),
+            )
             .map_err(|e| ExecutionError::SyscallError(e.to_string()))
     }
 }
@@ -673,31 +685,31 @@ mod tests {
         vm.step().unwrap();
         assert_eq!(vm.pc, 1);
         assert_eq!(vm.registers[1], 10);
-        assert_eq!(vm.compute_units_consumed, 1);
+        assert_eq!(vm.compute_meter.get_consumed(), 1);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 2);
         assert_eq!(vm.registers[1], 15);
-        assert_eq!(vm.compute_units_consumed, 2);
+        assert_eq!(vm.compute_meter.get_consumed(), 2);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 3);
         assert_eq!(vm.registers[1], 45);
-        assert_eq!(vm.compute_units_consumed, 3);
+        assert_eq!(vm.compute_meter.get_consumed(), 3);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 4);
         assert_eq!(vm.registers[1], 38);
-        assert_eq!(vm.compute_units_consumed, 4);
+        assert_eq!(vm.compute_meter.get_consumed(), 4);
         assert!(!vm.halted);
 
         vm.step().unwrap();
         assert_eq!(vm.pc, 4);
         assert_eq!(vm.registers[1], 38);
-        assert_eq!(vm.compute_units_consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
         assert!(vm.halted);
     }
 
@@ -747,7 +759,7 @@ mod tests {
         assert!(vm.halted);
         assert_eq!(vm.registers[1], 38);
         assert_eq!(vm.pc, 4);
-        assert_eq!(vm.compute_units_consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
     }
 
     #[test]
@@ -802,7 +814,7 @@ mod tests {
         assert_eq!(vm.registers[2], 10);
         assert_eq!(vm.registers[3], 20);
         assert_eq!(vm.registers[4], 30);
-        assert_eq!(vm.compute_units_consumed, 5);
+        assert_eq!(vm.compute_meter.get_consumed(), 5);
     }
 
     #[test]
@@ -820,7 +832,7 @@ mod tests {
                 None,
                 None,
                 None,
-                Some(Either::Right(Number::Int(3))),
+                Some(Either::Right(Number::Int(2))),
             ),
             make_test_instruction(
                 Opcode::Lddw,
