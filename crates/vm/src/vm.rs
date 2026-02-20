@@ -19,7 +19,6 @@ use {
 pub struct SbpfVmConfig {
     pub max_call_depth: usize,
     pub compute_unit_limit: u64,
-    pub stack_size: usize,
     pub heap_size: usize,
 }
 
@@ -28,7 +27,6 @@ impl Default for SbpfVmConfig {
         Self {
             max_call_depth: 64,
             compute_unit_limit: 1_400_000,
-            stack_size: Memory::DEFAULT_STACK_SIZE,
             heap_size: Memory::DEFAULT_HEAP_SIZE,
         }
     }
@@ -79,7 +77,12 @@ impl<H: SyscallHandler> SbpfVm<H> {
         syscall_handler: H,
         config: SbpfVmConfig,
     ) -> Self {
-        let memory = Memory::new(input, rodata, config.stack_size, config.heap_size);
+        let memory = Memory::new(
+            input,
+            rodata,
+            Memory::stack_size(config.max_call_depth),
+            config.heap_size,
+        );
 
         let mut registers = [0u64; 11];
         registers[1] = Memory::INPUT_START;
@@ -444,7 +447,7 @@ mod tests {
         assert_eq!(vm.registers[1], Memory::INPUT_START);
         assert_eq!(
             vm.registers[10],
-            Memory::STACK_START + Memory::DEFAULT_STACK_SIZE as u64
+            Memory::STACK_START + Memory::STACK_FRAME_SIZE
         );
         assert!(!vm.halted);
         assert_eq!(vm.exit_code, None);

@@ -8,6 +8,8 @@
         - [Examples](#examples)
           - [Create a new project with Rust tests (default)](#create-a-new-project-with-rust-tests-default)
           - [Create a new project with TypeScript tests](#create-a-new-project-with-typescript-tests)
+      - [Disassembler](#disassembler)
+      - [Debugger](#debugger)
     - [Advanced Usage](#advanced-usage)
     - [License](#license)
     - [Contributing](#contributing)
@@ -94,6 +96,84 @@ sbpf init my-project --ts-tests
 ```
 
 After initializing the project, you can navigate into the project directory and use other commands to build, deploy, and test your program.
+
+#### Disassembler
+
+The disassembler converts a Solana program executable (ELF) into human-readable sBPF assembly.
+
+```sh
+sbpf disassemble <FILENAME>
+```
+
+#### Debugger
+
+The debugger provides an interactive REPL for stepping through sBPF assembly programs.
+
+*Debug an assembly file:*
+
+```sh
+sbpf debug --asm <FILENAME>
+```
+
+*Debug an ELF file:*
+
+```sh
+sbpf debug --elf <FILENAME>
+```
+
+*Input:*
+
+To debug programs that require input, the debugger accepts a JSON file (or JSON string) containing the instruction being executed and the accounts involved. Pass it using the `--input` flag:
+
+```sh
+sbpf debug --asm src/my-program/my-program.s --input input.json
+```
+
+The JSON should contain the following information:
+
+- **`instruction`**: The instruction to execute, including the program ID, account metas, and instruction data.
+- **`accounts`**: The account states. The `data` field in each account and instruction should be base58 encoded.
+
+
+*Example:*
+```json
+{
+  "instruction": {
+    "program_id": "78ycAjmvvq2Xjz6mBgGTsuHHNVADZ75NWgXKPY8wvF2s",
+    "accounts": [
+      {
+        "pubkey": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+        "is_signer": true,
+        "is_writable": false
+      },
+      {
+        "pubkey": "11157t3sqMV725NVRLrVQbAu98Jjfk1uCKehJnXXQs",
+        "is_signer": false,
+        "is_writable": true
+      }
+    ],
+    "data": "8AQGAut7N95oMfV99bhRZ"
+  },
+  "accounts": [
+    {
+      "pubkey": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+      "owner": "11111111111111111111111111111111",
+      "lamports": 1000000000,
+      "data": "",
+      "executable": false
+    },
+    {
+      "pubkey": "11157t3sqMV725NVRLrVQbAu98Jjfk1uCKehJnXXQs",
+      "owner": "11111111111111111111111111111111",
+      "lamports": 1000000000,
+      "data": "",
+      "executable": false
+    }
+  ]
+}
+```
+
+
 
 ### Advanced Usage
 

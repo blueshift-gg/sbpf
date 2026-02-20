@@ -18,6 +18,16 @@ impl Repl {
     pub fn start(&mut self) {
         println!("\nsBPF Debugger REPL. Type 'help' for commands.");
 
+        // Print the first instruction.
+        if let Some(line) = self.session.debugger.get_current_line() {
+            let asm = self
+                .session
+                .debugger
+                .get_instruction_asm()
+                .unwrap_or_default();
+            println!("{}\t{}", line, asm);
+        }
+
         let stdin = io::stdin();
         loop {
             print!("dbg> ");
@@ -134,26 +144,6 @@ impl Repl {
                         println!("Usage: setreg <idx> <value>");
                     }
                 }
-                "lines" => {
-                    if let Some(ref dwarf_map) = self.session.debugger.dwarf_line_map {
-                        println!("+----------+--------------------------+");
-                        println!("| Line     | Instruction Addresses    |");
-                        println!("+----------+--------------------------+");
-                        let mut lines: Vec<_> = dwarf_map.get_line_to_pcs().into_iter().collect();
-                        lines.sort_by_key(|(line, _)| *line);
-                        for (line, pcs) in lines {
-                            let pcs_str = pcs
-                                .iter()
-                                .map(|pc| format!("0x{:08x}", pc))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            println!("| {:<8} | {:<24} |", line, pcs_str);
-                        }
-                        println!("+----------+--------------------------+");
-                    } else {
-                        println!("No DWARF line mapping available.");
-                    }
-                }
                 "compute" => {
                     let cu_used = self.session.debugger.get_compute_units();
                     let cu_total = self.session.debugger.initial_compute_budget;
@@ -170,7 +160,6 @@ impl Repl {
                     println!("  regs                         - Show all registers");
                     println!("  reg <idx>                    - Show single register");
                     println!("  setreg <idx> <value>         - Set register value");
-                    println!("  lines                        - Show line to PC mapping");
                     println!("  compute                      - Show compute unit information");
                     println!("  help                         - Show this help");
                     println!("  quit (q)                     - Exit debugger");
