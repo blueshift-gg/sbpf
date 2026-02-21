@@ -23,8 +23,12 @@ test-examples:
 	done
 
 release:
-	cargo publish --package=sbpf-syscall-map
-	cargo publish --package=sbpf-common
-	cargo publish --package=sbpf-vm
-	cargo publish --package=sbpf-assembler
-	cargo publish --package=sbpf-disassembler
+	@for pkg in sbpf-syscall-map sbpf-common sbpf-vm sbpf-assembler sbpf-disassembler; do \
+		echo "Publishing $$pkg..."; \
+		cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log || \
+		if grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
+			echo "$$pkg: already published, skipping"; \
+		else \
+			exit 1; \
+		fi; \
+	done
