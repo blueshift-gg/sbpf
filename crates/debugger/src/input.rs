@@ -1,11 +1,9 @@
 use {
     crate::error::{DebuggerError, DebuggerResult},
     serde::Deserialize,
-    solana_sdk::{
-        account::Account as SolAccount,
-        instruction::{AccountMeta, Instruction},
-        pubkey::Pubkey,
-    },
+    solana_account::Account as SolAccount,
+    solana_address::Address,
+    solana_instruction::{AccountMeta, Instruction},
     std::{collections::HashMap, fs, mem::size_of, path::Path, str::FromStr},
 };
 
@@ -81,14 +79,14 @@ impl Serializer {
 }
 
 enum SerializeAccount {
-    Account(Pubkey, SolAccount, bool, bool),
+    Account(Address, SolAccount, bool, bool),
     Duplicate(u8),
 }
 
 fn serialize_parameters(
     accounts: Vec<SerializeAccount>,
     instruction_data: &[u8],
-    program_id: &Pubkey,
+    program_id: &Address,
 ) -> Vec<u8> {
     let mut s = Serializer::new();
 
@@ -125,10 +123,10 @@ fn serialize_parameters(
 
 /// Parse input JSON into serialized VM input bytes and program_id.
 /// Returns empty input bytes and random program_id if input is empty.
-pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Pubkey)> {
+pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Address)> {
     let input = input.trim();
     if input.is_empty() {
-        return Ok((Vec::new(), Pubkey::new_unique()));
+        return Ok((Vec::new(), Address::new_unique()));
     }
 
     // Handle both JSON file path or JSON string.
@@ -141,7 +139,7 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Pubkey)> {
     let debugger_input: DebuggerInput =
         serde_json::from_str(&json_str).map_err(|e| DebuggerError::InvalidInput(e.to_string()))?;
 
-    let program_id = Pubkey::from_str(&debugger_input.instruction.program_id)
+    let program_id = Address::from_str(&debugger_input.instruction.program_id)
         .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program_id: {}", e)))?;
 
     let account_metas: Vec<AccountMeta> = debugger_input
@@ -149,7 +147,7 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Pubkey)> {
         .accounts
         .iter()
         .map(|a| {
-            let pubkey = Pubkey::from_str(&a.pubkey)
+            let pubkey = Address::from_str(&a.pubkey)
                 .map_err(|e| DebuggerError::InvalidInput(format!("Invalid pubkey: {}", e)))?;
             Ok(AccountMeta {
                 pubkey,
@@ -171,13 +169,13 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Pubkey)> {
 
     let instruction = Instruction::new_with_bytes(program_id, &instruction_data, account_metas);
 
-    let account_map: HashMap<Pubkey, SolAccount> = debugger_input
+    let account_map: HashMap<Address, SolAccount> = debugger_input
         .accounts
         .iter()
         .map(|a| {
-            let pubkey = Pubkey::from_str(&a.pubkey)
+            let pubkey = Address::from_str(&a.pubkey)
                 .map_err(|e| DebuggerError::InvalidInput(format!("Invalid pubkey: {}", e)))?;
-            let owner = Pubkey::from_str(&a.owner)
+            let owner = Address::from_str(&a.owner)
                 .map_err(|e| DebuggerError::InvalidInput(format!("Invalid owner: {}", e)))?;
             let data = if a.data.is_empty() {
                 Vec::new()
@@ -200,7 +198,7 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Pubkey)> {
         .collect::<DebuggerResult<HashMap<_, _>>>()?;
 
     let mut serialized_accounts = Vec::new();
-    let mut seen: HashMap<Pubkey, usize> = HashMap::new();
+    let mut seen: HashMap<Address, usize> = HashMap::new();
 
     for (i, meta) in instruction.accounts.iter().enumerate() {
         if let Some(&first_idx) = seen.get(&meta.pubkey) {
@@ -240,9 +238,9 @@ mod tests {
 
     #[test]
     fn test_parse_json_string() {
-        let program_id = Pubkey::new_unique();
-        let account_pubkey = Pubkey::new_unique();
-        let owner = Pubkey::new_unique();
+        let program_id = Address::new_unique();
+        let account_pubkey = Address::new_unique();
+        let owner = Address::new_unique();
 
         let json = format!(
             r#"{{

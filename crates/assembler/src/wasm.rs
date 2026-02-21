@@ -1,5 +1,5 @@
 use {
-    crate::{parser, program::Program},
+    crate::{SbpfArch, parser, program::Program},
     serde::Serialize,
     serde_wasm_bindgen::to_value,
     std::ops::Range,
@@ -36,8 +36,14 @@ fn span_to_line_col(source_code: &str, span: &Range<usize>) -> (usize, usize) {
 }
 
 #[wasm_bindgen]
-pub fn assemble(source: &str) -> Result<Vec<u8>, JsValue> {
-    let parse_result = match parser::parse(source) {
+pub fn assemble(source: &str, arch: u32) -> Result<Vec<u8>, JsValue> {
+    // TODO: Make this a bit less hacky
+    let arch = if arch == 3 {
+        SbpfArch::V3
+    } else {
+        SbpfArch::V0
+    };
+    let parse_result = match parser::parse(source, arch) {
         Ok(result) => result,
         Err(errors) => {
             let compile_errors: Vec<CompileErrorInfo> = errors

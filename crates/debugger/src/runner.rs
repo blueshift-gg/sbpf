@@ -15,7 +15,7 @@ use {
         memory::Memory,
         vm::{SbpfVm, SbpfVmConfig},
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_address::Address,
     std::{
         fs::File,
         io::Read,
@@ -36,7 +36,7 @@ impl DebuggerSession {
         input: Vec<u8>,
         rodata_bytes: Vec<u8>,
         config: SbpfVmConfig,
-        program_id: Pubkey,
+        program_id: Address,
     ) -> SbpfVm<DebuggerSyscallHandler> {
         let compute_meter = ComputeMeter::new(config.compute_unit_limit);
         let handler = DebuggerSyscallHandler::new(ExecutionCost::default(), program_id);
@@ -51,7 +51,7 @@ pub fn load_session_from_asm(
     asm_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
-    program_id: Pubkey,
+    program_id: Address,
 ) -> DebuggerResult<DebuggerSession> {
     let asm_path = Path::new(asm_path);
     if !asm_path.exists() {
@@ -92,7 +92,7 @@ pub fn load_session_from_elf(
     elf_path: &str,
     input: Vec<u8>,
     config: SbpfVmConfig,
-    program_id: Pubkey,
+    program_id: Address,
 ) -> DebuggerResult<DebuggerSession> {
     let mut file = File::open(elf_path)?;
     let mut elf_bytes = Vec::new();
@@ -105,7 +105,7 @@ pub fn load_session_from_bytes(
     input: Vec<u8>,
     config: SbpfVmConfig,
     elf_path: Option<PathBuf>,
-    program_id: Pubkey,
+    program_id: Address,
 ) -> DebuggerResult<DebuggerSession> {
     let program = Program::from_bytes(&elf_bytes)?;
     let entrypoint = program.get_entrypoint_offset().unwrap_or(0);

@@ -176,15 +176,11 @@ impl LineMap {
 
             // Parse labels.
             let mut entries = unit.entries();
-            while let Some((_, entry)) = entries.next_dfs().map_err(DebuggerError::Dwarf)? {
+            while let Some(entry) = entries.next_dfs().map_err(DebuggerError::Dwarf)? {
                 if entry.tag() == gimli::DW_TAG_label
                     && let (Some(name_attr), Some(pc_attr)) = (
-                        entry
-                            .attr_value(gimli::DW_AT_name)
-                            .map_err(DebuggerError::Dwarf)?,
-                        entry
-                            .attr_value(gimli::DW_AT_low_pc)
-                            .map_err(DebuggerError::Dwarf)?,
+                        entry.attr_value(gimli::DW_AT_name),
+                        entry.attr_value(gimli::DW_AT_low_pc),
                     )
                     && let Ok(name) = unit.attr_string(name_attr)
                     && let gimli::AttributeValue::Addr(addr) = pc_attr

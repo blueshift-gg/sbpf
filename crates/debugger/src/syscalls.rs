@@ -9,7 +9,10 @@ use {
     },
     sha2::{Digest, Sha256},
     sha3::Keccak256,
-    solana_sdk::pubkey::Pubkey,
+    solana_address::Address,
+    solana_clock::Clock,
+    solana_epoch_schedule::EpochSchedule,
+    solana_rent::Rent,
     std::mem::size_of,
 };
 
@@ -20,20 +23,20 @@ const MAX_SEEDS: usize = 16;
 #[derive(Debug)]
 pub struct DebuggerSyscallHandler {
     pub costs: ExecutionCost,
-    pub current_program_id: Pubkey,
-    pub clock: solana_sdk::clock::Clock,
-    pub rent: solana_sdk::rent::Rent,
-    pub epoch_schedule: solana_sdk::epoch_schedule::EpochSchedule,
+    pub current_program_id: Address,
+    pub clock: Clock,
+    pub rent: Rent,
+    pub epoch_schedule: EpochSchedule,
 }
 
 impl DebuggerSyscallHandler {
-    pub fn new(costs: ExecutionCost, current_program_id: Pubkey) -> Self {
+    pub fn new(costs: ExecutionCost, current_program_id: Address) -> Self {
         Self {
             costs,
             current_program_id,
-            clock: solana_sdk::clock::Clock::default(),
-            rent: solana_sdk::rent::Rent::default(),
-            epoch_schedule: solana_sdk::epoch_schedule::EpochSchedule::default(),
+            clock: Clock::default(),
+            rent: Rent::default(),
+            epoch_schedule: EpochSchedule::default(),
         }
     }
 
@@ -337,13 +340,13 @@ impl DebuggerSyscallHandler {
         compute.consume(cost)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
-        let program_id = Pubkey::from(
+        let program_id = Address::from(
             <[u8; 32]>::try_from(memory.read_bytes(program_id_addr, 32)?)
                 .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
         );
 
         let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
-        match Pubkey::create_program_address(&seed_slices, &program_id) {
+        match Address::create_program_address(&seed_slices, &program_id) {
             Ok(addr) => {
                 memory.write_bytes(address_addr, addr.as_ref())?;
                 Ok(0)
@@ -368,13 +371,13 @@ impl DebuggerSyscallHandler {
         compute.consume(cost)?;
 
         let seeds = self.read_seeds(memory, seeds_addr, seeds_len)?;
-        let program_id = Pubkey::from(
+        let program_id = Address::from(
             <[u8; 32]>::try_from(memory.read_bytes(program_id_addr, 32)?)
                 .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
         );
 
         let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
-        match Pubkey::try_find_program_address(&seed_slices, &program_id) {
+        match Address::try_find_program_address(&seed_slices, &program_id) {
             Some((addr, bump)) => {
                 memory.write_u8(bump_seed_addr, bump)?;
                 memory.write_bytes(address_addr, addr.as_ref())?;
@@ -404,7 +407,7 @@ impl DebuggerSyscallHandler {
         let cost = self
             .costs
             .sysvar_base_cost
-            .saturating_add(size_of::<solana_sdk::clock::Clock>() as u64);
+            .saturating_add(size_of::<Clock>() as u64);
         compute.consume(cost)?;
         let clock = self.clock.clone();
         self.write_sysvar_bytes(memory, registers[0], &clock)?;
@@ -420,7 +423,7 @@ impl DebuggerSyscallHandler {
         let cost = self
             .costs
             .sysvar_base_cost
-            .saturating_add(size_of::<solana_sdk::rent::Rent>() as u64);
+            .saturating_add(size_of::<Rent>() as u64);
         compute.consume(cost)?;
         let rent = self.rent.clone();
         self.write_sysvar_bytes(memory, registers[0], &rent)?;
@@ -436,7 +439,7 @@ impl DebuggerSyscallHandler {
         let cost = self
             .costs
             .sysvar_base_cost
-            .saturating_add(size_of::<solana_sdk::epoch_schedule::EpochSchedule>() as u64);
+            .saturating_add(size_of::<EpochSchedule>() as u64);
         compute.consume(cost)?;
         let epoch_schedule = self.epoch_schedule.clone();
         self.write_sysvar_bytes(memory, registers[0], &epoch_schedule)?;
@@ -506,7 +509,7 @@ mod tests {
     use super::*;
 
     fn test_handler() -> DebuggerSyscallHandler {
-        DebuggerSyscallHandler::new(ExecutionCost::default(), Pubkey::new_unique())
+        DebuggerSyscallHandler::new(ExecutionCost::default(), Address::new_unique())
     }
 
     #[test]

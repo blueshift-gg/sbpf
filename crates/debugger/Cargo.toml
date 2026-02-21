@@ -12,12 +12,16 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 gimli = { workspace = true }
 object = { workspace = true }
-bs58 = "0.5"
-sha2 = "0.10"
-sha3 = "0.10"
-blake3 = "1.8"
-solana-sdk = "3.0"
-
+bs58 = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+blake3 = { workspace = true }
+solana-address = { workspace = true }
+solana-account = { workspace = true }
+solana-instruction = { workspace = true }
+solana-rent = { workspace = true }
+solana-clock = { workspace = true }
+solana-epoch-schedule = { workspace = true }
 sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }
 sbpf-common = { workspace = true }

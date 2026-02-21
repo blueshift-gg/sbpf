@@ -5,7 +5,6 @@ use {
     anyhow::{Error, Result},
     clap::Args,
     ed25519_dalek::SigningKey,
-    rand::rngs::OsRng,
     std::{
         fs,
         io::{self, Write},
@@ -64,7 +63,7 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
             PROGRAM,
         )?;
 
-        let mut rng = OsRng;
+        let mut rng = rand::rngs::OsRng;
         fs::write(
             project_path
                 .join("deploy")

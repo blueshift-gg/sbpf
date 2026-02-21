@@ -39,13 +39,13 @@ fn parse_dwarf_info(file_data: &[u8]) -> (HashMap<u64, u32>, Vec<LabelInfo>) {
 
         // Extract labels
         let mut entries = unit_ref.entries();
-        while let Ok(Some((_delta, entry))) = entries.next_dfs() {
+        while let Ok(Some(entry)) = entries.next_dfs() {
             if entry.tag() == gimli::DW_TAG_subprogram || entry.tag() == gimli::DW_TAG_label {
                 let mut name = None;
                 let mut line = None;
 
-                let mut attrs = entry.attrs();
-                while let Ok(Some(attr)) = attrs.next() {
+                let mut attrs = entry.attrs().iter();
+                while let Some(attr) = attrs.next() {
                     match attr.name() {
                         gimli::DW_AT_name => {
                             if let Ok(s) = dwarf.attr_string(&unit, attr.value()) {

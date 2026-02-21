@@ -18,12 +18,12 @@ name = "sbpf_disassembler"
 either = { workspace = true }
 object = { workspace = true }
 sbpf-common = { workspace = true }
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 serde = { version = "1.0.228", features = ["derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = { version = "0.2.92", features = ["serde-serialize"] }
+wasm-bindgen = { version = "0.2.110", features = ["serde-serialize"] }
 serde-wasm-bindgen = "0.6.5"
 
 [dev-dependencies]
-hex-literal = "1.0.0"
+hex-literal = "1.1.0"
