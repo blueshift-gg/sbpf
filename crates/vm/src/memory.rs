@@ -29,7 +29,6 @@ impl Memory {
     pub const HEAP_START: u64 = 0x300000000; // Heap data
     pub const INPUT_START: u64 = 0x400000000; // Program input parameters
 
-    pub const DEFAULT_STACK_SIZE: usize = 4096; // 4KB
     pub const DEFAULT_HEAP_SIZE: usize = 32768; // 32KB
     pub const STACK_FRAME_SIZE: u64 = 4096; // 4KB
 
@@ -44,7 +43,11 @@ impl Memory {
     }
 
     pub fn initial_frame_pointer(&self) -> u64 {
-        Self::STACK_START + self.stack.len() as u64
+        Self::STACK_START + Self::STACK_FRAME_SIZE
+    }
+
+    pub fn stack_size(max_call_depth: usize) -> usize {
+        Self::STACK_FRAME_SIZE as usize * max_call_depth
     }
 
     // Translate virtual address to region and offset
@@ -235,7 +238,12 @@ mod tests {
 
     #[test]
     fn test_read_write() {
-        let mut memory = Memory::new(vec![0; 16], vec![0; 16], 1024, 1024);
+        let mut memory = Memory::new(
+            vec![0; 16],
+            vec![0; 16],
+            Memory::STACK_FRAME_SIZE as usize,
+            1024,
+        );
 
         let fp = memory.initial_frame_pointer();
 

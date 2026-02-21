@@ -20,8 +20,8 @@ pub struct DebugArgs {
     input: String,
     #[arg(long, default_value = "1400000", help = "Compute unit limit")]
     compute_unit_limit: u64,
-    #[arg(long, default_value = "4096", help = "Stack size")]
-    stack_size: usize,
+    #[arg(long, default_value = "64", help = "Maximum call depth")]
+    max_call_depth: usize,
     #[arg(long, default_value = "32768", help = "Heap size")]
     heap_size: usize,
     #[arg(long, help = "Run in adapter mode")]
@@ -31,10 +31,9 @@ pub struct DebugArgs {
 pub fn debug(args: DebugArgs) -> Result<()> {
     let (input_bytes, program_id) = parse_input(&args.input)?;
     let config = SbpfVmConfig {
+        max_call_depth: args.max_call_depth,
         compute_unit_limit: args.compute_unit_limit,
-        stack_size: args.stack_size,
         heap_size: args.heap_size,
-        ..SbpfVmConfig::default()
     };
 
     let session = match (&args.asm, &args.elf) {
