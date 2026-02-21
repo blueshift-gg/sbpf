@@ -3,6 +3,8 @@ target/
 Cargo.lock
 **/*.rs
 **/Cargo.toml
+Makefile
+rustfmt.toml
 .cargo/
 
 # Rust build artifacts
@@ -15,6 +17,7 @@ Cargo.lock
 # Source code (keep only compiled artifacts)
 src/
 crates/
+examples/
 
 # Development files
 .git/
