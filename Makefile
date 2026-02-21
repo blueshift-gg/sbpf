@@ -23,6 +23,8 @@ test-examples:
 	done
 
 release:
+	make build && \
+	npm publish --access public && \
 	@for pkg in sbpf-syscall-map sbpf-common sbpf-vm sbpf-assembler sbpf-disassembler; do \
 		echo "Publishing $$pkg..."; \
 		cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log || \
