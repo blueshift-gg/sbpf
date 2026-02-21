@@ -3,6 +3,12 @@ name = "sbpf-debugger"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Lightweight debugger for SBPF (Solana BPF) bytecode"
+keywords = ["solana", "bpf", "vm", "blockchain"]
+categories = ["development-tools"]
+rust-version.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
