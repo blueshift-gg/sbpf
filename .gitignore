@@ -5,3 +5,4 @@ Cargo.lock
 test-ledger
 deploy
 *.sh
+.npmrc

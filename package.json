@@ -1,7 +1,7 @@
 {
 	"name": "@blueshift-gg/sbpf-assembler",
 	"description": "Assembler to assemble and link sbpf assembly to bytecode",
-	"version": "0.1.7",
+	"version": "0.1.6",
 	"main": "dist/node/sbpf_assembler.js",
 	"browser": "dist/web/sbpf_assembler.js",
 	"types": "dist/node/sbpf_assembler.d.ts",
