@@ -23,9 +23,7 @@ test-examples:
 	done
 
 release:
-	make build
-	npm publish --access public
-	@for pkg in sbpf-syscall-map sbpf-common sbpf-vm sbpf-assembler sbpf-disassembler sbpf; do \
+	@for pkg in sbpf-syscall-map sbpf-common sbpf-vm sbpf-assembler sbpf-disassembler sbpf-debugger sbpf; do \
 		echo "Publishing $$pkg..."; \
 		cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log || \
 		if grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
@@ -34,3 +32,5 @@ release:
 			exit 1; \
 		fi; \
 	done
+release-npm:
+	npm publish --access public
