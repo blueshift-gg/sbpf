@@ -21,3 +21,10 @@ test-examples:
 			( cd "$$d" && cargo run --manifest-path ../../Cargo.toml --bin sbpf -- test || exit 1 ); \
 		fi; \
 	done
+
+release:
+	cargo publish --package=sbpf-syscall-map
+	cargo publish --package=sbpf-common
+	cargo publish --package=sbpf-vm
+	cargo publish --package=sbpf-assembler
+	cargo publish --package=sbpf-disassembler
