@@ -1,11 +1,16 @@
 use {
     super::common::{
         CARGO_TOML, GITIGNORE, PACKAGE_JSON, PROGRAM, README, RUST_TESTS, TS_TESTS, TSCONFIG,
-    }, anyhow::{Error, Result}, clap::Args, ed25519_dalek::SigningKey, rand::rngs::OsRng, std::{
+    },
+    anyhow::{Error, Result},
+    clap::Args,
+    ed25519_dalek::SigningKey,
+    rand::rngs::OsRng,
+    std::{
         fs,
         io::{self, Write},
         process::Command,
-    }
+    },
 };
 
 #[derive(Args)]
