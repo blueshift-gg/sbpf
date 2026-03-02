@@ -40,6 +40,8 @@ impl Instruction {
         )
     }
 
+    /// Checks if the instruction is a syscall.
+    /// This should be used only when the call label hasn't been resolved to -1.
     pub fn is_syscall(&self) -> bool {
         if self.opcode == Opcode::Call
             && let Some(Either::Left(identifier)) = &self.imm
@@ -47,18 +49,6 @@ impl Instruction {
             return REGISTERED_SYSCALLS.contains(&identifier.as_str());
         }
         false
-    }
-
-    pub fn needs_relocation(&self) -> bool {
-        match self.opcode {
-            Opcode::Call => {
-                // Only dynamic syscalls (src = 1, imm = -1) need relocation.
-                self.src.as_ref().map(|r| r.n) == Some(1)
-                    && matches!(&self.imm, Some(Either::Right(Number::Int(-1))))
-            }
-            Opcode::Lddw => matches!(&self.imm, Some(Either::Left(_identifier))),
-            _ => false,
-        }
     }
 
     // only used for be/le

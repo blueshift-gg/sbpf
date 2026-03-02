@@ -132,6 +132,13 @@ impl AST {
         let mut relocations = RelDynMap::new();
         let mut dynamic_symbols = DynamicSymbolMap::new();
 
+        let program_is_static = arch.is_v3()
+            || !self.nodes.iter().any(|node| {
+                matches!(node, ASTNode::Instruction { instruction: inst, .. }
+                    if inst.is_syscall()
+                    || (inst.opcode == Opcode::Lddw && matches!(&inst.imm, Some(Either::Left(_)))))
+            });
+
         // Resolve both static and dynamic syscalls.
         for node in self.nodes.iter_mut() {
             if let ASTNode::Instruction {
@@ -161,11 +168,6 @@ impl AST {
                 }
             }
         }
-
-        let program_is_static = !self.nodes.iter().any(|node| {
-            matches!(node, ASTNode::Instruction { instruction: inst, .. }
-                if inst.needs_relocation())
-        });
 
         let mut errors = Vec::new();
 
