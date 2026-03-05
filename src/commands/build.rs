@@ -81,8 +81,7 @@ pub fn build(args: BuildArgs) -> Result<()> {
 
     // Create necessary directories
     create_dir_all(deploy)?;
-    // Expand .include "file" directives by inlining file contents (relative to source dir)
-    fn expand_includes(source: &str, base_dir: &Path) -> Result<String, Error> {
+    fn expand_includes(source: &str, base_dir: &Path, is_included: bool) -> Result<String, Error> {
         let mut result = String::new();
         for line in source.lines() {
             let trimmed = line.trim();
@@ -94,11 +93,24 @@ pub fn build(args: BuildArgs) -> Result<()> {
                         Error::msg(format!("Failed to read include '{}': {}", path, e))
                     })?;
                     let include_base = include_path.parent().unwrap_or(base_dir);
-                    result.push_str(&expand_includes(&included, include_base)?);
+                    result.push_str(&expand_includes(&included, include_base, true)?);
                 } else {
                     result.push_str(line);
                     result.push('\n');
                 }
+            } else if is_included
+                && (trimmed.starts_with(".globl") || trimmed.starts_with(".global"))
+            {
+                let label = trimmed
+                    .strip_prefix(".globl")
+                    .or_else(|| trimmed.strip_prefix(".global"))
+                    .unwrap_or("")
+                    .trim();
+                return Err(Error::msg(format!(
+                    ".globl '{}' is not allowed in included files. Only the main entrypoint file \
+                     should declare .globl symbols.",
+                    label
+                )));
             } else {
                 result.push_str(line);
                 result.push('\n');
@@ -111,7 +123,7 @@ pub fn build(args: BuildArgs) -> Result<()> {
     fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
         let base_dir = Path::new(src).parent().unwrap_or(Path::new("."));
-        let source_code = expand_includes(&source_code, base_dir)?;
+        let source_code = expand_includes(&source_code, base_dir, false)?;
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
         // Build assembler options
