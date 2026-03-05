@@ -230,3 +230,14 @@ pub fn update_assembly_file(env: &TestEnv, project_name: &str, content: &str) {
         .unwrap_or_else(|_| panic!("Failed to write new {}.s content", project_name));
     println!("✅ Updated {}.s with specified content", project_name);
 }
+
+/// Write an include file alongside the main assembly file
+#[allow(dead_code)]
+pub fn write_include_file(env: &TestEnv, project_name: &str, filename: &str, content: &str) {
+    let include_path = env
+        .project_dir
+        .join(format!("src/{}/{}", project_name, filename));
+    fs::write(&include_path, content)
+        .unwrap_or_else(|_| panic!("Failed to write include file {}", filename));
+    println!("✅ Wrote include file {}", filename);
+}

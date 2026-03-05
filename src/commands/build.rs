@@ -81,9 +81,37 @@ pub fn build(args: BuildArgs) -> Result<()> {
 
     // Create necessary directories
     create_dir_all(deploy)?;
+    // Expand .include "file" directives by inlining file contents (relative to source dir)
+    fn expand_includes(source: &str, base_dir: &Path) -> Result<String, Error> {
+        let mut result = String::new();
+        for line in source.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix(".include") {
+                let rest = rest.trim();
+                if let Some(path) = rest.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                    let include_path = base_dir.join(path);
+                    let included = fs::read_to_string(&include_path).map_err(|e| {
+                        Error::msg(format!("Failed to read include '{}': {}", path, e))
+                    })?;
+                    let include_base = include_path.parent().unwrap_or(base_dir);
+                    result.push_str(&expand_includes(&included, include_base)?);
+                } else {
+                    result.push_str(line);
+                    result.push('\n');
+                }
+            } else {
+                result.push_str(line);
+                result.push('\n');
+            }
+        }
+        Ok(result)
+    }
+
     // Function to compile assembly
     fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
+        let base_dir = Path::new(src).parent().unwrap_or(Path::new("."));
+        let source_code = expand_includes(&source_code, base_dir)?;
         let file = SimpleFile::new(src.to_string(), source_code.clone());
 
         // Build assembler options
