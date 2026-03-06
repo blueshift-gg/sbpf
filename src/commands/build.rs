@@ -81,6 +81,74 @@ pub fn build(args: BuildArgs) -> Result<()> {
 
     // Create necessary directories
     create_dir_all(deploy)?;
+
+    fn is_word_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    fn replace_whole_word(haystack: &str, label: &str, replacement: &str) -> String {
+        let mut result = String::with_capacity(haystack.len());
+        let mut i = 0;
+        let label_len = label.len();
+        while i <= haystack.len().saturating_sub(label_len) {
+            if haystack[i..].starts_with(label) {
+                let start = i;
+                let end = i + label_len;
+                let before_ok =
+                    start == 0 || !is_word_char(haystack[..start].chars().last().unwrap());
+                let after_ok =
+                    end >= haystack.len() || !is_word_char(haystack[end..].chars().next().unwrap());
+                if before_ok && after_ok {
+                    result.push_str(replacement);
+                    i = end;
+                    continue;
+                }
+            }
+            let ch = haystack[i..].chars().next().unwrap();
+            result.push(ch);
+            i += ch.len_utf8();
+        }
+        result.push_str(&haystack[i..]);
+        result
+    }
+
+    fn prefix_data_labels(content: &str, prefix: &str) -> String {
+        let mut data_labels: Vec<String> = Vec::new();
+        let mut in_data_section = false;
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+
+            if trimmed.starts_with(".text") {
+                in_data_section = false;
+            } else if trimmed.starts_with(".rodata") || trimmed.starts_with(".data") {
+                in_data_section = true;
+            }
+
+            if in_data_section && let Some(colon_pos) = trimmed.find(':') {
+                let before_colon = trimmed[..colon_pos].trim();
+                if !before_colon.is_empty()
+                    && before_colon
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_')
+                    && !before_colon.starts_with('.')
+                {
+                    data_labels.push(before_colon.to_string());
+                }
+            }
+        }
+
+        data_labels.sort_by_key(|b| std::cmp::Reverse(b.len()));
+        data_labels.dedup();
+
+        let mut result = content.to_string();
+        for label in data_labels {
+            let replacement = format!("{}{}", prefix, label);
+            result = replace_whole_word(&result, &label, &replacement);
+        }
+        result
+    }
+
     fn expand_includes(source: &str, base_dir: &Path, is_included: bool) -> Result<String, Error> {
         let mut result = String::new();
         for line in source.lines() {
@@ -93,7 +161,10 @@ pub fn build(args: BuildArgs) -> Result<()> {
                         Error::msg(format!("Failed to read include '{}': {}", path, e))
                     })?;
                     let include_base = include_path.parent().unwrap_or(base_dir);
-                    result.push_str(&expand_includes(&included, include_base, true)?);
+                    let expanded = expand_includes(&included, include_base, true)?;
+                    let path_stem = path.strip_suffix(".s").unwrap_or(path);
+                    let prefix = path_stem.replace('/', "_") + "___";
+                    result.push_str(&prefix_data_labels(&expanded, &prefix));
                 } else {
                     result.push_str(line);
                     result.push('\n');

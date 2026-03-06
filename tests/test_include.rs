@@ -236,3 +236,124 @@ entrypoint:
 
     env.cleanup();
 }
+
+#[test]
+fn test_include_auto_prefixes_data_labels() {
+    let env = TestEnv::new("include_prefix");
+
+    init_project(&env, "include_prefix");
+    verify_project_structure(&env, "include_prefix");
+
+    write_include_file(
+        &env,
+        "include_prefix",
+        "log.s",
+        r#".text
+log_msg:
+    lddw r1, msg
+    lddw r2, 13
+    call sol_log_
+    exit
+
+.rodata
+    msg: .ascii "from log"
+"#,
+    );
+
+    write_include_file(
+        &env,
+        "include_prefix",
+        "math.s",
+        r#".text
+add_one:
+    lddw r1, msg
+    lddw r2, 9
+    call sol_log_
+    exit
+
+.rodata
+    msg: .ascii "from math"
+"#,
+    );
+
+    update_assembly_file(
+        &env,
+        "include_prefix",
+        r#".globl entrypoint
+.include "log.s"
+.include "math.s"
+.text
+entrypoint:
+  call log_msg
+  call add_one
+  mov64 r0, 0
+  exit
+"#,
+    );
+
+    run_build(&env);
+    verify_so_files(&env);
+
+    env.cleanup();
+}
+
+#[test]
+fn test_include_prefix_uses_path_for_same_filename_in_different_dirs() {
+    let env = TestEnv::new("include_path_prefix");
+
+    init_project(&env, "include_path_prefix");
+    verify_project_structure(&env, "include_path_prefix");
+
+    // Two format.s files in different instruction modules - both define msg
+    write_include_file(
+        &env,
+        "include_path_prefix",
+        "instructions/transfer/format.s",
+        r#".text
+log_transfer:
+    lddw r1, msg
+    lddw r2, 12
+    call sol_log_
+    exit
+
+.rodata
+    msg: .ascii "Transfer ok"
+"#,
+    );
+
+    write_include_file(
+        &env,
+        "include_path_prefix",
+        "instructions/swap/format.s",
+        r#".text
+log_swap:
+    lddw r1, msg
+    lddw r2, 8
+    call sol_log_
+    exit
+
+.rodata
+    msg: .ascii "Swap ok"
+"#,
+    );
+
+    update_assembly_file(
+        &env,
+        "include_path_prefix",
+        r#".globl entrypoint
+.include "instructions/transfer/format.s"
+.include "instructions/swap/format.s"
+.text
+entrypoint:
+  call log_transfer
+  call log_swap
+  mov64 r0, 0
+  exit
+"#,
+    );
+
+    run_build(&env);
+    verify_so_files(&env);
+
+    env.cleanup();
+}
