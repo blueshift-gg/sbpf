@@ -38,7 +38,9 @@ impl Repl {
             }
             let cmd = input.trim();
             match cmd {
+                "step" | "s" => self.run_and_display(DebugMode::Step),
                 "next" | "n" => self.run_and_display(DebugMode::Next),
+                "finish" | "f" => self.run_and_display(DebugMode::Finish),
                 "continue" | "c" => self.run_and_display(DebugMode::Continue),
                 cmd if cmd.starts_with("break ") || cmd.starts_with("b ") => {
                     if let Some(arg) = cmd.split_whitespace().nth(1) {
@@ -151,7 +153,9 @@ impl Repl {
                 }
                 "help" => {
                     println!("Commands:");
-                    println!("  next (n)                     - Execute one instruction");
+                    println!("  step (s)                     - Step into");
+                    println!("  next (n)                     - Step over");
+                    println!("  finish (f)                   - Step out");
                     println!("  continue (c)                 - Continue execution");
                     println!("  break (b) <line>             - Set breakpoint at line number");
                     println!("  delete (d) <line>            - Remove breakpoint at line");
@@ -173,7 +177,7 @@ impl Repl {
         self.session.debugger.set_debug_mode(mode);
         match self.session.debugger.run() {
             Ok(event) => match event {
-                DebugEvent::Next(_pc, line) => {
+                DebugEvent::Stopped(_pc, line) => {
                     if let Some(line_num) = line {
                         let asm = self
                             .session
