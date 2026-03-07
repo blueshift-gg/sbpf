@@ -38,6 +38,7 @@ members = [
     "crates/common",
     "crates/disassembler",
     "crates/debugger",
+    "crates/runtime",
     "crates/sbpf-syscall-map",
     "crates/vm",
 ]
@@ -69,7 +70,11 @@ bs58 = "0.5"
 sha2 = "0.10"
 sha3 = "0.10"
 blake3 = { version = "1.8.3", features = ["traits-preview"] }
-solana-address = { version = "2.2.0", features = ["atomic", "decode", "curve25519"] }
+solana-address = { version = "2.2.0", features = [
+    "atomic",
+    "decode",
+    "curve25519",
+] }
 solana-account = "4.1.0"
 solana-instruction = "3.2.0"
 solana-rent = "4.1.0"
@@ -80,4 +85,5 @@ sbpf-disassembler = { path = "crates/disassembler", version = "0.1.8" }
 sbpf-debugger = { path = "crates/debugger", version = "0.1.8" }
 sbpf-common = { path = "crates/common", version = "0.1.8" }
 sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.8" }
+sbpf-runtime = { path = "crates/runtime", version = "0.1.8" }
 sbpf-vm = { path = "crates/vm", version = "0.1.8" }

@@ -1,0 +1,34 @@
+[package]
+name = "sbpf-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Lightweight runtime for sBPF programs"
+keywords = ["solana", "bpf", "vm", "runtime"]
+categories = ["development-tools"]
+rust-version.workspace = true
+
+[lib]
+crate-type = ["lib"]
+name = "sbpf_runtime"
+
+[dependencies]
+blake3 = { workspace = true }
+bs58 = { workspace = true }
+either = { workspace = true }
+sbpf-common = { workspace = true }
+sbpf-disassembler = { workspace = true }
+sbpf-vm = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+solana-address = { workspace = true }
+solana-account = { workspace = true }
+solana-instruction = { workspace = true }
+solana-rent = { workspace = true }
+solana-clock = { workspace = true }
+solana-epoch-schedule = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
