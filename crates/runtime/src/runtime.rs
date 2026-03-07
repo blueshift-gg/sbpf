@@ -139,7 +139,8 @@ impl Runtime {
 
         let vm_config = SbpfVmConfig {
             compute_unit_limit: self.config.compute_budget,
-            ..SbpfVmConfig::default()
+            max_call_depth: self.config.max_call_depth,
+            heap_size: self.config.heap_size,
         };
 
         let handler = RuntimeSyscallHandler::new(

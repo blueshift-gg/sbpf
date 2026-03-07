@@ -3,6 +3,8 @@ use {solana_clock::Clock, solana_epoch_schedule::EpochSchedule, solana_rent::Ren
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
     pub compute_budget: u64,
+    pub max_call_depth: usize,
+    pub heap_size: usize,
     pub max_cpi_depth: usize,
 }
 
@@ -10,6 +12,8 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             compute_budget: 200_000,
+            max_call_depth: 64,
+            heap_size: 32 * 1024,
             max_cpi_depth: 4,
         }
     }

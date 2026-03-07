@@ -27,6 +27,7 @@ sbpf-assembler = { workspace = true }
 sbpf-common = { workspace = true }
 sbpf-disassembler = { workspace = true }
 sbpf-debugger = { workspace = true }
+sbpf-runtime = { workspace = true }
 sbpf-vm = { workspace = true }
 
 [dev-dependencies]
