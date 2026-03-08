@@ -19,21 +19,11 @@ impl Default for RuntimeConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SysvarContext {
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
-}
-
-impl Default for SysvarContext {
-    fn default() -> Self {
-        Self {
-            clock: Clock::default(),
-            rent: Rent::default(),
-            epoch_schedule: EpochSchedule::default(),
-        }
-    }
 }
 
 /// Reference: https://github.com/anza-xyz/agave/blob/master/program-runtime/src/execution_budget.rs

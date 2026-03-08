@@ -15,6 +15,8 @@ crate-type = ["lib"]
 name = "sbpf_runtime"
 
 [dependencies]
+base64 = { workspace = true }
+bincode = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 either = { workspace = true }
@@ -29,6 +31,7 @@ solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-clock = { workspace = true }
 solana-epoch-schedule = { workspace = true }
+solana-system-interface = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

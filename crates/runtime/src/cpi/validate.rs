@@ -1,6 +1,6 @@
 use {
     crate::{
-        cpi::request::CpiRequest,
+        cpi::{builtins::SYSTEM_PROGRAM_ID, request::CpiRequest},
         errors::{RuntimeError, RuntimeResult},
     },
     solana_account::Account,
@@ -8,8 +8,6 @@ use {
     solana_instruction::AccountMeta,
     std::collections::HashMap,
 };
-
-const SYSTEM_PROGRAM_ID: Address = Address::new_from_array([0; 32]);
 
 /// Validates that the CPI request doesn't escalate privileges.
 pub fn check_privileges(

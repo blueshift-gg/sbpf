@@ -1,5 +1,5 @@
 use {
-    crate::config::ExecutionCost,
+    crate::{config::ExecutionCost, cpi::ReturnData},
     sbpf_vm::{compute::ComputeMeter, errors::SbpfVmResult, memory::Memory},
     solana_address::Address,
 };
@@ -12,7 +12,7 @@ pub fn sol_set_return_data(
     compute: &ComputeMeter,
     costs: &ExecutionCost,
     program_id: &Address,
-) -> SbpfVmResult<(u64, Option<(Address, Vec<u8>)>)> {
+) -> SbpfVmResult<(u64, ReturnData)> {
     let addr = registers[0];
     let len = registers[1];
 
@@ -43,7 +43,7 @@ pub fn sol_get_return_data(
     memory: &mut Memory,
     compute: &ComputeMeter,
     costs: &ExecutionCost,
-    return_data: &Option<(Address, Vec<u8>)>,
+    return_data: &ReturnData,
 ) -> SbpfVmResult<u64> {
     let buf_addr = registers[0];
     let buf_len = registers[1];

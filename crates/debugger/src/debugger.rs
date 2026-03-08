@@ -161,6 +161,17 @@ impl Debugger {
     }
 
     pub fn run(&mut self) -> DebuggerResult<DebugEvent> {
+        let event = self.execute()?;
+
+        // Print collected logs.
+        for log in self.runtime.drain_logs() {
+            println!("{}", log);
+        }
+
+        Ok(event)
+    }
+
+    fn execute(&mut self) -> DebuggerResult<DebugEvent> {
         match self.debug_mode {
             DebugMode::Next => {
                 let current_pc = self.get_pc();

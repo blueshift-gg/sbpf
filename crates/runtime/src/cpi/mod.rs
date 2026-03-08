@@ -1,3 +1,4 @@
+pub mod builtins;
 pub mod request;
 pub mod sync;
 pub mod validate;
@@ -6,9 +7,11 @@ use {
     crate::{
         config::{ExecutionCost, RuntimeConfig, SysvarContext},
         errors::{RuntimeError, RuntimeResult},
+        runtime::LogCollector,
         serialize,
         syscalls::RuntimeSyscallHandler,
     },
+    base64::{Engine, engine::general_purpose::STANDARD as BASE64},
     either::Either,
     request::CpiRequest,
     sbpf_common::{inst_param::Number, opcode::Opcode},
@@ -24,25 +27,77 @@ use {
     std::collections::HashMap,
 };
 
-pub fn execute_cpi(
-    request: CpiRequest,
-    programs: &HashMap<Address, Vec<u8>>,
-    accounts: &mut HashMap<Address, Account>,
-    config: &RuntimeConfig,
-    sysvars: &SysvarContext,
-    compute_remaining: u64,
-    cpi_depth: usize,
-    caller_account_metas: &[AccountMeta],
-) -> RuntimeResult<(u64, Option<(Address, Vec<u8>)>, u64)> {
-    if cpi_depth >= config.max_cpi_depth {
-        return Err(RuntimeError::CpiDepthExceeded(config.max_cpi_depth));
+pub type ReturnData = Option<(Address, Vec<u8>)>;
+
+pub struct CpiOutput {
+    pub exit_code: u64,
+    pub return_data: ReturnData,
+    pub compute_consumed: u64,
+}
+
+pub type CpiExecResult = RuntimeResult<CpiOutput>;
+
+pub struct CpiContext<'a> {
+    pub request: CpiRequest,
+    pub programs: &'a HashMap<Address, Vec<u8>>,
+    pub accounts: &'a mut HashMap<Address, Account>,
+    pub config: &'a RuntimeConfig,
+    pub sysvars: &'a SysvarContext,
+    pub compute_remaining: u64,
+    pub cpi_depth: usize,
+    pub caller_account_metas: &'a [AccountMeta],
+    pub log_collector: &'a LogCollector,
+}
+
+pub fn execute_cpi(ctx: &mut CpiContext) -> CpiExecResult {
+    if ctx.cpi_depth >= ctx.config.max_cpi_depth {
+        return Err(RuntimeError::CpiDepthExceeded(ctx.config.max_cpi_depth));
     }
 
-    validate::check_privileges(&request, caller_account_metas)?;
+    validate::check_privileges(&ctx.request, ctx.caller_account_metas)?;
 
-    let elf_bytes = programs
-        .get(&request.program_id)
-        .ok_or_else(|| RuntimeError::ProgramNotFound(request.program_id.to_string()))?;
+    ctx.log_collector.borrow_mut().push(format!(
+        "Program {} invoke [{}]",
+        ctx.request.program_id,
+        ctx.cpi_depth + 1
+    ));
+
+    if builtins::is_builtin(&ctx.request.program_id) {
+        let mut all_signers = ctx.request.signers.clone();
+        for meta in &ctx.request.accounts {
+            if meta.is_signer && !all_signers.contains(&meta.pubkey) {
+                all_signers.push(meta.pubkey);
+            }
+        }
+        let consumed = builtins::execute_builtin(
+            &ctx.request.program_id,
+            ctx.accounts,
+            &ctx.request,
+            &all_signers,
+            ctx.compute_remaining,
+        )?;
+        ctx.log_collector.borrow_mut().push(format!(
+            "Program {} consumed {} of {} compute units",
+            ctx.request.program_id, consumed, ctx.compute_remaining
+        ));
+        ctx.log_collector
+            .borrow_mut()
+            .push(format!("Program {} success", ctx.request.program_id));
+        return Ok(CpiOutput {
+            exit_code: 0,
+            return_data: None,
+            compute_consumed: consumed,
+        });
+    }
+
+    execute_elf_cpi(ctx)
+}
+
+fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
+    let elf_bytes = ctx
+        .programs
+        .get(&ctx.request.program_id)
+        .ok_or_else(|| RuntimeError::ProgramNotFound(ctx.request.program_id.to_string()))?;
 
     let program = Program::from_bytes(elf_bytes)
         .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
@@ -73,7 +128,8 @@ pub fn execute_cpi(
         }
     }
 
-    let account_metas: Vec<AccountMeta> = request
+    let account_metas: Vec<AccountMeta> = ctx
+        .request
         .accounts
         .iter()
         .map(|a| AccountMeta {
@@ -85,45 +141,52 @@ pub fn execute_cpi(
 
     let callee_accounts: Vec<(Address, Account)> = account_metas
         .iter()
-        .filter_map(|meta| accounts.get(&meta.pubkey).map(|a| (meta.pubkey, a.clone())))
+        .filter_map(|meta| {
+            ctx.accounts
+                .get(&meta.pubkey)
+                .map(|a| (meta.pubkey, a.clone()))
+        })
         .collect();
 
     let input = serialize::serialize_parameters(
         &callee_accounts.iter().cloned().collect(),
         &account_metas,
-        &request.data,
-        &request.program_id,
+        &ctx.request.data,
+        &ctx.request.program_id,
     )?;
 
     let vm_config = SbpfVmConfig {
-        compute_unit_limit: compute_remaining,
-        max_call_depth: config.max_call_depth,
-        heap_size: config.heap_size,
+        compute_unit_limit: ctx.compute_remaining,
+        max_call_depth: ctx.config.max_call_depth,
+        heap_size: ctx.config.heap_size,
     };
 
     let handler = RuntimeSyscallHandler::new(
         ExecutionCost::default(),
-        request.program_id,
-        sysvars.clone(),
+        ctx.request.program_id,
+        ctx.sysvars.clone(),
+        ctx.log_collector.clone(),
     );
 
     let mut callee_vm = SbpfVm::new_with_config(instructions, input, rodata, handler, vm_config);
-    callee_vm.compute_meter = ComputeMeter::new(compute_remaining);
+    callee_vm.compute_meter = ComputeMeter::new(ctx.compute_remaining);
     callee_vm.set_entrypoint(entrypoint as usize);
 
-    // Run callee VM to completion.
     loop {
         callee_vm.step()?;
 
-        // Handle nested CPI.
         if let Some(nested_request) = callee_vm.syscall_handler.pending_cpi.take() {
-            sync::sync_from_caller(&callee_vm.memory, &nested_request.caller_accounts, accounts)?;
+            sync::sync_from_caller(
+                &callee_vm.memory,
+                &nested_request.caller_accounts,
+                ctx.accounts,
+            )?;
 
             let caller_accounts_for_sync = nested_request.caller_accounts;
             let nested_consumed = callee_vm.compute_meter.get_consumed();
-            let nested_remaining = compute_remaining.saturating_sub(nested_consumed);
+            let nested_remaining = ctx.compute_remaining.saturating_sub(nested_consumed);
 
-            let cpi_request = CpiRequest {
+            let nested_cpi_request = CpiRequest {
                 program_id: nested_request.program_id,
                 accounts: nested_request.accounts,
                 data: nested_request.data,
@@ -131,30 +194,39 @@ pub fn execute_cpi(
                 signers: nested_request.signers,
             };
 
-            let (nested_exit, nested_return_data, nested_cu) = execute_cpi(
-                cpi_request,
-                programs,
-                accounts,
-                config,
-                sysvars,
-                nested_remaining,
-                cpi_depth + 1,
-                &account_metas,
-            )?;
+            let mut nested_ctx = CpiContext {
+                request: nested_cpi_request,
+                programs: ctx.programs,
+                accounts: ctx.accounts,
+                config: ctx.config,
+                sysvars: ctx.sysvars,
+                compute_remaining: nested_remaining,
+                cpi_depth: ctx.cpi_depth + 1,
+                caller_account_metas: &account_metas,
+                log_collector: ctx.log_collector,
+            };
 
-            callee_vm.compute_meter.consume(nested_cu)?;
-            callee_vm.syscall_handler.return_data = nested_return_data;
+            let nested_output = execute_cpi(&mut nested_ctx)?;
 
-            if nested_exit != 0 {
+            callee_vm
+                .compute_meter
+                .consume(nested_output.compute_consumed)?;
+            callee_vm.syscall_handler.return_data = nested_output.return_data;
+
+            if nested_output.exit_code != 0 {
                 let consumed = callee_vm.compute_meter.get_consumed();
-                return Ok((
-                    nested_exit,
-                    callee_vm.syscall_handler.return_data.take(),
-                    consumed,
-                ));
+                return Ok(CpiOutput {
+                    exit_code: nested_output.exit_code,
+                    return_data: callee_vm.syscall_handler.return_data.take(),
+                    compute_consumed: consumed,
+                });
             }
 
-            sync::sync_to_caller(&mut callee_vm.memory, &caller_accounts_for_sync, accounts)?;
+            sync::sync_to_caller(
+                &mut callee_vm.memory,
+                &caller_accounts_for_sync,
+                ctx.accounts,
+            )?;
         }
 
         if callee_vm.halted {
@@ -167,19 +239,51 @@ pub fn execute_cpi(
     let consumed = callee_vm.compute_meter.get_consumed();
 
     if exit_code != 0 {
-        return Ok((exit_code, callee_return_data, consumed));
+        ctx.log_collector.borrow_mut().push(format!(
+            "Program {} consumed {} of {} compute units",
+            ctx.request.program_id, consumed, ctx.compute_remaining
+        ));
+        ctx.log_collector.borrow_mut().push(format!(
+            "Program {} failed: exit code {}",
+            ctx.request.program_id, exit_code
+        ));
+        return Ok(CpiOutput {
+            exit_code,
+            return_data: callee_return_data,
+            compute_consumed: consumed,
+        });
     }
 
-    // Sync callee's account changes back to the runtime's account store.
-    serialize::deserialize_parameters(accounts, &account_metas, &callee_vm.memory.input);
+    serialize::deserialize_parameters(ctx.accounts, &account_metas, &callee_vm.memory.input);
 
-    // Validate account changes.
     validate::check_account_changes(
-        &request.program_id,
+        &ctx.request.program_id,
         &account_metas,
         &callee_accounts,
-        accounts,
+        ctx.accounts,
     )?;
 
-    Ok((0, callee_return_data, consumed))
+    if let Some((ref pid, ref data)) = callee_return_data
+        && !data.is_empty()
+    {
+        ctx.log_collector.borrow_mut().push(format!(
+            "Program return: {} {}",
+            pid,
+            BASE64.encode(data)
+        ));
+    }
+
+    ctx.log_collector.borrow_mut().push(format!(
+        "Program {} consumed {} of {} compute units",
+        ctx.request.program_id, consumed, ctx.compute_remaining
+    ));
+    ctx.log_collector
+        .borrow_mut()
+        .push(format!("Program {} success", ctx.request.program_id));
+
+    Ok(CpiOutput {
+        exit_code: 0,
+        return_data: callee_return_data,
+        compute_consumed: consumed,
+    })
 }

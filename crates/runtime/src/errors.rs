@@ -28,6 +28,9 @@ pub enum RuntimeError {
 
     #[error("Register index {0} out of range")]
     RegisterOutOfRange(usize),
+
+    #[error("Builtin program error: {0}")]
+    BuiltinError(String),
 }
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;

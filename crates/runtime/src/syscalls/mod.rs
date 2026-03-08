@@ -10,6 +10,7 @@ use {
     crate::{
         config::{ExecutionCost, SysvarContext},
         cpi::request::{self, CpiRequest},
+        runtime::LogCollector,
     },
     sbpf_vm::{
         compute::ComputeMeter, errors::SbpfVmResult, memory::Memory, syscalls::SyscallHandler,
@@ -22,17 +23,24 @@ pub struct RuntimeSyscallHandler {
     pub program_id: Address,
     pub sysvars: SysvarContext,
     pub pending_cpi: Option<CpiRequest>,
-    pub return_data: Option<(Address, Vec<u8>)>,
+    pub return_data: crate::cpi::ReturnData,
+    pub log_collector: LogCollector,
 }
 
 impl RuntimeSyscallHandler {
-    pub fn new(costs: ExecutionCost, program_id: Address, sysvars: SysvarContext) -> Self {
+    pub fn new(
+        costs: ExecutionCost,
+        program_id: Address,
+        sysvars: SysvarContext,
+        log_collector: LogCollector,
+    ) -> Self {
         Self {
             costs,
             program_id,
             sysvars,
             pending_cpi: None,
             return_data: None,
+            log_collector,
         }
     }
 }
@@ -46,10 +54,24 @@ impl SyscallHandler for RuntimeSyscallHandler {
         compute: ComputeMeter,
     ) -> SbpfVmResult<u64> {
         match name {
-            "sol_log_" => log::sol_log(registers, memory, &compute, &self.costs),
-            "sol_log_64_" => log::sol_log_64(registers, &compute, &self.costs),
-            "sol_log_pubkey" => log::sol_log_pubkey(registers, memory, &compute, &self.costs),
-            "sol_log_compute_units_" => log::sol_log_compute_units(&compute, &self.costs),
+            "sol_log_" => log::sol_log(
+                registers,
+                memory,
+                &compute,
+                &self.costs,
+                &self.log_collector,
+            ),
+            "sol_log_64_" => log::sol_log_64(registers, &compute, &self.costs, &self.log_collector),
+            "sol_log_pubkey" => log::sol_log_pubkey(
+                registers,
+                memory,
+                &compute,
+                &self.costs,
+                &self.log_collector,
+            ),
+            "sol_log_compute_units_" => {
+                log::sol_log_compute_units(&compute, &self.costs, &self.log_collector)
+            }
             "sol_remaining_compute_units" => {
                 log::sol_remaining_compute_units(&compute, &self.costs)
             }

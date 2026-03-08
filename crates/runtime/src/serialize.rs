@@ -162,11 +162,11 @@ pub fn deserialize_parameters(
         let data = d.read_account_data(data_len);
         let _rent_epoch = d.read_u64();
 
-        if meta.is_writable {
-            if let Some(account) = accounts.get_mut(&meta.pubkey) {
-                account.lamports = lamports;
-                account.data = data.to_vec();
-            }
+        if meta.is_writable
+            && let Some(account) = accounts.get_mut(&meta.pubkey)
+        {
+            account.lamports = lamports;
+            account.data = data.to_vec();
         }
     }
 }

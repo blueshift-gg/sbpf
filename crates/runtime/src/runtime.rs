@@ -6,6 +6,7 @@ use {
         serialize,
         syscalls::RuntimeSyscallHandler,
     },
+    base64::{Engine, engine::general_purpose::STANDARD as BASE64},
     either::Either,
     sbpf_common::{execute::Vm, inst_param::Number, instruction::Instruction, opcode::Opcode},
     sbpf_disassembler::program::Program,
@@ -17,8 +18,10 @@ use {
     solana_account::Account,
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction as SolanaInstruction},
-    std::collections::HashMap,
+    std::{cell::RefCell, collections::HashMap, rc::Rc},
 };
+
+pub type LogCollector = Rc<RefCell<Vec<String>>>;
 
 pub enum ElfSource {
     Path(String),
@@ -46,6 +49,7 @@ impl From<Vec<u8>> for ElfSource {
 pub struct ExecutionResult {
     pub exit_code: Option<u64>,
     pub compute_units_consumed: u64,
+    pub logs: Vec<String>,
 }
 
 pub struct Runtime {
@@ -59,6 +63,7 @@ pub struct Runtime {
     vm: Option<SbpfVm<RuntimeSyscallHandler>>,
     accounts: HashMap<Address, Account>,
     account_metas: Vec<AccountMeta>,
+    log_collector: LogCollector,
 }
 
 impl Runtime {
@@ -112,6 +117,7 @@ impl Runtime {
             vm: None,
             accounts: HashMap::new(),
             account_metas: Vec::new(),
+            log_collector: Rc::new(RefCell::new(Vec::new())),
         })
     }
 
@@ -148,6 +154,7 @@ impl Runtime {
             ExecutionCost::default(),
             self.program_id,
             self.sysvars.clone(),
+            self.log_collector.clone(),
         );
 
         let mut vm = SbpfVm::new_with_config(
@@ -179,14 +186,29 @@ impl Runtime {
         instruction: &SolanaInstruction,
         accounts: &[(Address, Account)],
     ) -> RuntimeResult<ExecutionResult> {
+        self.log_collector.borrow_mut().clear();
         self.setup_vm(instruction, accounts)?;
+
+        self.log_collector
+            .borrow_mut()
+            .push(format!("Program {} invoke [1]", self.program_id));
 
         loop {
             let vm = self.vm.as_mut().unwrap();
-            vm.step()?;
+            if let Err(e) = vm.step() {
+                self.log_collector
+                    .borrow_mut()
+                    .push(format!("Program failed: {}", e));
+                return Err(e.into());
+            }
 
             if let Some(request) = vm.syscall_handler.pending_cpi.take() {
-                self.handle_cpi(request)?;
+                if let Err(e) = self.handle_cpi(request) {
+                    self.log_collector
+                        .borrow_mut()
+                        .push(format!("Program failed: {}", e));
+                    return Err(e);
+                }
                 continue;
             }
 
@@ -198,9 +220,42 @@ impl Runtime {
         self.sync_accounts();
 
         let vm = self.vm.as_ref().unwrap();
+        let consumed = vm.compute_meter.get_consumed();
+        let exit_code = vm.exit_code;
+
+        if let Some(ref return_data) = vm.syscall_handler.return_data
+            && !return_data.1.is_empty()
+        {
+            self.log_collector.borrow_mut().push(format!(
+                "Program return: {} {}",
+                return_data.0,
+                BASE64.encode(&return_data.1)
+            ));
+        }
+
+        self.log_collector.borrow_mut().push(format!(
+            "Program {} consumed {} of {} compute units",
+            self.program_id, consumed, self.config.compute_budget
+        ));
+
+        if exit_code.unwrap_or(0) == 0 {
+            self.log_collector
+                .borrow_mut()
+                .push(format!("Program {} success", self.program_id));
+        } else {
+            self.log_collector.borrow_mut().push(format!(
+                "Program {} failed: exit code {}",
+                self.program_id,
+                exit_code.unwrap_or(0)
+            ));
+        }
+
+        let logs = self.log_collector.borrow().clone();
+
         Ok(ExecutionResult {
-            exit_code: vm.exit_code,
-            compute_units_consumed: vm.compute_meter.get_consumed(),
+            exit_code,
+            compute_units_consumed: consumed,
+            logs,
         })
     }
 
@@ -209,20 +264,69 @@ impl Runtime {
         instruction: &SolanaInstruction,
         accounts: &[(Address, Account)],
     ) -> RuntimeResult<()> {
-        self.setup_vm(instruction, accounts)
+        self.log_collector.borrow_mut().clear();
+        self.setup_vm(instruction, accounts)?;
+        self.log_collector
+            .borrow_mut()
+            .push(format!("Program {} invoke [1]", self.program_id));
+        Ok(())
     }
 
     pub fn step(&mut self) -> RuntimeResult<()> {
         let vm = self.vm.as_mut().ok_or(RuntimeError::VmNotPrepared)?;
-        vm.step()?;
-
-        if let Some(request) = vm.syscall_handler.pending_cpi.take() {
-            self.handle_cpi(request)?;
+        if vm.halted {
+            return Ok(());
+        }
+        if let Err(e) = vm.step() {
+            self.log_collector
+                .borrow_mut()
+                .push(format!("Program failed: {}", e));
+            return Err(e.into());
         }
 
-        let vm = self.vm.as_ref().unwrap();
-        if vm.halted {
+        if let Some(request) = vm.syscall_handler.pending_cpi.take()
+            && let Err(e) = self.handle_cpi(request)
+        {
+            self.log_collector
+                .borrow_mut()
+                .push(format!("Program failed: {}", e));
+            return Err(e);
+        }
+
+        let vm_ref = self.vm.as_ref().unwrap();
+        if vm_ref.halted {
             self.sync_accounts();
+
+            let vm = self.vm.as_ref().unwrap();
+            let consumed = vm.compute_meter.get_consumed();
+            let exit_code = vm.exit_code;
+
+            if let Some(ref return_data) = vm.syscall_handler.return_data
+                && !return_data.1.is_empty()
+            {
+                self.log_collector.borrow_mut().push(format!(
+                    "Program return: {} {}",
+                    return_data.0,
+                    BASE64.encode(&return_data.1)
+                ));
+            }
+
+            self.log_collector.borrow_mut().push(format!(
+                "Program {} consumed {} of {} compute units",
+                self.program_id, consumed, self.config.compute_budget
+            ));
+
+            if exit_code.unwrap_or(0) == 0 {
+                self.log_collector
+                    .borrow_mut()
+                    .push(format!("Program {} success", self.program_id));
+            } else {
+                self.log_collector.borrow_mut().push(format!(
+                    "Program {} failed: exit code {}",
+                    self.program_id,
+                    exit_code.unwrap_or(0)
+                ));
+            }
         }
 
         Ok(())
@@ -244,26 +348,29 @@ impl Runtime {
             signers: request.signers,
         };
 
-        let (exit_code, callee_return_data, callee_consumed) = cpi::execute_cpi(
-            cpi_request,
-            &self.programs,
-            &mut self.accounts,
-            &self.config,
-            &self.sysvars,
+        let mut ctx = cpi::CpiContext {
+            request: cpi_request,
+            programs: &self.programs,
+            accounts: &mut self.accounts,
+            config: &self.config,
+            sysvars: &self.sysvars,
             compute_remaining,
-            1,
-            &self.account_metas,
-        )?;
+            cpi_depth: 1,
+            caller_account_metas: &self.account_metas,
+            log_collector: &self.log_collector,
+        };
+
+        let output = cpi::execute_cpi(&mut ctx)?;
 
         let vm = self.vm.as_mut().unwrap();
-        vm.compute_meter.consume(callee_consumed)?;
-        vm.syscall_handler.return_data = callee_return_data;
+        vm.compute_meter.consume(output.compute_consumed)?;
+        vm.syscall_handler.return_data = output.return_data;
 
-        if exit_code != 0 {
+        if output.exit_code != 0 {
             return Err(RuntimeError::VmError(
                 sbpf_vm::errors::SbpfVmError::SyscallError(format!(
                     "CPI callee returned error: {}",
-                    exit_code
+                    output.exit_code
                 )),
             ));
         }
@@ -350,5 +457,13 @@ impl Runtime {
 
     pub fn sysvars_mut(&mut self) -> &mut SysvarContext {
         &mut self.sysvars
+    }
+
+    pub fn log_collector(&self) -> &LogCollector {
+        &self.log_collector
+    }
+
+    pub fn drain_logs(&self) -> Vec<String> {
+        self.log_collector.borrow_mut().drain(..).collect()
     }
 }
