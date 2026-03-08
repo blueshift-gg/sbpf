@@ -1,4 +1,5 @@
 pub mod config;
+pub mod cpi;
 pub mod errors;
 pub mod runtime;
 pub mod serialize;

@@ -3,21 +3,26 @@ pub mod crypto;
 pub mod log;
 pub mod memory;
 pub mod pda;
+pub mod return_data;
 pub mod sysvar;
 
 use {
-    crate::config::{ExecutionCost, SysvarContext},
+    crate::{
+        config::{ExecutionCost, SysvarContext},
+        cpi::request::{self, CpiRequest},
+    },
     sbpf_vm::{
         compute::ComputeMeter, errors::SbpfVmResult, memory::Memory, syscalls::SyscallHandler,
     },
     solana_address::Address,
 };
 
-#[derive(Debug)]
 pub struct RuntimeSyscallHandler {
     pub costs: ExecutionCost,
     pub program_id: Address,
     pub sysvars: SysvarContext,
+    pub pending_cpi: Option<CpiRequest>,
+    pub return_data: Option<(Address, Vec<u8>)>,
 }
 
 impl RuntimeSyscallHandler {
@@ -26,6 +31,8 @@ impl RuntimeSyscallHandler {
             costs,
             program_id,
             sysvars,
+            pending_cpi: None,
+            return_data: None,
         }
     }
 }
@@ -83,6 +90,40 @@ impl SyscallHandler for RuntimeSyscallHandler {
                 &self.costs,
                 &self.sysvars,
             ),
+
+            "sol_set_return_data" => {
+                let (result, data) = return_data::sol_set_return_data(
+                    registers,
+                    memory,
+                    &compute,
+                    &self.costs,
+                    &self.program_id,
+                )?;
+                self.return_data = data;
+                Ok(result)
+            }
+            "sol_get_return_data" => return_data::sol_get_return_data(
+                registers,
+                memory,
+                &compute,
+                &self.costs,
+                &self.return_data,
+            ),
+
+            "sol_invoke_signed_c" => {
+                compute.consume(self.costs.invoke_units)?;
+                let request = request::parse_cpi_c(registers, memory, &self.program_id)?;
+                compute.consume(request.data.len() as u64 / self.costs.cpi_bytes_per_unit)?;
+                self.pending_cpi = Some(request);
+                Ok(0)
+            }
+            "sol_invoke_signed_rust" => {
+                compute.consume(self.costs.invoke_units)?;
+                let request = request::parse_cpi_rust(registers, memory, &self.program_id)?;
+                compute.consume(request.data.len() as u64 / self.costs.cpi_bytes_per_unit)?;
+                self.pending_cpi = Some(request);
+                Ok(0)
+            }
 
             _ => {
                 compute.consume(self.costs.syscall_base_cost)?;

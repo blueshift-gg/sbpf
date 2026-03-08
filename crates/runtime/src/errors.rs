@@ -17,6 +17,12 @@ pub enum RuntimeError {
     #[error("Program not found: {0}")]
     ProgramNotFound(String),
 
+    #[error("CPI depth exceeded (max: {0})")]
+    CpiDepthExceeded(usize),
+
+    #[error("CPI privilege escalation: {0} on account {1}")]
+    PrivilegeEscalation(String, String),
+
     #[error("VM not prepared — call prepare() or run() first")]
     VmNotPrepared,
 

@@ -1,6 +1,7 @@
 use {
     crate::{
         config::{ExecutionCost, RuntimeConfig, SysvarContext},
+        cpi,
         errors::{RuntimeError, RuntimeResult},
         serialize,
         syscalls::RuntimeSyscallHandler,
@@ -180,8 +181,19 @@ impl Runtime {
     ) -> RuntimeResult<ExecutionResult> {
         self.setup_vm(instruction, accounts)?;
 
-        let vm = self.vm.as_mut().unwrap();
-        vm.run()?;
+        loop {
+            let vm = self.vm.as_mut().unwrap();
+            vm.step()?;
+
+            if let Some(request) = vm.syscall_handler.pending_cpi.take() {
+                self.handle_cpi(request)?;
+                continue;
+            }
+
+            if vm.halted {
+                break;
+            }
+        }
 
         self.sync_accounts();
 
@@ -204,9 +216,61 @@ impl Runtime {
         let vm = self.vm.as_mut().ok_or(RuntimeError::VmNotPrepared)?;
         vm.step()?;
 
+        if let Some(request) = vm.syscall_handler.pending_cpi.take() {
+            self.handle_cpi(request)?;
+        }
+
+        let vm = self.vm.as_ref().unwrap();
         if vm.halted {
             self.sync_accounts();
         }
+
+        Ok(())
+    }
+
+    fn handle_cpi(&mut self, request: cpi::request::CpiRequest) -> RuntimeResult<()> {
+        let vm = self.vm.as_ref().unwrap();
+        let compute_remaining = self.config.compute_budget - vm.compute_meter.get_consumed();
+
+        // Sync latest account state from caller VM memory into account store.
+        cpi::sync::sync_from_caller(&vm.memory, &request.caller_accounts, &mut self.accounts)?;
+
+        let caller_accounts = request.caller_accounts;
+        let cpi_request = cpi::request::CpiRequest {
+            program_id: request.program_id,
+            accounts: request.accounts,
+            data: request.data,
+            caller_accounts: Vec::new(),
+            signers: request.signers,
+        };
+
+        let (exit_code, callee_return_data, callee_consumed) = cpi::execute_cpi(
+            cpi_request,
+            &self.programs,
+            &mut self.accounts,
+            &self.config,
+            &self.sysvars,
+            compute_remaining,
+            1,
+            &self.account_metas,
+        )?;
+
+        let vm = self.vm.as_mut().unwrap();
+        vm.compute_meter.consume(callee_consumed)?;
+        vm.syscall_handler.return_data = callee_return_data;
+
+        if exit_code != 0 {
+            return Err(RuntimeError::VmError(
+                sbpf_vm::errors::SbpfVmError::SyscallError(format!(
+                    "CPI callee returned error: {}",
+                    exit_code
+                )),
+            ));
+        }
+
+        // Sync updated accounts back to caller VM memory.
+        let vm = self.vm.as_mut().unwrap();
+        cpi::sync::sync_to_caller(&mut vm.memory, &caller_accounts, &self.accounts)?;
 
         Ok(())
     }
