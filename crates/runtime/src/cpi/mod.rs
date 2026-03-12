@@ -6,19 +6,16 @@ pub mod validate;
 use {
     crate::{
         config::{ExecutionCost, RuntimeConfig, SysvarContext},
+        elf::load_elf,
         errors::{RuntimeError, RuntimeResult},
         runtime::LogCollector,
         serialize,
         syscalls::RuntimeSyscallHandler,
     },
     base64::{Engine, engine::general_purpose::STANDARD as BASE64},
-    either::Either,
     request::CpiRequest,
-    sbpf_common::{inst_param::Number, opcode::Opcode},
-    sbpf_disassembler::program::Program,
     sbpf_vm::{
         compute::ComputeMeter,
-        memory::Memory,
         vm::{SbpfVm, SbpfVmConfig},
     },
     solana_account::Account,
@@ -99,34 +96,7 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
         .get(&ctx.request.program_id)
         .ok_or_else(|| RuntimeError::ProgramNotFound(ctx.request.program_id.to_string()))?;
 
-    let program = Program::from_bytes(elf_bytes)
-        .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-    let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
-    let (mut instructions, rodata_section) = program
-        .to_ixs()
-        .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-
-    let rodata = rodata_section
-        .as_ref()
-        .map(|s| s.data.clone())
-        .unwrap_or_default();
-
-    if let Some(ref section) = rodata_section {
-        let elf_base = section.base_address;
-        let elf_end = elf_base + section.data.len() as u64;
-        for ix in &mut instructions {
-            if ix.opcode == Opcode::Lddw
-                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-            {
-                let addr = *imm as u64;
-                if addr >= elf_base && addr < elf_end {
-                    ix.imm = Some(Either::Right(Number::Int(
-                        (Memory::RODATA_START + addr - elf_base) as i64,
-                    )));
-                }
-            }
-        }
-    }
+    let (instructions, rodata, entrypoint) = load_elf(elf_bytes)?;
 
     let account_metas: Vec<AccountMeta> = ctx
         .request
@@ -139,17 +109,8 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
         })
         .collect();
 
-    let callee_accounts: Vec<(Address, Account)> = account_metas
-        .iter()
-        .filter_map(|meta| {
-            ctx.accounts
-                .get(&meta.pubkey)
-                .map(|a| (meta.pubkey, a.clone()))
-        })
-        .collect();
-
-    let input = serialize::serialize_parameters(
-        &callee_accounts.iter().cloned().collect(),
+    let (input, pre_lens) = serialize::serialize_parameters(
+        ctx.accounts,
         &account_metas,
         &ctx.request.data,
         &ctx.request.program_id,
@@ -170,10 +131,12 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
 
     let mut callee_vm = SbpfVm::new_with_config(instructions, input, rodata, handler, vm_config);
     callee_vm.compute_meter = ComputeMeter::new(ctx.compute_remaining);
-    callee_vm.set_entrypoint(entrypoint as usize);
+    callee_vm.set_entrypoint(entrypoint);
 
     loop {
-        callee_vm.step()?;
+        if let Err(e) = callee_vm.step() {
+            return Err(e.into());
+        }
 
         if let Some(nested_request) = callee_vm.syscall_handler.pending_cpi.take() {
             sync::sync_from_caller(
@@ -254,13 +217,12 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
         });
     }
 
-    serialize::deserialize_parameters(ctx.accounts, &account_metas, &callee_vm.memory.input);
-
-    validate::check_account_changes(
-        &ctx.request.program_id,
-        &account_metas,
-        &callee_accounts,
+    serialize::deserialize_parameters(
         ctx.accounts,
+        &account_metas,
+        &callee_vm.memory.input,
+        &pre_lens,
+        &ctx.request.program_id,
     )?;
 
     if let Some((ref pid, ref data)) = callee_return_data

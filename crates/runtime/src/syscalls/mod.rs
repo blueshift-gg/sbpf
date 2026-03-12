@@ -45,6 +45,31 @@ impl RuntimeSyscallHandler {
     }
 }
 
+// Consume CUs for CPI.
+fn consume_cpi_compute_units(
+    request: &CpiRequest,
+    compute: &ComputeMeter,
+    costs: &ExecutionCost,
+) -> SbpfVmResult<()> {
+    // Base invoke cost.
+    compute.consume(costs.invoke_units)?;
+    // Instruction data cost.
+    let data_cost = request.data.len() as u64 / costs.cpi_bytes_per_unit;
+    compute.consume(data_cost)?;
+    // Per-account data cost.
+    for meta in request.accounts.iter() {
+        if let Some(caller) = request
+            .caller_accounts
+            .iter()
+            .find(|c| c.pubkey == meta.pubkey)
+        {
+            let acct_cost = caller.data_len / costs.cpi_bytes_per_unit;
+            compute.consume(acct_cost)?;
+        }
+    }
+    Ok(())
+}
+
 impl SyscallHandler for RuntimeSyscallHandler {
     fn handle(
         &mut self,
@@ -133,16 +158,14 @@ impl SyscallHandler for RuntimeSyscallHandler {
             ),
 
             "sol_invoke_signed_c" => {
-                compute.consume(self.costs.invoke_units)?;
                 let request = request::parse_cpi_c(registers, memory, &self.program_id)?;
-                compute.consume(request.data.len() as u64 / self.costs.cpi_bytes_per_unit)?;
+                consume_cpi_compute_units(&request, &compute, &self.costs)?;
                 self.pending_cpi = Some(request);
                 Ok(0)
             }
             "sol_invoke_signed_rust" => {
-                compute.consume(self.costs.invoke_units)?;
                 let request = request::parse_cpi_rust(registers, memory, &self.program_id)?;
-                compute.consume(request.data.len() as u64 / self.costs.cpi_bytes_per_unit)?;
+                consume_cpi_compute_units(&request, &compute, &self.costs)?;
                 self.pending_cpi = Some(request);
                 Ok(0)
             }

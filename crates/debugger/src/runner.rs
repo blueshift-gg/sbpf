@@ -75,6 +75,9 @@ fn load_session_from_bytes(
     elf_path: Option<PathBuf>,
 ) -> DebuggerResult<DebuggerSession> {
     let mut runtime = Runtime::new(parsed.instruction.program_id, elf_bytes.clone(), config)?;
+    for (program_id, elf) in &parsed.programs {
+        runtime.add_program(program_id, elf.clone());
+    }
     runtime.prepare(&parsed.instruction, &parsed.accounts)?;
 
     let mut debugger = Debugger::new(runtime);
@@ -83,7 +86,7 @@ fn load_session_from_bytes(
     }
 
     if let Ok(program) = Program::from_bytes(&elf_bytes)
-        && let Ok((_, Some(ref section))) = program.to_ixs()
+        && let Ok((_, Some(ref section), _)) = program.to_ixs()
     {
         let mut rodata_symbols = rodata_from_section(section);
         // Replace generated labels with actual labels from DWARF info (if available).

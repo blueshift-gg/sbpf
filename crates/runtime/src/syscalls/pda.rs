@@ -72,7 +72,9 @@ pub fn sol_try_find_program_address(
     let address_addr = registers[3];
     let bump_seed_addr = registers[4];
 
-    compute.consume(costs.create_program_address_units)?;
+    // Consume once at start.
+    let cost = costs.create_program_address_units;
+    compute.consume(cost)?;
 
     let seeds = read_seeds(memory, seeds_addr, seeds_len)?;
     let program_id = Address::from(
@@ -80,13 +82,20 @@ pub fn sol_try_find_program_address(
             .map_err(|_| SbpfVmError::InvalidSliceConversion)?,
     );
 
-    let seed_slices: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
-    match Address::try_find_program_address(&seed_slices, &program_id) {
-        Some((addr, bump)) => {
-            memory.write_u8(bump_seed_addr, bump)?;
+    let mut bump_seed = [u8::MAX];
+    for _ in 0..u8::MAX {
+        let mut seeds_with_bump: Vec<&[u8]> = seeds.iter().map(|s| s.as_slice()).collect();
+        seeds_with_bump.push(&bump_seed);
+
+        if let Ok(addr) = Address::create_program_address(&seeds_with_bump, &program_id) {
+            memory.write_u8(bump_seed_addr, bump_seed[0])?;
             memory.write_bytes(address_addr, addr.as_ref())?;
-            Ok(0)
+            return Ok(0);
         }
-        None => Ok(1),
+
+        bump_seed[0] = bump_seed[0].checked_sub(1).unwrap();
+        // Consume after each failed attempt
+        compute.consume(cost)?;
     }
+    Ok(1)
 }

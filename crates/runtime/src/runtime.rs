@@ -2,17 +2,15 @@ use {
     crate::{
         config::{ExecutionCost, RuntimeConfig, SysvarContext},
         cpi,
+        elf::load_elf,
         errors::{RuntimeError, RuntimeResult},
         serialize,
         syscalls::RuntimeSyscallHandler,
     },
     base64::{Engine, engine::general_purpose::STANDARD as BASE64},
-    either::Either,
-    sbpf_common::{execute::Vm, inst_param::Number, instruction::Instruction, opcode::Opcode},
-    sbpf_disassembler::program::Program,
+    sbpf_common::{execute::Vm, instruction::Instruction},
     sbpf_vm::{
         compute::ComputeMeter,
-        memory::Memory,
         vm::{CallFrame, SbpfVm, SbpfVmConfig},
     },
     solana_account::Account,
@@ -63,6 +61,7 @@ pub struct Runtime {
     vm: Option<SbpfVm<RuntimeSyscallHandler>>,
     accounts: HashMap<Address, Account>,
     account_metas: Vec<AccountMeta>,
+    pre_lens: Vec<usize>, // original account data lengths at serialization
     log_collector: LogCollector,
 }
 
@@ -77,46 +76,20 @@ impl Runtime {
             ElfSource::Bytes(bytes) => bytes,
         };
 
-        let program = Program::from_bytes(&elf_bytes)
-            .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-        let entrypoint = program.get_entrypoint_offset().unwrap_or(0);
-        let (mut instructions, rodata_section) = program
-            .to_ixs()
-            .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-
-        let rodata = rodata_section
-            .as_ref()
-            .map(|s| s.data.clone())
-            .unwrap_or_default();
-
-        if let Some(ref section) = rodata_section {
-            let elf_base = section.base_address;
-            let elf_end = elf_base + section.data.len() as u64;
-            for ix in &mut instructions {
-                if ix.opcode == Opcode::Lddw
-                    && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-                {
-                    let addr = *imm as u64;
-                    if addr >= elf_base && addr < elf_end {
-                        ix.imm = Some(Either::Right(Number::Int(
-                            (Memory::RODATA_START + addr - elf_base) as i64,
-                        )));
-                    }
-                }
-            }
-        }
+        let (instructions, rodata, entrypoint) = load_elf(&elf_bytes)?;
 
         Ok(Self {
             program_id,
             instructions,
             rodata,
-            entrypoint: entrypoint as usize,
+            entrypoint,
             programs: HashMap::new(),
             config,
             sysvars: SysvarContext::default(),
             vm: None,
             accounts: HashMap::new(),
             account_metas: Vec::new(),
+            pre_lens: Vec::new(),
             log_collector: Rc::new(RefCell::new(Vec::new())),
         })
     }
@@ -134,10 +107,15 @@ impl Runtime {
         instruction: &SolanaInstruction,
         accounts: &[(Address, Account)],
     ) -> RuntimeResult<()> {
-        self.accounts = accounts.iter().cloned().collect();
+        // Setup accounts (merge with existing account state).
+        for (address, account) in accounts.iter() {
+            self.accounts
+                .entry(*address)
+                .or_insert_with(|| account.clone());
+        }
         self.account_metas = instruction.accounts.clone();
 
-        let input = serialize::serialize_parameters(
+        let (input, pre_lens) = serialize::serialize_parameters(
             &self.accounts,
             &self.account_metas,
             &instruction.data,
@@ -167,18 +145,22 @@ impl Runtime {
         vm.compute_meter = ComputeMeter::new(self.config.compute_budget);
         vm.set_entrypoint(self.entrypoint);
 
+        self.pre_lens = pre_lens;
         self.vm = Some(vm);
         Ok(())
     }
 
-    fn sync_accounts(&mut self) {
+    fn sync_accounts(&mut self) -> RuntimeResult<()> {
         if let Some(ref vm) = self.vm {
             serialize::deserialize_parameters(
                 &mut self.accounts,
                 &self.account_metas,
                 &vm.memory.input,
-            );
+                &self.pre_lens,
+                &self.program_id,
+            )?;
         }
+        Ok(())
     }
 
     pub fn run(
@@ -188,6 +170,17 @@ impl Runtime {
     ) -> RuntimeResult<ExecutionResult> {
         self.log_collector.borrow_mut().clear();
         self.setup_vm(instruction, accounts)?;
+
+        // Get pre-execution lamports from the account state.
+        let pre_lamports: HashMap<Address, u64> = self
+            .account_metas
+            .iter()
+            .filter_map(|meta| {
+                self.accounts
+                    .get(&meta.pubkey)
+                    .map(|a| (meta.pubkey, a.lamports))
+            })
+            .collect();
 
         self.log_collector
             .borrow_mut()
@@ -217,7 +210,18 @@ impl Runtime {
             }
         }
 
-        self.sync_accounts();
+        self.sync_accounts()?;
+
+        // Verify total lamport balance is conserved across all instruction accounts.
+        let pre_total: u64 = pre_lamports.values().sum();
+        let post_total: u64 = pre_lamports
+            .keys()
+            .filter_map(|pk| self.accounts.get(pk))
+            .map(|a| a.lamports)
+            .sum();
+        if pre_total != post_total {
+            return Err(RuntimeError::UnbalancedInstruction(pre_total, post_total));
+        }
 
         let vm = self.vm.as_ref().unwrap();
         let consumed = vm.compute_meter.get_consumed();
@@ -295,7 +299,7 @@ impl Runtime {
 
         let vm_ref = self.vm.as_ref().unwrap();
         if vm_ref.halted {
-            self.sync_accounts();
+            self.sync_accounts()?;
 
             let vm = self.vm.as_ref().unwrap();
             let consumed = vm.compute_meter.get_consumed();
@@ -411,6 +415,10 @@ impl Runtime {
 
     pub fn get_account(&self, pubkey: &Address) -> Option<Account> {
         self.accounts.get(pubkey).cloned()
+    }
+
+    pub fn get_accounts(&self) -> &HashMap<Address, Account> {
+        &self.accounts
     }
 
     pub fn get_register(&self, idx: usize) -> Option<u64> {

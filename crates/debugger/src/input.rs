@@ -11,6 +11,8 @@ use {
 struct DebuggerInput {
     instruction: InstructionJson,
     accounts: Vec<AccountJson>,
+    #[serde(default)]
+    programs: Vec<ProgramJson>,
 }
 
 #[derive(Deserialize)]
@@ -39,9 +41,16 @@ struct AccountJson {
     executable: bool,
 }
 
+#[derive(Deserialize)]
+struct ProgramJson {
+    program_id: String,
+    elf: String,
+}
+
 pub struct ParsedInput {
     pub instruction: Instruction,
     pub accounts: Vec<(Address, Account)>,
+    pub programs: Vec<(Address, Vec<u8>)>,
 }
 
 pub fn parse_input(input: &str) -> DebuggerResult<ParsedInput> {
@@ -51,14 +60,17 @@ pub fn parse_input(input: &str) -> DebuggerResult<ParsedInput> {
         return Ok(ParsedInput {
             instruction: Instruction::new_with_bytes(program_id, &[], vec![]),
             accounts: Vec::new(),
+            programs: Vec::new(),
         });
     }
 
     // Handle both JSON file path or JSON string.
-    let json_str = if Path::new(input).exists() {
-        fs::read_to_string(input)?
+    let input_path = Path::new(input);
+    let (json_str, base_dir) = if input_path.exists() {
+        let base = input_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        (fs::read_to_string(input)?, base)
     } else {
-        input.to_string()
+        (input.to_string(), Path::new(".").to_path_buf())
     };
 
     let debugger_input: DebuggerInput =
@@ -122,9 +134,28 @@ pub fn parse_input(input: &str) -> DebuggerResult<ParsedInput> {
         })
         .collect::<DebuggerResult<Vec<_>>>()?;
 
+    let programs: Vec<(Address, Vec<u8>)> = debugger_input
+        .programs
+        .iter()
+        .map(|p| {
+            let program_id = Address::from_str(&p.program_id)
+                .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program_id: {}", e)))?;
+            let elf_path = base_dir.join(&p.elf);
+            let elf_bytes = fs::read(&elf_path).map_err(|e| {
+                DebuggerError::InvalidInput(format!(
+                    "Failed to read ELF at {}: {}",
+                    elf_path.display(),
+                    e
+                ))
+            })?;
+            Ok((program_id, elf_bytes))
+        })
+        .collect::<DebuggerResult<Vec<_>>>()?;
+
     Ok(ParsedInput {
         instruction,
         accounts,
+        programs,
     })
 }
 

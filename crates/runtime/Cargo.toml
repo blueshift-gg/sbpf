@@ -35,3 +35,8 @@ solana-system-interface = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+solana-program-pack = { workspace = true }
+spl-token-interface = "2.0.0"
+spl-associated-token-account-interface = "2.0.0"
+mollusk-svm = "0.10.3"
+mollusk-svm-programs-token = "0.10.3"

@@ -31,6 +31,12 @@ pub enum RuntimeError {
 
     #[error("Builtin program error: {0}")]
     BuiltinError(String),
+
+    #[error("External account lamport spend: {0}")]
+    ExternalAccountLamportSpend(String),
+
+    #[error("Unbalanced lamports: pre={0}, post={1}")]
+    UnbalancedInstruction(u64, u64),
 }
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;

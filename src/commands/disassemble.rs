@@ -33,7 +33,7 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
     } else {
         let entrypoint_offset = program.get_entrypoint_offset();
 
-        let (mut ixs, rodata) = program.to_ixs()?;
+        let (mut ixs, rodata, _) = program.to_ixs()?;
 
         // Build position map
         let positions: Vec<u64> = ixs

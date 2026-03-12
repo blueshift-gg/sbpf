@@ -51,9 +51,11 @@ impl RodataItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RodataSection {
-    pub base_address: u64,      // base virtual address of the rodata section
-    pub data: Vec<u8>,          // raw section data bytes
-    pub items: Vec<RodataItem>, // parsed rodata items
+    pub base_address: u64,            // base virtual address of the rodata section
+    pub data: Vec<u8>,                // raw section data bytes
+    pub items: Vec<RodataItem>,       // parsed rodata items
+    pub data_relocations: Vec<usize>, // byte offsets into data where 8-byte rodata pointers need VM address fixup
+    pub text_relocations: Vec<(usize, usize)>, // (byte_offset_in_data, instruction_index) for function pointers
 }
 
 impl RodataSection {
@@ -63,6 +65,8 @@ impl RodataSection {
             base_address,
             data,
             items,
+            data_relocations: Vec::new(),
+            text_relocations: Vec::new(),
         }
     }
 
