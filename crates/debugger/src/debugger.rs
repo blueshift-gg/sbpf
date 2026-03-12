@@ -21,14 +21,16 @@ pub struct StackFrame<'a> {
 
 #[derive(Debug)]
 pub enum DebugMode {
+    Step,
     Next,
+    Finish,
     Continue,
 }
 
 #[derive(Debug)]
 pub enum DebugEvent {
+    Stopped(u64, Option<usize>),
     Breakpoint(u64, Option<usize>),
-    Next(u64, Option<usize>),
     Exit(u64),
     Error(String),
 }
@@ -173,57 +175,27 @@ impl Debugger {
 
     fn execute(&mut self) -> DebuggerResult<DebugEvent> {
         match self.debug_mode {
+            DebugMode::Step => self.execute_step(),
             DebugMode::Next => {
-                let current_pc = self.get_pc();
-
-                if self.at_breakpoint {
-                    match self.runtime.step() {
-                        Ok(()) => {
-                            self.at_breakpoint = false;
-                            self.last_breakpoint_pc = None;
-
-                            if self.runtime.is_halted() {
-                                let exit_code = self.runtime.exit_code().unwrap_or(0);
-                                return Ok(DebugEvent::Exit(exit_code));
-                            }
-
-                            let new_pc = self.get_pc();
-                            if self.breakpoints.contains(&new_pc) {
-                                self.at_breakpoint = true;
-                                self.last_breakpoint_pc = Some(new_pc);
-                                let line_number = self.get_line_for_pc(new_pc);
-                                return Ok(DebugEvent::Breakpoint(new_pc, line_number));
-                            }
-                            let line_number = self.get_line_for_pc(new_pc);
-                            return Ok(DebugEvent::Next(new_pc, line_number));
-                        }
-                        Err(e) => return Ok(DebugEvent::Error(format!("{e}"))),
+                // If call depth increases after step, run until it returns to previous depth.
+                let call_depth = self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0);
+                match self.execute_step()? {
+                    DebugEvent::Stopped(_, _)
+                        if self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0)
+                            > call_depth =>
+                    {
+                        self.run_until_call_depth(call_depth)
                     }
+                    other => Ok(other),
                 }
-
-                if self.breakpoints.contains(&current_pc)
-                    && self.last_breakpoint_pc != Some(current_pc)
-                {
-                    self.at_breakpoint = true;
-                    self.last_breakpoint_pc = Some(current_pc);
-                    let line_number = self.get_line_for_pc(current_pc);
-                    return Ok(DebugEvent::Breakpoint(current_pc, line_number));
+            }
+            DebugMode::Finish => {
+                // If call depth > 0, run until it decreases by one level.
+                let call_depth = self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0);
+                if call_depth == 0 {
+                    return Ok(DebugEvent::Error("not inside a function call".to_string()));
                 }
-
-                let event = match self.runtime.step() {
-                    Ok(()) => {
-                        if self.runtime.is_halted() {
-                            let exit_code = self.runtime.exit_code().unwrap_or(0);
-                            DebugEvent::Exit(exit_code)
-                        } else {
-                            let new_pc = self.get_pc();
-                            let line_number = self.get_line_for_pc(new_pc);
-                            DebugEvent::Next(new_pc, line_number)
-                        }
-                    }
-                    Err(e) => DebugEvent::Error(format!("{e}")),
-                };
-                Ok(event)
+                self.run_until_call_depth(call_depth - 1)
             }
             DebugMode::Continue => loop {
                 let current_pc = self.get_pc();
@@ -264,6 +236,66 @@ impl Debugger {
                 }
             },
         }
+    }
+
+    // Execute a single step.
+    fn execute_step(&mut self) -> DebuggerResult<DebugEvent> {
+        let current_pc = self.get_pc();
+
+        if self.at_breakpoint {
+            match self.runtime.step() {
+                Ok(()) => {
+                    self.at_breakpoint = false;
+                    self.last_breakpoint_pc = None;
+
+                    if self.runtime.is_halted() {
+                        return Ok(DebugEvent::Exit(self.runtime.exit_code().unwrap_or(0)));
+                    }
+
+                    let new_pc = self.get_pc();
+                    if self.breakpoints.contains(&new_pc) {
+                        self.at_breakpoint = true;
+                        self.last_breakpoint_pc = Some(new_pc);
+                        return Ok(DebugEvent::Breakpoint(new_pc, self.get_line_for_pc(new_pc)));
+                    }
+                    return Ok(DebugEvent::Stopped(new_pc, self.get_line_for_pc(new_pc)));
+                }
+                Err(e) => return Ok(DebugEvent::Error(format!("{e}"))),
+            }
+        }
+
+        if self.breakpoints.contains(&current_pc) && self.last_breakpoint_pc != Some(current_pc) {
+            self.at_breakpoint = true;
+            self.last_breakpoint_pc = Some(current_pc);
+            return Ok(DebugEvent::Breakpoint(
+                current_pc,
+                self.get_line_for_pc(current_pc),
+            ));
+        }
+
+        match self.runtime.step() {
+            Ok(()) => {
+                if self.runtime.is_halted() {
+                    Ok(DebugEvent::Exit(self.runtime.exit_code().unwrap_or(0)))
+                } else {
+                    let new_pc = self.get_pc();
+                    Ok(DebugEvent::Stopped(new_pc, self.get_line_for_pc(new_pc)))
+                }
+            }
+            Err(e) => Ok(DebugEvent::Error(format!("{e}"))),
+        }
+    }
+
+    // Step through instructions until the current call depth reaches the target depth.
+    fn run_until_call_depth(&mut self, target_depth: usize) -> DebuggerResult<DebugEvent> {
+        while self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0) > target_depth {
+            match self.execute_step()? {
+                DebugEvent::Stopped(_, _) => {}
+                other => return Ok(other),
+            }
+        }
+        let new_pc = self.get_pc();
+        Ok(DebugEvent::Stopped(new_pc, self.get_line_for_pc(new_pc)))
     }
 
     pub fn get_pc(&self) -> u64 {
@@ -389,8 +421,18 @@ impl Debugger {
 }
 
 impl DebuggerInterface for Debugger {
+    fn step(&mut self) -> Value {
+        self.set_debug_mode(DebugMode::Step);
+        self.run_to_json()
+    }
+
     fn next(&mut self) -> Value {
         self.set_debug_mode(DebugMode::Next);
+        self.run_to_json()
+    }
+
+    fn finish(&mut self) -> Value {
+        self.set_debug_mode(DebugMode::Finish);
         self.run_to_json()
     }
 
@@ -546,10 +588,16 @@ impl DebuggerInterface for Debugger {
     }
 
     fn run_to_json(&mut self) -> Value {
+        let mode_type = match &self.debug_mode {
+            DebugMode::Step => "step",
+            DebugMode::Next => "next",
+            DebugMode::Finish => "finish",
+            DebugMode::Continue => "continue",
+        };
         match self.run() {
             Ok(event) => match event {
-                DebugEvent::Next(pc, line) => json!({
-                    "type": "next",
+                DebugEvent::Stopped(pc, line) => json!({
+                    "type": mode_type,
                     "pc": pc,
                     "line": line
                 }),
