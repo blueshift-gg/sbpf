@@ -18,6 +18,9 @@ use {
     solana_address::Address,
 };
 
+const ACCOUNT_META_SIZE: u64 = 34;
+const ACCOUNT_INFO_BYTE_SIZE: u64 = 80;
+
 pub struct RuntimeSyscallHandler {
     pub costs: ExecutionCost,
     pub program_id: Address,
@@ -53,11 +56,24 @@ fn consume_cpi_compute_units(
 ) -> SbpfVmResult<()> {
     // Base invoke cost.
     compute.consume(costs.invoke_units)?;
-    // Instruction data cost.
+
+    // Instruction data and account meta cost.
     let data_cost = request.data.len() as u64 / costs.cpi_bytes_per_unit;
-    compute.consume(data_cost)?;
-    // Per-account data cost.
+    let meta_cost = (request.accounts.len() as u64 * ACCOUNT_META_SIZE) / costs.cpi_bytes_per_unit;
+    compute.consume(data_cost + meta_cost)?;
+
+    // Account info translation cost.
+    let account_info_cost =
+        (request.caller_accounts.len() as u64 * ACCOUNT_INFO_BYTE_SIZE) / costs.cpi_bytes_per_unit;
+    compute.consume(account_info_cost)?;
+
+    // Per-account data cost (skip duplicates).
+    let mut seen = Vec::with_capacity(request.accounts.len());
     for meta in request.accounts.iter() {
+        if seen.contains(&meta.pubkey) {
+            continue;
+        }
+        seen.push(meta.pubkey);
         if let Some(caller) = request
             .caller_accounts
             .iter()

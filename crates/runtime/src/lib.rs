@@ -229,7 +229,36 @@ mod tests {
             (system_program, system_program_account.clone()),
         ];
 
-        // 1. Run tests using Mollusk.
+        // 1. Run tests using sbpf runtime.
+        let mut runtime = setup_sbpf_runtime();
+
+        // MAKE
+        let result = runtime.run(&make_instruction, &accounts)?;
+        let make_cus_consumed = result.compute_units_consumed;
+        // Check program succeeded
+        assert_eq!(result.exit_code, Some(0));
+        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
+        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
+        // Check vault is owned by token program
+        assert_eq!(vault_acct.owner, token_program);
+        // Check escrow is owned by our program
+        assert_eq!(escrow_acct.owner, PROGRAM_ID);
+
+        // TAKE
+        let result = runtime.run(&take_instruction, &accounts)?;
+        let take_cus_consumed = result.compute_units_consumed;
+        // Check program succeeded
+        assert_eq!(result.exit_code, Some(0));
+        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
+        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
+        // Check that our vault is closed
+        assert_eq!(vault_acct.owner, system_program);
+        assert_eq!(vault_acct.lamports, 0);
+        // Check that our escrow is closed
+        assert_eq!(escrow_acct.owner, system_program);
+        assert_eq!(escrow_acct.lamports, 0);
+
+        // 2. Run same tests using Mollusk.
         mollusk.process_and_validate_instruction_chain(
             &[
                 (
@@ -241,6 +270,8 @@ mod tests {
                         Check::account(&vault).owner(&token_program).build(),
                         // Check escrow is owned by our program
                         Check::account(&escrow).owner(&PROGRAM_ID).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -254,38 +285,13 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(take_cus_consumed),
                     ],
                 ),
             ],
             &accounts,
         );
-
-        // 2. Run same tests using sbpf runtime.
-        let mut runtime = setup_sbpf_runtime();
-
-        // MAKE
-        let result = runtime.run(&make_instruction, &accounts)?;
-        // Check program succeeded
-        assert_eq!(result.exit_code, Some(0));
-        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
-        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
-        // Check vault is owned by token program
-        assert_eq!(vault_acct.owner, token_program);
-        // Check escrow is owned by our program
-        assert_eq!(escrow_acct.owner, PROGRAM_ID);
-
-        // TAKE
-        let result = runtime.run(&take_instruction, &accounts)?;
-        // Check program succeeded
-        assert_eq!(result.exit_code, Some(0));
-        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
-        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
-        // Check that our vault is closed
-        assert_eq!(vault_acct.owner, system_program);
-        assert_eq!(vault_acct.lamports, 0);
-        // Check that our escrow is closed
-        assert_eq!(escrow_acct.owner, system_program);
-        assert_eq!(escrow_acct.lamports, 0);
 
         Ok(())
     }
@@ -422,7 +428,40 @@ mod tests {
             (system_program, system_program_account.clone()),
         ];
 
-        // 1. Run tests using Mollusk.
+        // 1. Run tests using sbpf runtime.
+        let mut runtime = setup_sbpf_runtime();
+
+        // MAKE
+        let result = runtime.run(&make_instruction, &accounts)?;
+        let make_cus_consumed = result.compute_units_consumed;
+        // Check program succeeded
+        assert_eq!(result.exit_code, Some(0));
+        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
+        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
+        // Check vault is owned by token program
+        assert_eq!(vault_acct.owner, token_program);
+        // Check vault balance matches
+        assert_eq!(&vault_acct.data[64..72], &[13, 37, 0, 0, 0, 0, 0, 0]);
+        // Check escrow is owned by our program
+        assert_eq!(escrow_acct.owner, PROGRAM_ID);
+        // Check escrow amount_out matches
+        assert_eq!(&escrow_acct.data[96..104], &[13, 37, 0, 0, 0, 0, 0, 0]);
+
+        // REFUND
+        let result = runtime.run(&refund_instruction, &accounts)?;
+        let refund_cus_consumed = result.compute_units_consumed;
+        // Check program succeeded
+        assert_eq!(result.exit_code, Some(0));
+        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
+        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
+        // Check that our vault is closed
+        assert_eq!(vault_acct.owner, system_program);
+        assert_eq!(vault_acct.lamports, 0);
+        // Check that our escrow is closed
+        assert_eq!(escrow_acct.owner, system_program);
+        assert_eq!(escrow_acct.lamports, 0);
+
+        // 2. Run same tests using Mollusk.
         mollusk.process_and_validate_instruction_chain(
             &[
                 (
@@ -442,6 +481,8 @@ mod tests {
                         Check::account(&escrow)
                             .data_slice(96, &[13, 37, 0, 0, 0, 0, 0, 0])
                             .build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -455,42 +496,13 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(refund_cus_consumed),
                     ],
                 ),
             ],
             &accounts,
         );
-
-        // 2. Run same tests using sbpf runtime.
-        let mut runtime = setup_sbpf_runtime();
-
-        // MAKE
-        let result = runtime.run(&make_instruction, &accounts)?;
-        // Check program succeeded
-        assert_eq!(result.exit_code, Some(0));
-        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
-        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
-        // Check vault is owned by token program
-        assert_eq!(vault_acct.owner, token_program);
-        // Check vault balance matches
-        assert_eq!(&vault_acct.data[64..72], &[13, 37, 0, 0, 0, 0, 0, 0]);
-        // Check escrow is owned by our program
-        assert_eq!(escrow_acct.owner, PROGRAM_ID);
-        // Check escrow amount_out matches
-        assert_eq!(&escrow_acct.data[96..104], &[13, 37, 0, 0, 0, 0, 0, 0]);
-
-        // REFUND
-        let result = runtime.run(&refund_instruction, &accounts)?;
-        // Check program succeeded
-        assert_eq!(result.exit_code, Some(0));
-        let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
-        let escrow_acct = runtime.get_account(&escrow).ok_or("escrow not found")?;
-        // Check that our vault is closed
-        assert_eq!(vault_acct.owner, system_program);
-        assert_eq!(vault_acct.lamports, 0);
-        // Check that our escrow is closed
-        assert_eq!(escrow_acct.owner, system_program);
-        assert_eq!(escrow_acct.lamports, 0);
 
         Ok(())
     }

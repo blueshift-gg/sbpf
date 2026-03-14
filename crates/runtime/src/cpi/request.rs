@@ -78,12 +78,6 @@ pub fn parse_cpi_c(
         signers_seeds_len,
     )?;
 
-    for meta in &mut accounts {
-        if signers.contains(&meta.pubkey) {
-            meta.is_signer = true;
-        }
-    }
-
     Ok(CpiRequest {
         program_id,
         accounts,
@@ -135,12 +129,6 @@ pub fn parse_cpi_rust(
         signers_seeds_addr,
         signers_seeds_len,
     )?;
-
-    for meta in &mut accounts {
-        if signers.contains(&meta.pubkey) {
-            meta.is_signer = true;
-        }
-    }
 
     Ok(CpiRequest {
         program_id,
