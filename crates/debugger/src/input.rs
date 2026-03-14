@@ -1,20 +1,18 @@
 use {
     crate::error::{DebuggerError, DebuggerResult},
     serde::Deserialize,
-    solana_account::Account as SolAccount,
+    solana_account::Account,
     solana_address::Address,
     solana_instruction::{AccountMeta, Instruction},
-    std::{collections::HashMap, fs, mem::size_of, path::Path, str::FromStr},
+    std::{fs, path::Path, str::FromStr},
 };
-
-const BPF_ALIGN_OF_U128: usize = 16;
-const MAX_PERMITTED_DATA_INCREASE: usize = 10240;
-const NON_DUP_MARKER: u8 = 0xff;
 
 #[derive(Deserialize)]
 struct DebuggerInput {
     instruction: InstructionJson,
     accounts: Vec<AccountJson>,
+    #[serde(default)]
+    programs: Vec<ProgramJson>,
 }
 
 #[derive(Deserialize)]
@@ -43,97 +41,36 @@ struct AccountJson {
     executable: bool,
 }
 
-struct Serializer {
-    buffer: Vec<u8>,
+#[derive(Deserialize)]
+struct ProgramJson {
+    program_id: String,
+    elf: String,
 }
 
-impl Serializer {
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
-    }
-
-    fn write<T>(&mut self, value: T) {
-        let bytes =
-            unsafe { std::slice::from_raw_parts(&value as *const T as *const u8, size_of::<T>()) };
-        self.buffer.extend_from_slice(bytes);
-    }
-
-    fn write_all(&mut self, data: &[u8]) {
-        self.buffer.extend_from_slice(data);
-    }
-
-    fn write_account_data(&mut self, data: &[u8]) {
-        self.write_all(data);
-        self.buffer
-            .extend(std::iter::repeat_n(0u8, MAX_PERMITTED_DATA_INCREASE));
-        let current_len = self.buffer.len();
-        let alignment_needed =
-            (BPF_ALIGN_OF_U128 - (current_len % BPF_ALIGN_OF_U128)) % BPF_ALIGN_OF_U128;
-        self.buffer
-            .extend(std::iter::repeat_n(0u8, alignment_needed));
-    }
-
-    fn finish(self) -> Vec<u8> {
-        self.buffer
-    }
+pub struct ParsedInput {
+    pub instruction: Instruction,
+    pub accounts: Vec<(Address, Account)>,
+    pub programs: Vec<(Address, Vec<u8>)>,
 }
 
-enum SerializeAccount {
-    Account(Address, SolAccount, bool, bool),
-    Duplicate(u8),
-}
-
-fn serialize_parameters(
-    accounts: Vec<SerializeAccount>,
-    instruction_data: &[u8],
-    program_id: &Address,
-) -> Vec<u8> {
-    let mut s = Serializer::new();
-
-    s.write::<u64>((accounts.len() as u64).to_le());
-
-    for account in accounts {
-        match account {
-            SerializeAccount::Account(pubkey, acct, is_signer, is_writable) => {
-                s.write::<u8>(NON_DUP_MARKER);
-                s.write::<u8>(is_signer as u8);
-                s.write::<u8>(is_writable as u8);
-                s.write::<u8>(acct.executable as u8);
-                s.write_all(&[0u8; 4]); // padding
-                s.write_all(pubkey.as_ref());
-                s.write_all(acct.owner.as_ref());
-                s.write::<u64>(acct.lamports.to_le());
-                s.write::<u64>((acct.data.len() as u64).to_le());
-                s.write_account_data(&acct.data);
-                s.write::<u64>(acct.rent_epoch.to_le());
-            }
-            SerializeAccount::Duplicate(position) => {
-                s.write::<u8>(position);
-                s.write_all(&[0u8; 7]); // padding
-            }
-        }
-    }
-
-    s.write::<u64>((instruction_data.len() as u64).to_le());
-    s.write_all(instruction_data);
-    s.write_all(program_id.as_ref());
-
-    s.finish()
-}
-
-/// Parse input JSON into serialized VM input bytes and program_id.
-/// Returns empty input bytes and random program_id if input is empty.
-pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Address)> {
+pub fn parse_input(input: &str) -> DebuggerResult<ParsedInput> {
     let input = input.trim();
     if input.is_empty() {
-        return Ok((Vec::new(), Address::new_unique()));
+        let program_id = Address::new_unique();
+        return Ok(ParsedInput {
+            instruction: Instruction::new_with_bytes(program_id, &[], vec![]),
+            accounts: Vec::new(),
+            programs: Vec::new(),
+        });
     }
 
     // Handle both JSON file path or JSON string.
-    let json_str = if Path::new(input).exists() {
-        fs::read_to_string(input)?
+    let input_path = Path::new(input);
+    let (json_str, base_dir) = if input_path.exists() {
+        let base = input_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        (fs::read_to_string(input)?, base)
     } else {
-        input.to_string()
+        (input.to_string(), Path::new(".").to_path_buf())
     };
 
     let debugger_input: DebuggerInput =
@@ -169,7 +106,7 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Address)> {
 
     let instruction = Instruction::new_with_bytes(program_id, &instruction_data, account_metas);
 
-    let account_map: HashMap<Address, SolAccount> = debugger_input
+    let accounts: Vec<(Address, Account)> = debugger_input
         .accounts
         .iter()
         .map(|a| {
@@ -186,7 +123,7 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Address)> {
             };
             Ok((
                 pubkey,
-                SolAccount {
+                Account {
                     lamports: a.lamports,
                     data,
                     owner,
@@ -195,35 +132,31 @@ pub fn parse_input(input: &str) -> DebuggerResult<(Vec<u8>, Address)> {
                 },
             ))
         })
-        .collect::<DebuggerResult<HashMap<_, _>>>()?;
+        .collect::<DebuggerResult<Vec<_>>>()?;
 
-    let mut serialized_accounts = Vec::new();
-    let mut seen: HashMap<Address, usize> = HashMap::new();
-
-    for (i, meta) in instruction.accounts.iter().enumerate() {
-        if let Some(&first_idx) = seen.get(&meta.pubkey) {
-            serialized_accounts.push(SerializeAccount::Duplicate(first_idx as u8));
-        } else {
-            seen.insert(meta.pubkey, i);
-            let acct = account_map.get(&meta.pubkey).ok_or_else(|| {
-                DebuggerError::InvalidInput(format!("Missing account data for {}", meta.pubkey))
+    let programs: Vec<(Address, Vec<u8>)> = debugger_input
+        .programs
+        .iter()
+        .map(|p| {
+            let program_id = Address::from_str(&p.program_id)
+                .map_err(|e| DebuggerError::InvalidInput(format!("Invalid program_id: {}", e)))?;
+            let elf_path = base_dir.join(&p.elf);
+            let elf_bytes = fs::read(&elf_path).map_err(|e| {
+                DebuggerError::InvalidInput(format!(
+                    "Failed to read ELF at {}: {}",
+                    elf_path.display(),
+                    e
+                ))
             })?;
-            serialized_accounts.push(SerializeAccount::Account(
-                meta.pubkey,
-                acct.clone(),
-                meta.is_signer,
-                meta.is_writable,
-            ));
-        }
-    }
+            Ok((program_id, elf_bytes))
+        })
+        .collect::<DebuggerResult<Vec<_>>>()?;
 
-    let bytes = serialize_parameters(
-        serialized_accounts,
-        &instruction.data,
-        &instruction.program_id,
-    );
-
-    Ok((bytes, program_id))
+    Ok(ParsedInput {
+        instruction,
+        accounts,
+        programs,
+    })
 }
 
 #[cfg(test)]
@@ -232,8 +165,8 @@ mod tests {
 
     #[test]
     fn test_parse_empty_input() {
-        let (bytes, _) = parse_input("").unwrap();
-        assert!(bytes.is_empty());
+        let parsed = parse_input("").unwrap();
+        assert!(parsed.accounts.is_empty());
     }
 
     #[test]
@@ -264,8 +197,9 @@ mod tests {
             program_id, account_pubkey, account_pubkey, owner
         );
 
-        let (bytes, pid) = parse_input(&json).unwrap();
-        assert!(!bytes.is_empty());
-        assert_eq!(pid, program_id);
+        let parsed = parse_input(&json).unwrap();
+        assert_eq!(parsed.instruction.program_id, program_id);
+        assert_eq!(parsed.accounts.len(), 1);
+        assert_eq!(parsed.accounts[0].0, account_pubkey);
     }
 }
