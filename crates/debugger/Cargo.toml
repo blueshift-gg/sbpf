@@ -27,6 +27,7 @@ solana-account = { workspace = true }
 solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-clock = { workspace = true }
+solana-last-restart-slot = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 sbpf-assembler = { workspace = true }
 sbpf-disassembler = { workspace = true }

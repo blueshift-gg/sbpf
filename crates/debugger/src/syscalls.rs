@@ -13,6 +13,7 @@ use {
     solana_clock::Clock,
     solana_epoch_schedule::EpochSchedule,
     solana_rent::Rent,
+    solana_last_restart_slot::LastRestartSlot,
     std::mem::size_of,
 };
 
@@ -27,6 +28,7 @@ pub struct DebuggerSyscallHandler {
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
+    pub last_restart_slot: LastRestartSlot
 }
 
 impl DebuggerSyscallHandler {
@@ -37,6 +39,7 @@ impl DebuggerSyscallHandler {
             clock: Clock::default(),
             rent: Rent::default(),
             epoch_schedule: EpochSchedule::default(),
+            last_restart_slot: LastRestartSlot::default(),
         }
     }
 
@@ -445,6 +448,22 @@ impl DebuggerSyscallHandler {
         self.write_sysvar_bytes(memory, registers[0], &epoch_schedule)?;
         Ok(0)
     }
+
+    fn sol_get_last_restart_slot_sysvar(
+        &mut self,
+        registers: [u64; 5],
+        memory: &mut Memory,
+        compute: &ComputeMeter,
+    ) -> SbpfVmResult<u64> {
+        let cost = self
+            .costs
+            .sysvar_base_cost
+            .saturating_add(size_of::<LastRestartSlot>() as u64);
+        compute.consume(cost)?;
+        let last_restart_slot = self.last_restart_slot.clone();
+        self.write_sysvar_bytes(memory, registers[0], &last_restart_slot)?;
+        Ok(0)
+    }
 }
 
 impl SyscallHandler for DebuggerSyscallHandler {
@@ -491,6 +510,9 @@ impl SyscallHandler for DebuggerSyscallHandler {
             "sol_get_rent_sysvar" => self.sol_get_rent_sysvar(registers, memory, &compute),
             "sol_get_epoch_schedule_sysvar" => {
                 self.sol_get_epoch_schedule_sysvar(registers, memory, &compute)
+            }
+            "sol_get_last_restart_slot_sysvar" => {
+                self.sol_get_last_restart_slot_sysvar(registers, memory, &compute)
             }
 
             // Unknown syscall
