@@ -12,8 +12,8 @@ use {
     solana_address::Address,
     solana_clock::Clock,
     solana_epoch_schedule::EpochSchedule,
-    solana_rent::Rent,
     solana_last_restart_slot::LastRestartSlot,
+    solana_rent::Rent,
     std::mem::size_of,
 };
 
@@ -28,7 +28,7 @@ pub struct DebuggerSyscallHandler {
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
-    pub last_restart_slot: LastRestartSlot
+    pub last_restart_slot: LastRestartSlot,
 }
 
 impl DebuggerSyscallHandler {
