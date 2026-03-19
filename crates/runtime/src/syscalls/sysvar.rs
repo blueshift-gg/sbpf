@@ -3,6 +3,7 @@ use {
     sbpf_vm::{compute::ComputeMeter, errors::SbpfVmResult, memory::Memory},
     solana_clock::Clock,
     solana_epoch_schedule::EpochSchedule,
+    solana_last_restart_slot::LastRestartSlot,
     solana_rent::Rent,
     std::mem::size_of,
 };
@@ -58,5 +59,21 @@ pub fn sol_get_epoch_schedule_sysvar(
             .saturating_add(size_of::<EpochSchedule>() as u64),
     )?;
     write_sysvar_bytes(memory, registers[0], &sysvars.epoch_schedule)?;
+    Ok(0)
+}
+
+pub fn sol_get_last_restart_slot_sysvar(
+    registers: [u64; 5],
+    memory: &mut Memory,
+    compute: &ComputeMeter,
+    costs: &ExecutionCost,
+    sysvars: &SysvarContext,
+) -> SbpfVmResult<u64> {
+    compute.consume(
+        costs
+            .sysvar_base_cost
+            .saturating_add(size_of::<LastRestartSlot>() as u64),
+    )?;
+    write_sysvar_bytes(memory, registers[0], &sysvars.last_restart_slot)?;
     Ok(0)
 }

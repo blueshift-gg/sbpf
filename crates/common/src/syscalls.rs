@@ -19,6 +19,7 @@ pub const REGISTERED_SYSCALLS: &[&str] = &[
     "sol_get_epoch_schedule_sysvar",
     "sol_get_fees_sysvar",
     "sol_get_rent_sysvar",
+    "sol_get_last_restart_slot_sysvar",
     "sol_memcpy_",
     "sol_memmove_",
     "sol_memcmp_",

@@ -31,6 +31,7 @@ solana-instruction = { workspace = true }
 solana-rent = { workspace = true }
 solana-clock = { workspace = true }
 solana-epoch-schedule = { workspace = true }
+solana-last-restart-slot = { workspace = true }
 solana-system-interface = { workspace = true }
 thiserror = { workspace = true }
 

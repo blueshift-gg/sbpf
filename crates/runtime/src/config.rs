@@ -1,4 +1,7 @@
-use {solana_clock::Clock, solana_epoch_schedule::EpochSchedule, solana_rent::Rent};
+use {
+    solana_clock::Clock, solana_epoch_schedule::EpochSchedule,
+    solana_last_restart_slot::LastRestartSlot, solana_rent::Rent,
+};
 
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
@@ -24,6 +27,7 @@ pub struct SysvarContext {
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
+    pub last_restart_slot: LastRestartSlot,
 }
 
 /// Reference: https://github.com/anza-xyz/agave/blob/master/program-runtime/src/execution_budget.rs

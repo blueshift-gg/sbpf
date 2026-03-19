@@ -153,6 +153,13 @@ impl SyscallHandler for RuntimeSyscallHandler {
                 &self.costs,
                 &self.sysvars,
             ),
+            "sol_get_last_restart_slot_sysvar" => sysvar::sol_get_last_restart_slot_sysvar(
+                registers,
+                memory,
+                &compute,
+                &self.costs,
+                &self.sysvars,
+            ),
 
             "sol_set_return_data" => {
                 let (result, data) = return_data::sol_set_return_data(
