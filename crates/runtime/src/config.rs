@@ -1,4 +1,35 @@
-/// Compute unit costs for syscalls and operations
+use {
+    solana_clock::Clock, solana_epoch_schedule::EpochSchedule,
+    solana_last_restart_slot::LastRestartSlot, solana_rent::Rent,
+};
+
+#[derive(Debug, Clone)]
+pub struct RuntimeConfig {
+    pub compute_budget: u64,
+    pub max_call_depth: usize,
+    pub heap_size: usize,
+    pub max_cpi_depth: usize,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            compute_budget: 200_000,
+            max_call_depth: 64,
+            heap_size: 32 * 1024,
+            max_cpi_depth: 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SysvarContext {
+    pub clock: Clock,
+    pub rent: Rent,
+    pub epoch_schedule: EpochSchedule,
+    pub last_restart_slot: LastRestartSlot,
+}
+
 /// Reference: https://github.com/anza-xyz/agave/blob/master/program-runtime/src/execution_budget.rs
 #[derive(Debug, Clone)]
 pub struct ExecutionCost {
@@ -52,10 +83,10 @@ impl Default for ExecutionCost {
             log_64_units: 100,
             log_pubkey_units: 100,
             create_program_address_units: 1500,
-            invoke_units: 1000,
+            invoke_units: 946,
             max_cpi_instruction_size: 46 * 1024,
             cpi_bytes_per_unit: 250,
-            max_instruction_stack_depth: 5,
+            max_instruction_stack_depth: 9,
             max_instruction_trace_length: 64,
             sha256_base_cost: 85,
             sha256_byte_cost: 1,

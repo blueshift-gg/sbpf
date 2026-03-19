@@ -18,6 +18,10 @@ impl Repl {
     pub fn start(&mut self) {
         println!("\nsBPF Debugger REPL. Type 'help' for commands.");
 
+        for log in self.session.debugger.runtime.drain_logs() {
+            println!("{}", log);
+        }
+
         // Print the first instruction.
         if let Some(line) = self.session.debugger.get_current_line() {
             let asm = self

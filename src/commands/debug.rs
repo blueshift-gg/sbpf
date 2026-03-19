@@ -7,7 +7,7 @@ use {
         repl::Repl,
         runner::{load_session_from_asm, load_session_from_elf},
     },
-    sbpf_vm::vm::SbpfVmConfig,
+    sbpf_runtime::config::RuntimeConfig,
 };
 
 #[derive(Args)]
@@ -29,20 +29,17 @@ pub struct DebugArgs {
 }
 
 pub fn debug(args: DebugArgs) -> Result<()> {
-    let (input_bytes, program_id) = parse_input(&args.input)?;
-    let config = SbpfVmConfig {
+    let parsed = parse_input(&args.input)?;
+    let config = RuntimeConfig {
+        compute_budget: args.compute_unit_limit,
         max_call_depth: args.max_call_depth,
-        compute_unit_limit: args.compute_unit_limit,
         heap_size: args.heap_size,
+        ..RuntimeConfig::default()
     };
 
     let session = match (&args.asm, &args.elf) {
-        (Some(asm_path), None) => {
-            load_session_from_asm(asm_path.as_str(), input_bytes, config, program_id)?
-        }
-        (None, Some(elf_path)) => {
-            load_session_from_elf(elf_path.as_str(), input_bytes, config, program_id)?
-        }
+        (Some(asm_path), None) => load_session_from_asm(asm_path.as_str(), parsed, config)?,
+        (None, Some(elf_path)) => load_session_from_elf(elf_path.as_str(), parsed, config)?,
         _ => {
             anyhow::bail!("Provide exactly one of --asm or --elf");
         }
