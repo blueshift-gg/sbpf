@@ -3,8 +3,9 @@ use {
         CompileError, SbpfArch,
         astnode::{ASTNode, ROData},
         dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
+        header::ProgramHeader,
         parser::ParseResult,
-        section::{CodeSection, DataSection},
+        section::{CodeSection, DataSection, RODataSection},
     },
     either::Either,
     sbpf_common::{
@@ -20,9 +21,11 @@ use {
 pub struct AST {
     pub nodes: Vec<ASTNode>,
     pub rodata_nodes: Vec<ASTNode>,
+    pub data_nodes: Vec<ASTNode>,
 
     text_size: u64,
     rodata_size: u64,
+    data_size: u64,
 }
 
 impl AST {
@@ -38,6 +41,10 @@ impl AST {
     //
     pub fn set_rodata_size(&mut self, rodata_size: u64) {
         self.rodata_size = rodata_size;
+    }
+
+    pub fn set_data_size(&mut self, data_size: u64) {
+        self.data_size = data_size;
     }
 
     //
@@ -108,6 +115,8 @@ impl AST {
 
     pub fn build_program(&mut self, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
         let mut label_offset_map: HashMap<String, u64> = HashMap::new();
+        let mut rodata_label_offsets: HashMap<String, u64> = HashMap::new();
+        let mut data_label_offsets: HashMap<String, u64> = HashMap::new();
         let mut numeric_labels: Vec<(String, u64, usize)> = Vec::new();
 
         // iterate through text labels and rodata labels and find the pair
@@ -122,7 +131,14 @@ impl AST {
 
         for node in &self.rodata_nodes {
             if let ASTNode::ROData { rodata, offset } = node {
+                rodata_label_offsets.insert(rodata.name.clone(), *offset);
                 label_offset_map.insert(rodata.name.clone(), *offset + self.text_size);
+            }
+        }
+
+        for node in &self.data_nodes {
+            if let ASTNode::Data { data, offset } = node {
+                data_label_offsets.insert(data.name.clone(), *offset);
             }
         }
 
@@ -221,14 +237,34 @@ impl AST {
                         );
                     }
 
-                    if let Some(target_offset) = label_offset_map.get(&label) {
-                        let abs_offset = if arch.is_v3() {
-                            (*target_offset - self.text_size) as i64
-                        } else {
+                    let abs_offset = if arch.is_v3() {
+                        let ph_count =
+                            1 + (self.rodata_size > 0) as u64 + (self.data_size > 0) as u64;
+                        let base_offset = 64 + ph_count * 56;
+                        let data_base = base_offset;
+                        let rodata_base = data_base + ((self.data_size + 7) & !7);
+                        data_label_offsets
+                            .get(&label)
+                            .map(|offset| data_base as i64 + *offset as i64)
+                            .or_else(|| {
+                                rodata_label_offsets
+                                    .get(&label)
+                                    .map(|offset| rodata_base as i64 + *offset as i64)
+                            })
+                            .or_else(|| {
+                                label_offset_map.get(&label).map(|offset| {
+                                    ProgramHeader::V3_BYTECODE_VADDR as i64 + *offset as i64
+                                })
+                            })
+                    } else {
+                        label_offset_map.get(&label).map(|target_offset| {
                             let ph_count = if program_is_static { 1 } else { 3 };
                             let ph_offset = 64 + (ph_count as u64 * 56) as i64;
                             *target_offset as i64 + ph_offset
-                        };
+                        })
+                    };
+
+                    if let Some(abs_offset) = abs_offset {
                         // Replace label with immediate value
                         inst.imm = Some(Either::Right(Number::Addr(abs_offset)));
                     } else {
@@ -261,9 +297,13 @@ impl AST {
         } else {
             Ok(ParseResult {
                 code_section: CodeSection::new(std::mem::take(&mut self.nodes), self.text_size),
-                data_section: DataSection::new(
+                rodata_section: RODataSection::new(
                     std::mem::take(&mut self.rodata_nodes),
                     self.rodata_size,
+                ),
+                data_section: DataSection::new(
+                    std::mem::take(&mut self.data_nodes),
+                    self.data_size,
                 ),
                 dynamic_symbols,
                 relocation_data: relocations,
@@ -277,15 +317,20 @@ impl AST {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::parser::Token};
+    use {
+        super::*,
+        crate::{astnode::Data, parser::Token},
+    };
 
     #[test]
     fn test_ast_new() {
         let ast = AST::new();
         assert!(ast.nodes.is_empty());
         assert!(ast.rodata_nodes.is_empty());
+        assert!(ast.data_nodes.is_empty());
         assert_eq!(ast.text_size, 0);
         assert_eq!(ast.rodata_size, 0);
+        assert_eq!(ast.data_size, 0);
     }
 
     #[test]
@@ -293,8 +338,10 @@ mod tests {
         let mut ast = AST::new();
         ast.set_text_size(100);
         ast.set_rodata_size(50);
+        ast.set_data_size(25);
         assert_eq!(ast.text_size, 100);
         assert_eq!(ast.rodata_size, 50);
+        assert_eq!(ast.data_size, 25);
     }
 
     #[test]
@@ -491,5 +538,104 @@ mod tests {
 
         assert!(!parse_result.prog_is_static);
         assert!(!parse_result.relocation_data.get_rel_dyns().is_empty());
+    }
+
+    #[test]
+    fn test_build_program_v3_lddw_to_data_uses_absolute_elf_offset() {
+        let mut ast = AST::new();
+
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: Instruction {
+                opcode: Opcode::Lddw,
+                dst: None,
+                src: None,
+                off: None,
+                imm: Some(Either::Left("state".to_string())),
+                span: 0..8,
+            },
+            offset: 0,
+        });
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: Instruction {
+                opcode: Opcode::Exit,
+                dst: None,
+                src: None,
+                off: None,
+                imm: None,
+                span: 16..24,
+            },
+            offset: 16,
+        });
+        ast.data_nodes.push(ASTNode::Data {
+            data: Data::initialized("state".to_string(), vec![1, 2, 3, 4], 0..4),
+            offset: 4,
+        });
+
+        ast.set_text_size(24);
+        ast.set_rodata_size(0);
+        ast.set_data_size(8);
+
+        let parse_result = ast.build_program(SbpfArch::V3).unwrap();
+        let inst = match &parse_result.code_section.get_nodes()[0] {
+            ASTNode::Instruction { instruction, .. } => instruction,
+            _ => panic!("expected instruction"),
+        };
+
+        assert_eq!(inst.imm, Some(Either::Right(Number::Addr(180))),);
+    }
+
+    #[test]
+    fn test_build_program_v3_lddw_to_rodata_uses_absolute_elf_offset() {
+        let mut ast = AST::new();
+
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: Instruction {
+                opcode: Opcode::Lddw,
+                dst: None,
+                src: None,
+                off: None,
+                imm: Some(Either::Left("msg".to_string())),
+                span: 0..8,
+            },
+            offset: 0,
+        });
+        ast.nodes.push(ASTNode::Instruction {
+            instruction: Instruction {
+                opcode: Opcode::Exit,
+                dst: None,
+                src: None,
+                off: None,
+                imm: None,
+                span: 16..24,
+            },
+            offset: 16,
+        });
+        ast.data_nodes.push(ASTNode::Data {
+            data: Data::initialized("state".to_string(), vec![1, 2, 3, 4], 0..4),
+            offset: 0,
+        });
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: ROData {
+                name: "msg".to_string(),
+                args: vec![
+                    Token::Directive("byte".to_string(), 0..1),
+                    Token::VectorLiteral(vec![Number::Int(1), Number::Int(2)], 0..1),
+                ],
+                span: 0..1,
+            },
+            offset: 0,
+        });
+
+        ast.set_text_size(24);
+        ast.set_rodata_size(2);
+        ast.set_data_size(4);
+
+        let parse_result = ast.build_program(SbpfArch::V3).unwrap();
+        let inst = match &parse_result.code_section.get_nodes()[0] {
+            ASTNode::Instruction { instruction, .. } => instruction,
+            _ => panic!("expected instruction"),
+        };
+
+        assert_eq!(inst.imm, Some(Either::Right(Number::Addr(240))),);
     }
 }

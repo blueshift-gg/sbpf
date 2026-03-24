@@ -111,6 +111,7 @@ impl ProgramHeader {
     
     pub const V3_RODATA_VADDR: u64 = 0 << 32;
     pub const V3_BYTECODE_VADDR: u64 = 1 << 32;
+    pub const V3_DATA_VADDR: u64 = 2 << 32;
 
     pub fn new_load(offset: u64, size: u64, executable: bool, arch: SbpfArch) -> Self {
         let (flags, vaddr, align) = match (arch, executable) {
@@ -129,6 +130,21 @@ impl ProgramHeader {
             p_filesz: size,
             p_memsz: size,
             p_align: align // p_align is ignored in v3
+        }
+    }
+
+    pub fn new_writable_load(offset: u64, size: u64, arch: SbpfArch) -> Self {
+        assert!(arch.is_v3(), ".data is only supported in sbpf v3");
+
+        ProgramHeader {
+            p_type: Self::PT_LOAD,
+            p_flags: Self::PF_R | Self::PF_W,
+            p_offset: offset,
+            p_vaddr: Self::V3_DATA_VADDR,
+            p_paddr: Self::V3_DATA_VADDR,
+            p_filesz: size,
+            p_memsz: size,
+            p_align: 0,
         }
     }
 

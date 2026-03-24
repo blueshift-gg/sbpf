@@ -2,10 +2,10 @@ use {
     crate::{
         SbpfArch,
         ast::AST,
-        astnode::{ASTNode, ExternDecl, GlobalDecl, Label, ROData, RodataDecl},
+        astnode::{ASTNode, Data, ExternDecl, GlobalDecl, Label, ROData, RodataDecl},
         dynsym::{DynamicSymbolMap, RelDynMap},
         errors::CompileError,
-        section::{CodeSection, DataSection, DebugSection},
+        section::{CodeSection, DataSection, DebugSection, RODataSection},
     },
     either::Either,
     pest::{Parser, iterators::Pair},
@@ -21,15 +21,23 @@ use {
 #[grammar = "sbpf.pest"]
 pub struct SbpfParser;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SectionPhase {
+    Text,
+    ROData,
+    Data,
+}
+
 /// Context containing all mutable state during parsing
 struct ParseContext<'a> {
     ast: &'a mut AST,
     const_map: &'a mut HashMap<String, Number>,
     label_spans: &'a mut HashMap<String, std::ops::Range<usize>>,
     errors: Vec<CompileError>,
-    rodata_phase: bool,
+    section_phase: SectionPhase,
     text_offset: u64,
     rodata_offset: u64,
+    data_offset: u64,
     missing_text_directive: bool,
 }
 
@@ -49,6 +57,8 @@ pub enum Token {
 pub struct ParseResult {
     // TODO: parse result is basically 1. static part 2. dynamic part of the program
     pub code_section: CodeSection,
+
+    pub rodata_section: RODataSection,
 
     pub data_section: DataSection,
 
@@ -79,15 +89,16 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
     let mut const_map = HashMap::<String, Number>::new();
     let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
 
-    let (text_offset, rodata_offset, errors) = {
+    let (text_offset, rodata_offset, data_offset, errors) = {
         let mut ctx = ParseContext {
             ast: &mut ast,
             const_map: &mut const_map,
             label_spans: &mut label_spans,
             errors: Vec::new(),
-            rodata_phase: false,
+            section_phase: SectionPhase::Text,
             text_offset: 0,
             rodata_offset: 0,
+            data_offset: 0,
             missing_text_directive: false,
         };
 
@@ -103,7 +114,12 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
             }
         }
 
-        (ctx.text_offset, ctx.rodata_offset, ctx.errors)
+        (
+            ctx.text_offset,
+            ctx.rodata_offset,
+            ctx.data_offset,
+            ctx.errors,
+        )
     };
 
     if !errors.is_empty() {
@@ -112,6 +128,7 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
 
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
+    ast.set_data_size(data_offset);
 
     ast.build_program(arch)
 }
@@ -156,56 +173,88 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     ctx.label_spans
                         .insert(label_name.clone(), label_span.clone());
 
-                    if ctx.rodata_phase {
-                        // Handle rodata label with directive
-                        if let Some(dir_pair) = directive_opt {
-                            match process_rodata_directive(
-                                label_name.clone(),
-                                label_span.clone(),
-                                dir_pair,
-                            ) {
-                                Ok(rodata) => {
-                                    let size = rodata.get_size();
-                                    ctx.ast.rodata_nodes.push(ASTNode::ROData {
-                                        rodata,
-                                        offset: ctx.rodata_offset,
-                                    });
-                                    ctx.rodata_offset += size;
+                    match ctx.section_phase {
+                        SectionPhase::ROData => {
+                            if let Some(dir_pair) = directive_opt {
+                                match process_rodata_directive(
+                                    label_name.clone(),
+                                    label_span.clone(),
+                                    dir_pair,
+                                ) {
+                                    Ok(rodata) => {
+                                        let size = rodata.get_size();
+                                        ctx.ast.rodata_nodes.push(ASTNode::ROData {
+                                            rodata,
+                                            offset: ctx.rodata_offset,
+                                        });
+                                        ctx.rodata_offset += size;
+                                    }
+                                    Err(e) => ctx.errors.push(e),
                                 }
-                                Err(e) => ctx.errors.push(e),
-                            }
-                        } else if let Some(inst_pair) = instruction_opt {
-                            if let Err(e) = process_instruction(inst_pair, ctx.const_map) {
-                                ctx.errors.push(e);
-                            }
-                            if !ctx.missing_text_directive {
-                                ctx.missing_text_directive = true;
-                                ctx.errors.push(CompileError::MissingTextDirective {
-                                    span: label_span,
-                                    custom_label: None,
-                                });
+                            } else if let Some(inst_pair) = instruction_opt {
+                                if let Err(e) = process_instruction(inst_pair, ctx.const_map) {
+                                    ctx.errors.push(e);
+                                }
+                                if !ctx.missing_text_directive {
+                                    ctx.missing_text_directive = true;
+                                    ctx.errors.push(CompileError::MissingTextDirective {
+                                        span: label_span,
+                                        custom_label: None,
+                                    });
+                                }
                             }
                         }
-                    } else {
-                        ctx.ast.nodes.push(ASTNode::Label {
-                            label: Label {
-                                name: label_name,
-                                span: label_span,
-                            },
-                            offset: ctx.text_offset,
-                        });
-
-                        if let Some(inst_pair) = instruction_opt {
-                            match process_instruction(inst_pair, ctx.const_map) {
-                                Ok(instruction) => {
-                                    let size = instruction.get_size();
-                                    ctx.ast.nodes.push(ASTNode::Instruction {
-                                        instruction,
-                                        offset: ctx.text_offset,
-                                    });
-                                    ctx.text_offset += size;
+                        SectionPhase::Data => {
+                            if let Some(dir_pair) = directive_opt {
+                                match process_data_directive(
+                                    label_name.clone(),
+                                    label_span.clone(),
+                                    dir_pair,
+                                ) {
+                                    Ok(data) => {
+                                        let size = data.size();
+                                        ctx.ast.data_nodes.push(ASTNode::Data {
+                                            data,
+                                            offset: ctx.data_offset,
+                                        });
+                                        ctx.data_offset += size;
+                                    }
+                                    Err(e) => ctx.errors.push(e),
                                 }
-                                Err(e) => ctx.errors.push(e),
+                            } else if let Some(inst_pair) = instruction_opt {
+                                if let Err(e) = process_instruction(inst_pair, ctx.const_map) {
+                                    ctx.errors.push(e);
+                                }
+                                if !ctx.missing_text_directive {
+                                    ctx.missing_text_directive = true;
+                                    ctx.errors.push(CompileError::MissingTextDirective {
+                                        span: label_span,
+                                        custom_label: None,
+                                    });
+                                }
+                            }
+                        }
+                        SectionPhase::Text => {
+                            ctx.ast.nodes.push(ASTNode::Label {
+                                label: Label {
+                                    name: label_name,
+                                    span: label_span,
+                                },
+                                offset: ctx.text_offset,
+                            });
+
+                            if let Some(inst_pair) = instruction_opt {
+                                match process_instruction(inst_pair, ctx.const_map) {
+                                    Ok(instruction) => {
+                                        let size = instruction.get_size();
+                                        ctx.ast.nodes.push(ASTNode::Instruction {
+                                            instruction,
+                                            offset: ctx.text_offset,
+                                        });
+                                        ctx.text_offset += size;
+                                    }
+                                    Err(e) => ctx.errors.push(e),
+                                }
                             }
                         }
                     }
@@ -220,7 +269,7 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
 
                 match process_instruction(inner, ctx.const_map) {
                     Ok(instruction) => {
-                        if !ctx.rodata_phase {
+                        if ctx.section_phase == SectionPhase::Text {
                             let size = instruction.get_size();
                             ctx.ast.nodes.push(ASTNode::Instruction {
                                 instruction,
@@ -232,7 +281,7 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     Err(e) => ctx.errors.push(e),
                 }
 
-                if ctx.rodata_phase && !ctx.missing_text_directive {
+                if ctx.section_phase != SectionPhase::Text && !ctx.missing_text_directive {
                     ctx.missing_text_directive = true;
                     ctx.errors.push(CompileError::MissingTextDirective {
                         span: span_range,
@@ -318,9 +367,9 @@ fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
             Rule::directive_section => {
                 let section_name = inner.as_str().trim_start_matches('.');
                 match section_name {
-                    "text" => ctx.rodata_phase = false,
+                    "text" => ctx.section_phase = SectionPhase::Text,
                     "rodata" => {
-                        ctx.rodata_phase = true;
+                        ctx.section_phase = SectionPhase::ROData;
                         let span = inner.as_span();
                         ctx.ast.nodes.push(ASTNode::RodataDecl {
                             rodata_decl: RodataDecl {
@@ -328,6 +377,7 @@ fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                             },
                         });
                     }
+                    "data" => ctx.section_phase = SectionPhase::Data,
                     _ => {}
                 }
             }
@@ -427,6 +477,21 @@ fn process_rodata_directive(
         span: label_span,
         custom_label: None,
     })
+}
+
+fn process_data_directive(
+    label_name: String,
+    label_span: std::ops::Range<usize>,
+    pair: Pair<Rule>,
+) -> Result<Data, CompileError> {
+    let rodata = process_rodata_directive(label_name, label_span, pair)?;
+    let bytes = ASTNode::ROData {
+        rodata: rodata.clone(),
+        offset: 0,
+    }
+    .bytecode()
+    .expect("rodata nodes always emit bytes");
+    Ok(Data::initialized(rodata.name, bytes, rodata.span))
 }
 
 fn process_instruction(
@@ -1191,4 +1256,27 @@ fn eval_term(
         span: span_range,
         custom_label: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_data_section_sets_data_size() {
+        let source = r#"
+        .data
+        state: .byte 1, 2, 3, 4
+        .text
+        .globl entrypoint
+        entrypoint:
+            lddw r1, state
+            exit
+        "#;
+
+        let parse_result = parse(source, SbpfArch::V3).unwrap();
+
+        assert_eq!(parse_result.data_section.get_size(), 4);
+        assert_eq!(parse_result.data_section.get_nodes().len(), 1);
+    }
 }

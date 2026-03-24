@@ -31,6 +31,10 @@ pub enum ASTNode {
         rodata: ROData,
         offset: u64,
     },
+    Data {
+        data: Data,
+        offset: u64,
+    },
     Instruction {
         instruction: Instruction,
         offset: u64,
@@ -97,6 +101,35 @@ pub struct ROData {
     pub name: String,
     pub args: Vec<Token>,
     pub span: Range<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Data {
+    pub name: String,
+    pub bytes: Vec<u8>,
+    pub span: Range<usize>,
+}
+
+impl Data {
+    pub fn initialized(name: String, bytes: Vec<u8>, span: Range<usize>) -> Self {
+        Self { name, bytes, span }
+    }
+
+    pub fn zeroed(name: String, size: u64, span: Range<usize>) -> Self {
+        Self {
+            name,
+            bytes: vec![0; size as usize],
+            span,
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        self.bytes.len() as u64
+    }
+
+    pub fn bytecode(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
 }
 
 impl ROData {
@@ -272,6 +305,7 @@ impl ASTNode {
                 }
                 Some(bytes)
             }
+            ASTNode::Data { data, .. } => Some(data.bytecode()),
             _ => None,
         }
     }
@@ -605,5 +639,19 @@ mod tests {
             },
         };
         assert!(node.bytecode().is_none());
+    }
+
+    #[test]
+    fn test_data_initialized() {
+        let data = Data::initialized("state".to_string(), vec![1, 2, 3], 0..3);
+        assert_eq!(data.size(), 3);
+        assert_eq!(data.bytecode(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_data_zeroed() {
+        let data = Data::zeroed("state".to_string(), 4, 0..4);
+        assert_eq!(data.size(), 4);
+        assert_eq!(data.bytecode(), vec![0, 0, 0, 0]);
     }
 }

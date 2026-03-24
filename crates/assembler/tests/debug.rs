@@ -44,8 +44,8 @@ fn parse_dwarf_info(file_data: &[u8]) -> (HashMap<u64, u32>, Vec<LabelInfo>) {
                 let mut name = None;
                 let mut line = None;
 
-                let mut attrs = entry.attrs().iter();
-                while let Some(attr) = attrs.next() {
+                let attrs = entry.attrs().iter();
+                for attr in attrs {
                     match attr.name() {
                         gimli::DW_AT_name => {
                             if let Ok(s) = dwarf.attr_string(&unit, attr.value()) {

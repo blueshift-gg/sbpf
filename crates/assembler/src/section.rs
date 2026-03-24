@@ -94,16 +94,16 @@ impl Section for CodeSection {
     }
 }
 
-// Data Section implementation
+// ROData Section implementation
 #[derive(Debug)]
-pub struct DataSection {
+pub struct RODataSection {
     name: String,
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
 }
 
-impl DataSection {
+impl RODataSection {
     pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
         Self {
             name: String::from(".rodata"),
@@ -158,7 +158,7 @@ impl DataSection {
     }
 }
 
-impl Section for DataSection {
+impl Section for RODataSection {
     fn name(&self) -> &str {
         &self.name
     }
@@ -176,7 +176,92 @@ impl Section for DataSection {
             }
         }
         // Add padding to make size multiple of 8
-        while bytecode.len() % 8 != 0 {
+        while !bytecode.len().is_multiple_of(8) {
+            bytecode.push(0);
+        }
+
+        bytecode
+    }
+}
+
+#[derive(Debug)]
+pub struct DataSection {
+    name: String,
+    name_offset: u32,
+    nodes: Vec<ASTNode>,
+    size: u64,
+    offset: u64,
+}
+
+impl DataSection {
+    pub fn new(nodes: Vec<ASTNode>, size: u64) -> Self {
+        Self {
+            name: String::from(".data"),
+            name_offset: 0,
+            nodes,
+            size,
+            offset: 0,
+        }
+    }
+
+    pub fn get_nodes(&self) -> &Vec<ASTNode> {
+        &self.nodes
+    }
+
+    pub fn get_size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn set_offset(&mut self, offset: u64) {
+        self.offset = offset;
+    }
+
+    pub fn set_name_offset(&mut self, name_offset: u32) {
+        self.name_offset = name_offset;
+    }
+
+    pub fn section_header_bytecode(&self) -> Vec<u8> {
+        let flags = SectionHeader::SHF_ALLOC | SectionHeader::SHF_WRITE;
+        SectionHeader::new(
+            self.name_offset,
+            SectionHeader::SHT_PROGBITS,
+            flags,
+            self.offset,
+            self.offset,
+            self.size,
+            0,
+            0,
+            1,
+            0,
+        )
+        .bytecode()
+    }
+}
+
+impl Section for DataSection {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn size(&self) -> u64 {
+        (self.size + 7) & !7
+    }
+
+    fn bytecode(&self) -> Vec<u8> {
+        let mut bytecode = vec![0; self.size as usize];
+        for node in &self.nodes {
+            if let ASTNode::Data { data, offset } = node {
+                let start = *offset as usize;
+                let end = start + data.size() as usize;
+                assert!(
+                    end <= bytecode.len(),
+                    "data node `{}` exceeds declared .data size",
+                    data.name,
+                );
+                bytecode[start..end].copy_from_slice(&data.bytecode());
+            }
+        }
+        while !bytecode.len().is_multiple_of(8) {
             bytecode.push(0);
         }
 
@@ -710,6 +795,7 @@ impl DebugSection {
 #[derive(Debug)]
 pub enum SectionType {
     Code(CodeSection),
+    ROData(RODataSection),
     Data(DataSection),
     ShStrTab(ShStrTabSection),
     Dynamic(DynamicSection),
@@ -731,6 +817,7 @@ impl SectionType {
     pub fn name(&self) -> &str {
         match self {
             SectionType::Code(cs) => &cs.name,
+            SectionType::ROData(ds) => &ds.name,
             SectionType::Data(ds) => &ds.name,
             SectionType::ShStrTab(ss) => &ss.name,
             SectionType::Dynamic(ds) => &ds.name,
@@ -752,6 +839,7 @@ impl SectionType {
     pub fn bytecode(&self) -> Vec<u8> {
         match self {
             SectionType::Code(cs) => cs.bytecode(),
+            SectionType::ROData(ds) => ds.bytecode(),
             SectionType::Data(ds) => ds.bytecode(),
             SectionType::ShStrTab(ss) => ss.bytecode(),
             SectionType::Dynamic(ds) => ds.bytecode(),
@@ -773,6 +861,7 @@ impl SectionType {
     pub fn size(&self) -> u64 {
         match self {
             SectionType::Code(cs) => cs.size(),
+            SectionType::ROData(ds) => ds.size(),
             SectionType::Data(ds) => ds.size(),
             SectionType::ShStrTab(ss) => ss.size(),
             SectionType::Dynamic(ds) => ds.size(),
@@ -794,6 +883,7 @@ impl SectionType {
     pub fn section_header_bytecode(&self) -> Vec<u8> {
         match self {
             SectionType::Code(cs) => cs.section_header_bytecode(),
+            SectionType::ROData(ds) => ds.section_header_bytecode(),
             SectionType::Data(ds) => ds.section_header_bytecode(),
             SectionType::ShStrTab(ss) => ss.section_header_bytecode(),
             SectionType::Dynamic(ds) => ds.section_header_bytecode(),
@@ -815,6 +905,7 @@ impl SectionType {
     pub fn set_offset(&mut self, offset: u64) {
         match self {
             SectionType::Code(cs) => cs.set_offset(offset),
+            SectionType::ROData(ds) => ds.set_offset(offset),
             SectionType::Data(ds) => ds.set_offset(offset),
             SectionType::ShStrTab(ss) => ss.set_offset(offset),
             SectionType::Dynamic(ds) => ds.set_offset(offset),
@@ -836,6 +927,7 @@ impl SectionType {
     pub fn offset(&self) -> u64 {
         match self {
             SectionType::Code(cs) => cs.offset,
+            SectionType::ROData(ds) => ds.offset,
             SectionType::Data(ds) => ds.offset,
             SectionType::ShStrTab(ss) => ss.offset,
             SectionType::Dynamic(ds) => ds.offset,
@@ -859,6 +951,7 @@ impl SectionType {
 mod tests {
     use {
         super::*,
+        crate::astnode::Data,
         sbpf_common::{instruction::Instruction, opcode::Opcode},
     };
 
@@ -903,7 +996,7 @@ mod tests {
     }
 
     #[test]
-    fn test_data_section_new() {
+    fn test_rodata_section_new() {
         let rodata = ROData {
             name: "msg".to_string(),
             args: vec![
@@ -914,13 +1007,13 @@ mod tests {
         };
         let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
 
-        let section = DataSection::new(nodes, 2);
+        let section = RODataSection::new(nodes, 2);
         assert_eq!(section.name(), ".rodata");
         assert_eq!(section.get_size(), 2);
     }
 
     #[test]
-    fn test_data_section_rodata() {
+    fn test_rodata_section_rodata() {
         let rodata = ROData {
             name: "my_str".to_string(),
             args: vec![
@@ -931,11 +1024,49 @@ mod tests {
         };
         let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
 
-        let section = DataSection::new(nodes, 4);
+        let section = RODataSection::new(nodes, 4);
         let rodata = section.rodata();
         assert_eq!(rodata.len(), 1);
         assert_eq!(rodata[0].0, "my_str");
         assert_eq!(rodata[0].2, "test");
+    }
+
+    #[test]
+    fn test_data_section_new() {
+        let nodes = vec![ASTNode::Data {
+            data: Data::zeroed("state".to_string(), 8, 0..5),
+            offset: 0,
+        }];
+
+        let section = DataSection::new(nodes, 8);
+        assert_eq!(section.name(), ".data");
+        assert_eq!(section.get_size(), 8);
+    }
+
+    #[test]
+    fn test_data_section_bytecode_uses_offsets() {
+        let nodes = vec![
+            ASTNode::Data {
+                data: Data::initialized("first".to_string(), vec![1, 2], 0..2),
+                offset: 0,
+            },
+            ASTNode::Data {
+                data: Data::initialized("second".to_string(), vec![3, 4], 4..6),
+                offset: 4,
+            },
+        ];
+
+        let section = DataSection::new(nodes, 6);
+        assert_eq!(section.bytecode(), vec![1, 2, 0, 0, 3, 4, 0, 0]);
+    }
+
+    #[test]
+    fn test_data_section_header_uses_name_offset() {
+        let mut section = DataSection::new(Vec::new(), 0);
+        section.set_name_offset(15);
+
+        let bytes = section.section_header_bytecode();
+        assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 15);
     }
 
     #[test]

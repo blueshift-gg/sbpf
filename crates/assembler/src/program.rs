@@ -20,9 +20,22 @@ pub struct Program {
 }
 
 impl Program {
+    fn section_name_offset(section_names: &[String], target: &str) -> u32 {
+        let mut offset = 1;
+        for name in section_names {
+            if name == target {
+                return offset as u32;
+            }
+            offset += name.len() + 1;
+        }
+
+        panic!("missing section name `{}`", target);
+    }
+
     pub fn from_parse_result(
         ParseResult {
             code_section,
+            rodata_section,
             data_section,
             dynamic_symbols,
             relocation_data,
@@ -36,11 +49,17 @@ impl Program {
         let mut program_headers = None;
 
         let bytecode_size = code_section.size();
-        let rodata_size = data_section.size();
+        let rodata_size = rodata_section.size();
+        let data_size = data_section.size();
 
         let has_rodata = rodata_size > 0;
+        let has_data = data_size > 0;
+        assert!(
+            arch.is_v3() || !has_data,
+            ".data is only supported in sbpf v3"
+        );
         let ph_count = if arch.is_v3() {
-            if has_rodata { 2 } else { 1 }
+            1 + has_rodata as u16 + has_data as u16
         } else if prog_is_static {
             0
         } else {
@@ -58,8 +77,8 @@ impl Program {
         let base_offset = 64 + (ph_count as u64 * 56); // 64 bytes ELF header, 56 bytes per program header
         let mut current_offset = base_offset;
 
-        let text_offset = if arch.is_v3() && has_rodata {
-            rodata_size + base_offset
+        let text_offset = if arch.is_v3() {
+            base_offset + rodata_size + data_size
         } else {
             base_offset
         };
@@ -88,13 +107,27 @@ impl Program {
         if has_rodata {
             section_names.push(".rodata".to_string());
         }
+        if arch.is_v3() && has_data {
+            section_names.push(".data".to_string());
+        }
 
-        if arch.is_v3() && has_rodata {
-            // Data section
-            let mut rodata_section = SectionType::Data(data_section);
-            rodata_section.set_offset(current_offset);
-            current_offset += rodata_section.size();
-            sections.push(rodata_section);
+        if arch.is_v3() {
+            if has_data {
+                let mut data_section = SectionType::Data(data_section);
+                if let SectionType::Data(section) = &mut data_section {
+                    section.set_name_offset(Self::section_name_offset(&section_names, ".data"));
+                }
+                data_section.set_offset(current_offset);
+                current_offset += data_section.size();
+                sections.push(data_section);
+            }
+
+            if has_rodata {
+                let mut rodata_section = SectionType::ROData(rodata_section);
+                rodata_section.set_offset(current_offset);
+                current_offset += rodata_section.size();
+                sections.push(rodata_section);
+            }
 
             // Code section
             let mut text_section = SectionType::Code(code_section);
@@ -108,9 +141,8 @@ impl Program {
             current_offset += text_section.size();
             sections.push(text_section);
 
-            // Data section (if any)
             if has_rodata {
-                let mut rodata_section = SectionType::Data(data_section);
+                let mut rodata_section = SectionType::ROData(rodata_section);
                 rodata_section.set_offset(current_offset);
                 current_offset += rodata_section.size();
                 sections.push(rodata_section);
@@ -145,23 +177,41 @@ impl Program {
             current_offset += shstrtab_section.size();
             sections.push(SectionType::ShStrTab(shstrtab_section));
 
-            if has_rodata {
-                // 2 headers: rodata (PF_R) then bytecode (PF_X)
-                let rodata_offset = base_offset;
-                let bytecode_offset = base_offset + rodata_size;
-                program_headers = Some(vec![
-                    ProgramHeader::new_load(rodata_offset, rodata_size, false, arch),
-                    ProgramHeader::new_load(bytecode_offset, bytecode_size, true, arch),
-                ]);
-            } else {
-                // 1 header: bytecode only (PF_X)
-                program_headers = Some(vec![ProgramHeader::new_load(
-                    base_offset,
-                    bytecode_size,
-                    true,
+            let mut headers = Vec::new();
+            if has_data {
+                let data_offset = sections
+                    .iter()
+                    .find(|section| section.name() == ".data")
+                    .expect("missing .data section")
+                    .offset();
+                headers.push(ProgramHeader::new_writable_load(
+                    data_offset,
+                    data_size,
                     arch,
-                )]);
+                ));
             }
+
+            if has_rodata {
+                let rodata_offset = sections
+                    .iter()
+                    .find(|section| section.name() == ".rodata")
+                    .expect("missing .rodata section")
+                    .offset();
+                headers.push(ProgramHeader::new_load(
+                    rodata_offset,
+                    rodata_size,
+                    false,
+                    arch,
+                ));
+            }
+
+            headers.push(ProgramHeader::new_load(
+                text_offset,
+                bytecode_size,
+                true,
+                arch,
+            ));
+            program_headers = Some(headers);
         } else if !prog_is_static {
             let mut symbol_names = Vec::new();
             let mut dyn_syms = Vec::new();
@@ -318,21 +368,24 @@ impl Program {
             shstrtab_section.set_offset(current_offset);
             current_offset += shstrtab_section.size();
 
-            program_headers = Some(vec![
-                ProgramHeader::new_load(
-                    text_offset,
-                    text_size,
-                    true, // executable
-                    arch,
-                ),
-                ProgramHeader::new_load(
-                    dynsym_section.offset(),
-                    dynsym_section.size() + dynstr_section.size() + rel_dyn_section.size(),
-                    false,
-                    arch,
-                ),
-                ProgramHeader::new_dynamic(dynamic_section.offset(), dynamic_section.size()),
-            ]);
+            let mut headers = vec![ProgramHeader::new_load(
+                text_offset,
+                text_size,
+                true, // executable
+                arch,
+            )];
+
+            headers.push(ProgramHeader::new_load(
+                dynsym_section.offset(),
+                dynsym_section.size() + dynstr_section.size() + rel_dyn_section.size(),
+                false,
+                arch,
+            ));
+            headers.push(ProgramHeader::new_dynamic(
+                dynamic_section.offset(),
+                dynamic_section.size(),
+            ));
+            program_headers = Some(headers);
 
             sections.push(dynamic_section);
             sections.push(dynsym_section);
@@ -449,8 +502,8 @@ impl Program {
             .iter()
             .find(|s| s.name() == ".rodata")
             .unwrap();
-        if let SectionType::Data(data_section) = rodata {
-            data_section.rodata()
+        if let SectionType::ROData(rodata_section) = rodata {
+            rodata_section.rodata()
         } else {
             panic!("ROData section not found");
         }
@@ -482,7 +535,12 @@ impl Program {
 mod tests {
     use {
         super::*,
-        crate::{SbpfArch, parser::parse},
+        crate::{
+            SbpfArch,
+            astnode::{ASTNode, Data},
+            parser::parse,
+            section::DataSection,
+        },
     };
 
     #[test]
@@ -612,6 +670,48 @@ entrypoint:
     }
 
     #[test]
+    fn test_v3_with_rodata_and_data_three_headers() {
+        let source = r#"
+.rodata
+msg: .ascii "test"
+.text
+.globl entrypoint
+entrypoint:
+    exit
+        "#;
+        let mut parse_result = parse(source, SbpfArch::V3).unwrap();
+        parse_result.data_section = DataSection::new(
+            vec![ASTNode::Data {
+                data: Data::initialized("state".to_string(), vec![1, 2, 3, 4], 0..4),
+                offset: 0,
+            }],
+            4,
+        );
+        let program = Program::from_parse_result(parse_result, None);
+
+        let section_names: Vec<&str> = program
+            .sections
+            .iter()
+            .map(|section| section.name())
+            .collect();
+        assert_eq!(section_names[1], ".data");
+        assert_eq!(section_names[2], ".rodata");
+        assert_eq!(section_names[3], ".text");
+
+        let headers = program.program_headers.as_ref().unwrap();
+        assert_eq!(headers.len(), 3);
+        assert_eq!(
+            headers[0].p_flags,
+            ProgramHeader::PF_R | ProgramHeader::PF_W
+        );
+        assert_eq!(headers[0].p_vaddr, ProgramHeader::V3_DATA_VADDR);
+        assert_eq!(headers[1].p_flags, ProgramHeader::PF_R);
+        assert_eq!(headers[1].p_vaddr, ProgramHeader::V3_RODATA_VADDR);
+        assert_eq!(headers[2].p_flags, ProgramHeader::PF_X);
+        assert_eq!(headers[2].p_vaddr, ProgramHeader::V3_BYTECODE_VADDR);
+    }
+
+    #[test]
     fn test_v3_e_entry() {
         let source = r#"
 .globl entrypoint
@@ -664,5 +764,21 @@ entrypoint:
         assert!(!section_names.contains(&".dynsym"));
         assert!(!section_names.contains(&".dynstr"));
         assert!(!section_names.contains(&".rel.dyn"));
+    }
+
+    #[test]
+    #[should_panic(expected = ".data is only supported in sbpf v3")]
+    fn test_v0_data_is_not_supported() {
+        let source = "exit";
+        let mut parse_result = parse(source, SbpfArch::V0).unwrap();
+        parse_result.data_section = DataSection::new(
+            vec![ASTNode::Data {
+                data: Data::initialized("state".to_string(), vec![1, 2, 3, 4], 0..4),
+                offset: 0,
+            }],
+            4,
+        );
+
+        Program::from_parse_result(parse_result, None);
     }
 }
