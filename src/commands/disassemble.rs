@@ -2,7 +2,7 @@ use {
     anyhow::{Error, Result},
     clap::Args,
     either::Either,
-    sbpf_common::{inst_param::Number, opcode::Opcode},
+    sbpf_common::{inst_param::Number, instruction::AsmFormat, opcode::Opcode},
     sbpf_disassembler::program::Program,
     std::{collections::HashSet, fs::File, io::Read},
 };
@@ -12,6 +12,8 @@ pub struct DisassembleArgs {
     pub filename: String,
     #[arg(short, long)]
     pub debug: bool,
+    #[arg(short, long, default_value = "default")]
+    pub format: String,
 }
 
 pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
@@ -20,12 +22,17 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
     file.read_to_end(&mut b)?;
     let program = Program::from_bytes(b.as_ref())?;
 
-    let output = disassemble_program(program, args.debug)?;
+    let format = match args.format.as_str() {
+        "default" => AsmFormat::Default,
+        "llvm" => AsmFormat::Llvm,
+        other => anyhow::bail!("unknown format '{}', expected 'default' or 'llvm'", other),
+    };
+    let output = disassemble_program(program, args.debug, format)?;
     print!("{}", output);
     Ok(())
 }
 
-fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
+fn disassemble_program(program: Program, debug: bool, format: AsmFormat) -> Result<String, Error> {
     let mut output = String::new();
 
     if debug {
@@ -122,7 +129,7 @@ fn disassemble_program(program: Program, debug: bool) -> Result<String, Error> {
 
             // Indent instructions under labels
             let indent = if in_labeled_block { "  " } else { "" };
-            output.push_str(&format!("{}{}\n", indent, ix.to_asm().unwrap()));
+            output.push_str(&format!("{}{}\n", indent, ix.to_asm(format)?));
         }
 
         // Output rodata section if present
@@ -206,40 +213,81 @@ mod tests {
             "01000000000000000000000000000000"
         );
 
-        let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, false).unwrap();
-
-        let expected = r#".globl entrypoint
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default
+            )
+            .unwrap(),
+            r#".globl entrypoint
 
 entrypoint:
   call fn_0068
   ja jmp_0038
 
 jmp_0010:
-  lddw r1, 1
+  lddw r1, 0x1
   call sol_log_64_
   call fn_0068
   exit
 
 jmp_0038:
-  lddw r1, 3
+  lddw r1, 0x3
   call sol_log_64_
   call fn_0088
   ja jmp_0010
   exit
 
 fn_0068:
-  lddw r1, 2
+  lddw r1, 0x2
   call sol_log_64_
   exit
 
 fn_0088:
-  lddw r1, 4
+  lddw r1, 0x4
   call sol_log_64_
   exit
-"#;
+"#
+        );
 
-        assert_eq!(output, expected);
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm
+            )
+            .unwrap(),
+            r#".globl entrypoint
+
+entrypoint:
+  call fn_0068
+  goto jmp_0038
+
+jmp_0010:
+  r1 = 0x1 ll
+  call sol_log_64_
+  call fn_0068
+  exit
+
+jmp_0038:
+  r1 = 0x3 ll
+  call sol_log_64_
+  call fn_0088
+  goto jmp_0010
+  exit
+
+fn_0068:
+  r1 = 0x2 ll
+  call sol_log_64_
+  exit
+
+fn_0088:
+  r1 = 0x4 ll
+  call sol_log_64_
+  exit
+"#
+        );
     }
 
     #[test]
@@ -285,11 +333,15 @@ fn_0088:
             "0000000000000000"
         );
 
-        let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, false).unwrap();
-
         // Both fn and jmp labels should be present
-        let expected = r#".globl entrypoint
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default
+            )
+            .unwrap(),
+            r#".globl entrypoint
 
 entrypoint:
   call fn_0010
@@ -297,12 +349,32 @@ entrypoint:
 
 fn_0010:
 jmp_0010:
-  lddw r1, 1
+  lddw r1, 0x1
   call sol_log_64_
   exit
-"#;
+"#
+        );
 
-        assert_eq!(output, expected);
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm
+            )
+            .unwrap(),
+            r#".globl entrypoint
+
+entrypoint:
+  call fn_0010
+  goto jmp_0010
+
+fn_0010:
+jmp_0010:
+  r1 = 0x1 ll
+  call sol_log_64_
+  exit
+"#
+        );
     }
 
     #[test]
@@ -366,10 +438,14 @@ jmp_0010:
             "01000000000000000000000000000000"
         );
 
-        let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, false).unwrap();
-
-        let expected = r#".globl entrypoint
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default
+            )
+            .unwrap(),
+            r#".globl entrypoint
 
 entrypoint:
   lddw r1, data_0000
@@ -378,7 +454,7 @@ entrypoint:
   lddw r4, data_0009
   call sol_log_64_
   lddw r1, str_0011
-  lddw r2, 12
+  lddw r2, 0xc
   call sol_log_
   exit
 
@@ -388,9 +464,37 @@ entrypoint:
   data_0005: .long 0x12345678
   data_0009: .quad 0x123456789abcdef0
   str_0011: .ascii "Hello World!"
-"#;
+"#
+        );
 
-        assert_eq!(output, expected);
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm
+            )
+            .unwrap(),
+            r#".globl entrypoint
+
+entrypoint:
+  r1 = data_0000 ll
+  r2 = data_0003 ll
+  r3 = data_0005 ll
+  r4 = data_0009 ll
+  call sol_log_64_
+  r1 = str_0011 ll
+  r2 = 0xc ll
+  call sol_log_
+  exit
+
+.rodata
+  data_0000: .byte 0x01, 0x02, 0x03
+  data_0003: .word 0x1234
+  data_0005: .long 0x12345678
+  data_0009: .quad 0x123456789abcdef0
+  str_0011: .ascii "Hello World!"
+"#
+        );
     }
 
     #[test]
@@ -414,18 +518,37 @@ entrypoint:
             "98000000000000000a00000000000000000000000000000001000000000000000000000000000000"
         );
 
-        let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, false).unwrap();
-
-        let expected = r#".globl entrypoint
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default
+            )
+            .unwrap(),
+            r#".globl entrypoint
 
 entrypoint:
-  lddw r1, 1
+  lddw r1, 0x1
   call sol_log_64_
   exit
-"#;
+"#
+        );
 
-        assert_eq!(output, expected);
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm
+            )
+            .unwrap(),
+            r#".globl entrypoint
+
+entrypoint:
+  r1 = 0x1 ll
+  call sol_log_64_
+  exit
+"#
+        );
     }
 
     #[test]
@@ -457,21 +580,44 @@ entrypoint:
             "1200000000000000000000000000000001000000000000000000000000000000"
         );
 
-        let program = Program::from_bytes(&elf_bytes).unwrap();
-        let output = disassemble_program(program, false).unwrap();
-
-        let expected = r#".globl entrypoint
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default
+            )
+            .unwrap(),
+            r#".globl entrypoint
 
 entrypoint:
   lddw r1, str_0000
-  lddw r2, 5
+  lddw r2, 0x5
   call sol_log_
   exit
 
 .rodata
   str_0000: .ascii "hello"
-"#;
+"#
+        );
 
-        assert_eq!(output, expected);
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm
+            )
+            .unwrap(),
+            r#".globl entrypoint
+
+entrypoint:
+  r1 = str_0000 ll
+  r2 = 0x5 ll
+  call sol_log_
+  exit
+
+.rodata
+  str_0000: .ascii "hello"
+"#
+        );
     }
 }

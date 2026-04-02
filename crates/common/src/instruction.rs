@@ -11,6 +11,13 @@ use {
     serde::{Deserialize, Serialize},
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AsmFormat {
+    #[default]
+    Default,
+    Llvm,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
     pub opcode: Opcode,
@@ -158,7 +165,14 @@ impl Instruction {
         Ok(b)
     }
 
-    pub fn to_asm(&self) -> Result<String, SBPFError> {
+    pub fn to_asm(&self, format: AsmFormat) -> Result<String, SBPFError> {
+        match format {
+            AsmFormat::Default => self.to_default_asm(),
+            AsmFormat::Llvm => self.to_llvm_asm(),
+        }
+    }
+
+    fn to_default_asm(&self) -> Result<String, SBPFError> {
         if let Some(handler) = OPCODE_TO_HANDLER.get(&self.opcode) {
             match (handler.validate)(self) {
                 Ok(()) => {
@@ -169,37 +183,24 @@ impl Instruction {
                     };
                     let mut param = vec![];
 
-                    fn off_str(off: &Either<String, i16>) -> String {
-                        match off {
-                            Either::Left(ident) => ident.clone(),
-                            Either::Right(offset) => {
-                                if offset.is_negative() {
-                                    offset.to_string()
-                                } else {
-                                    format!("+{}", offset)
-                                }
-                            }
-                        }
-                    }
-
-                    fn mem_off(r: &Register, off: &Either<String, i16>) -> String {
-                        format!("[r{}{}]", r.n, off_str(off))
+                    fn fmt_mem_off(r: &Register, off: &Either<String, i16>) -> String {
+                        format!("[r{}{}]", r.n, fmt_off(off))
                     }
 
                     if self.get_opcode_type() == OperationType::LoadMemory {
                         param.push(format!("r{}", self.dst.as_ref().unwrap().n));
-                        param.push(mem_off(
+                        param.push(fmt_mem_off(
                             self.src.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
                         ));
                     } else if self.get_opcode_type() == OperationType::StoreImmediate {
-                        param.push(mem_off(
+                        param.push(fmt_mem_off(
                             self.dst.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
                         ));
-                        param.push(format!("{}", self.imm.as_ref().unwrap()));
+                        param.push(fmt_imm(self.imm.as_ref().unwrap()));
                     } else if self.get_opcode_type() == OperationType::StoreRegister {
-                        param.push(mem_off(
+                        param.push(fmt_mem_off(
                             self.dst.as_ref().unwrap(),
                             self.off.as_ref().unwrap(),
                         ));
@@ -217,10 +218,10 @@ impl Instruction {
                             && self.opcode != Opcode::Le
                             && self.opcode != Opcode::Be
                         {
-                            param.push(format!("{}", imm));
+                            param.push(fmt_imm(imm));
                         }
                         if let Some(off) = &self.off {
-                            param.push(off_str(off).to_string());
+                            param.push(fmt_off(off));
                         }
                     }
                     if !param.is_empty() {
@@ -239,6 +240,137 @@ impl Instruction {
             })
         }
     }
+
+    fn to_llvm_asm(&self) -> Result<String, SBPFError> {
+        let op_type = self.get_opcode_type();
+
+        fn fmt_mem_off(off: &Either<String, i16>) -> String {
+            match off {
+                Either::Left(label) => label.clone(),
+                Either::Right(v) if *v < 0 => format!("- 0x{:x}", -(*v as i32)),
+                Either::Right(v) => format!("+ 0x{:x}", v),
+            }
+        }
+
+        match op_type {
+            OperationType::BinaryImmediate | OperationType::BinaryRegister => {
+                if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
+                    let bits = self.op_imm_bits()?;
+                    let dst = self.dst.as_ref().unwrap().n;
+                    return Ok(format!("r{} = {} r{}", dst, bits, dst));
+                }
+                let op = self
+                    .opcode
+                    .to_operator()
+                    .ok_or_else(|| SBPFError::BytecodeError {
+                        error: format!("unsupported opcode in LLVM format: {}", self.opcode),
+                        span: self.span.clone(),
+                        custom_label: None,
+                    })?;
+                let prefix = if self.opcode.is_32bit() { "w" } else { "r" };
+                let dst = self.dst.as_ref().unwrap().n;
+                let rhs = if op_type == OperationType::BinaryRegister {
+                    format!("{}{}", prefix, self.src.as_ref().unwrap().n)
+                } else {
+                    fmt_imm(self.imm.as_ref().unwrap())
+                };
+                Ok(format!("{}{} {} {}", prefix, dst, op, rhs))
+            }
+            OperationType::Unary => {
+                let prefix = if self.opcode == Opcode::Neg32 {
+                    "w"
+                } else {
+                    "r"
+                };
+                let dst = self.dst.as_ref().unwrap().n;
+                Ok(format!("{}{} = -{}{}", prefix, dst, prefix, dst))
+            }
+            OperationType::LoadImmediate => {
+                let dst = self.dst.as_ref().unwrap().n;
+                let imm = fmt_imm(self.imm.as_ref().unwrap());
+                Ok(format!("r{} = {} ll", dst, imm))
+            }
+            OperationType::LoadMemory => {
+                let size = self.opcode.to_size().unwrap();
+                let dst_prefix = if self.opcode == Opcode::Ldxdw {
+                    "r"
+                } else {
+                    "w"
+                };
+                let dst = self.dst.as_ref().unwrap().n;
+                let src = self.src.as_ref().unwrap().n;
+                let off = fmt_mem_off(self.off.as_ref().unwrap());
+                Ok(format!(
+                    "{}{} = *({} *)(r{} {})",
+                    dst_prefix, dst, size, src, off
+                ))
+            }
+            OperationType::StoreImmediate => {
+                let size = self.opcode.to_size().unwrap();
+                let dst = self.dst.as_ref().unwrap().n;
+                let off = fmt_mem_off(self.off.as_ref().unwrap());
+                let imm = fmt_imm(self.imm.as_ref().unwrap());
+                Ok(format!("*({} *)(r{} {}) = {}", size, dst, off, imm))
+            }
+            OperationType::StoreRegister => {
+                let size = self.opcode.to_size().unwrap();
+                let dst = self.dst.as_ref().unwrap().n;
+                let off = fmt_mem_off(self.off.as_ref().unwrap());
+                let src_prefix = if self.opcode == Opcode::Stxdw {
+                    "r"
+                } else {
+                    "w"
+                };
+                let src = self.src.as_ref().unwrap().n;
+                Ok(format!(
+                    "*({} *)(r{} {}) = {}{}",
+                    size, dst, off, src_prefix, src
+                ))
+            }
+            OperationType::Jump => {
+                let off = fmt_off(self.off.as_ref().unwrap());
+                Ok(format!("goto {}", off))
+            }
+            OperationType::JumpImmediate => {
+                let dst = self.dst.as_ref().unwrap().n;
+                let op = self.opcode.to_operator().unwrap();
+                let imm = fmt_imm(self.imm.as_ref().unwrap());
+                let off = fmt_off(self.off.as_ref().unwrap());
+                Ok(format!("if r{} {} {} goto {}", dst, op, imm, off))
+            }
+            OperationType::JumpRegister => {
+                let dst = self.dst.as_ref().unwrap().n;
+                let op = self.opcode.to_operator().unwrap();
+                let src = self.src.as_ref().unwrap().n;
+                let off = fmt_off(self.off.as_ref().unwrap());
+                Ok(format!("if r{} {} r{} goto {}", dst, op, src, off))
+            }
+            OperationType::CallImmediate | OperationType::CallRegister | OperationType::Exit => {
+                self.to_default_asm()
+            }
+        }
+    }
+}
+
+fn fmt_off(off: &Either<String, i16>) -> String {
+    match off {
+        Either::Left(label) => label.clone(),
+        Either::Right(v) if *v < 0 => format!("-0x{:x}", -(*v as i32)),
+        Either::Right(v) => format!("+0x{:x}", v),
+    }
+}
+
+fn fmt_imm(imm: &Either<String, Number>) -> String {
+    match imm {
+        Either::Left(label) => label.clone(),
+        Either::Right(Number::Int(v)) | Either::Right(Number::Addr(v)) => {
+            if *v < 0 {
+                format!("-0x{:x}", -v)
+            } else {
+                format!("0x{:x}", v)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -246,7 +378,7 @@ mod test {
     use {
         crate::{
             inst_param::{Number, Register},
-            instruction::Instruction,
+            instruction::{AsmFormat, Instruction},
             opcode::Opcode,
         },
         either::Either,
@@ -259,7 +391,8 @@ mod test {
         let b = hex!("9700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "mod64 r0, 0");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "mod64 r0, 0x0");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r0 %= 0x0");
     }
 
     #[test]
@@ -267,7 +400,8 @@ mod test {
         let b = hex!("18010000000000000000000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "lddw r1, 0");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "lddw r1, 0x0");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 = 0x0 ll");
     }
 
     #[test]
@@ -275,7 +409,8 @@ mod test {
         let b = hex!("0701000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "add64 r1, 0");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "add64 r1, 0x0");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 += 0x0");
     }
 
     #[test]
@@ -283,7 +418,8 @@ mod test {
         let b = hex!("0f12000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "add64 r2, r1");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "add64 r2, r1");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r2 += r1");
     }
 
     #[test]
@@ -291,7 +427,8 @@ mod test {
         let b = hex!("05000a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "ja +10");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "ja +0xa");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "goto +0xa");
     }
 
     #[test]
@@ -299,7 +436,8 @@ mod test {
         let b = hex!("15030a0001000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "jeq r3, 1, +10");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "jeq r3, 0x1, +0xa");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "if r3 == 0x1 goto +0xa");
     }
 
     #[test]
@@ -307,7 +445,8 @@ mod test {
         let b = hex!("1d210a0000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "jeq r1, r2, +10");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "jeq r1, r2, +0xa");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "if r1 == r2 goto +0xa");
     }
 
     #[test]
@@ -315,7 +454,11 @@ mod test {
         let b = hex!("6112000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "ldxw r2, [r1+0]");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "ldxw r2, [r1+0x0]");
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "w2 = *(u32 *)(r1 + 0x0)"
+        );
     }
 
     #[test]
@@ -323,7 +466,11 @@ mod test {
         let b = hex!("6312000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "stxw [r2+0], r1");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "stxw [r2+0x0], r1");
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "*(u32 *)(r2 + 0x0) = w1"
+        );
     }
 
     #[test]
@@ -333,7 +480,11 @@ mod test {
         assert_eq!(i.opcode, Opcode::Stb);
         assert!(i.src.is_none());
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "stb [r0+0], 0");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "stb [r0+0x0], 0x0");
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "*(u8 *)(r0 + 0x0) = 0x0"
+        );
     }
 
     #[test]
@@ -343,7 +494,14 @@ mod test {
         assert_eq!(i.opcode, Opcode::Sth);
         assert!(i.src.is_none());
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "sth [r1+4], 4660");
+        assert_eq!(
+            i.to_asm(AsmFormat::Default).unwrap(),
+            "sth [r1+0x4], 0x1234"
+        );
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "*(u16 *)(r1 + 0x4) = 0x1234"
+        );
     }
 
     #[test]
@@ -353,7 +511,11 @@ mod test {
         assert_eq!(i.opcode, Opcode::Stw);
         assert!(i.src.is_none());
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "stw [r1+8], 100");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "stw [r1+0x8], 0x64");
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "*(u32 *)(r1 + 0x8) = 0x64"
+        );
     }
 
     #[test]
@@ -363,7 +525,14 @@ mod test {
         assert_eq!(i.opcode, Opcode::Stdw);
         assert!(i.src.is_none());
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "stdw [r2+16], -559038737");
+        assert_eq!(
+            i.to_asm(AsmFormat::Default).unwrap(),
+            "stdw [r2+0x10], -0x21524111"
+        );
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "*(u64 *)(r2 + 0x10) = -0x21524111"
+        );
     }
 
     #[test]
@@ -372,7 +541,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "le16 r1");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "le16 r1");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 = le16 r1");
     }
 
     #[test]
@@ -381,7 +551,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "le32 r1");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "le32 r1");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 = le32 r1");
     }
 
     #[test]
@@ -390,7 +561,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Le);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "le64 r3");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "le64 r3");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r3 = le64 r3");
     }
 
     #[test]
@@ -399,7 +571,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "be16 r1");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "be16 r1");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 = be16 r1");
     }
 
     #[test]
@@ -408,7 +581,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "be32 r2");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "be32 r2");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r2 = be32 r2");
     }
 
     #[test]
@@ -417,7 +591,8 @@ mod test {
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.opcode, Opcode::Be);
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "be64 r3");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "be64 r3");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r3 = be64 r3");
     }
 
     #[test]
@@ -425,7 +600,44 @@ mod test {
         let b = hex!("8700000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
         assert_eq!(i.to_bytes().unwrap(), &b);
-        assert_eq!(i.to_asm().unwrap(), "neg64 r0");
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "neg64 r0");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r0 = -r0");
+    }
+
+    #[test]
+    fn serialize_e2e_exit() {
+        let b = hex!("9500000000000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "exit");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "exit");
+    }
+
+    #[test]
+    fn serialize_e2e_jset_imm() {
+        let b = hex!("45030a0010000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "jset r3, 0x10, +0xa");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "if r3 & 0x10 goto +0xa");
+    }
+
+    #[test]
+    fn serialize_e2e_sub32_imm() {
+        let b = hex!("1401000042000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "sub32 r1, 0x42");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "w1 -= 0x42");
+    }
+
+    #[test]
+    fn serialize_e2e_mov32_imm() {
+        let b = hex!("b400000001000000");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "mov32 r0, 0x1");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "w0 = 0x1");
     }
 
     #[test]
