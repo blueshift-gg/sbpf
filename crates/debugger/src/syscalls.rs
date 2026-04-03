@@ -7,7 +7,7 @@ use {
         memory::Memory,
         syscalls::SyscallHandler,
     },
-    sha2::{Digest, Sha256},
+    sha2::Sha256,
     sha3::Keccak256,
     solana_address::Address,
     solana_clock::Clock,
@@ -19,6 +19,48 @@ use {
 
 const MAX_SEED_LEN: usize = 32;
 const MAX_SEEDS: usize = 16;
+
+trait Hasher {
+    fn new() -> Self;
+    fn update(&mut self, data: &[u8]);
+    fn finalize(self) -> Vec<u8>;
+}
+
+impl Hasher for Sha256 {
+    fn new() -> Self {
+        sha2::Digest::new()
+    }
+    fn update(&mut self, data: &[u8]) {
+        sha2::Digest::update(self, data);
+    }
+    fn finalize(self) -> Vec<u8> {
+        sha2::Digest::finalize(self).to_vec()
+    }
+}
+
+impl Hasher for Keccak256 {
+    fn new() -> Self {
+        sha3::Digest::new()
+    }
+    fn update(&mut self, data: &[u8]) {
+        sha3::Digest::update(self, data);
+    }
+    fn finalize(self) -> Vec<u8> {
+        sha3::Digest::finalize(self).to_vec()
+    }
+}
+
+impl Hasher for Blake3Hasher {
+    fn new() -> Self {
+        blake3::Hasher::new()
+    }
+    fn update(&mut self, data: &[u8]) {
+        blake3::Hasher::update(self, data);
+    }
+    fn finalize(self) -> Vec<u8> {
+        blake3::Hasher::finalize(&self).as_bytes().to_vec()
+    }
+}
 
 /// Debugger syscall handler
 #[derive(Debug)]
@@ -245,7 +287,7 @@ impl DebuggerSyscallHandler {
         Ok(slices)
     }
 
-    fn hash_slices<H: Digest>(
+    fn hash_slices<H: Hasher>(
         &mut self,
         memory: &mut Memory,
         compute: &ComputeMeter,
