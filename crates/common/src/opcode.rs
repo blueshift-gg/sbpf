@@ -6,6 +6,13 @@ use {
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MemOpKind {
+    Load,
+    StoreImm,
+    StoreReg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OperationType {
     LoadImmediate,
     LoadMemory,
@@ -697,6 +704,24 @@ impl Opcode {
             Opcode::Call => "call",
             Opcode::Callx => "callx",
             Opcode::Exit => "exit",
+        }
+    }
+
+    pub fn from_size(size: &str, kind: MemOpKind) -> Option<Opcode> {
+        match (size, kind) {
+            ("u8", MemOpKind::Load) => Some(Opcode::Ldxb),
+            ("u8", MemOpKind::StoreImm) => Some(Opcode::Stb),
+            ("u8", MemOpKind::StoreReg) => Some(Opcode::Stxb),
+            ("u16", MemOpKind::Load) => Some(Opcode::Ldxh),
+            ("u16", MemOpKind::StoreImm) => Some(Opcode::Sth),
+            ("u16", MemOpKind::StoreReg) => Some(Opcode::Stxh),
+            ("u32", MemOpKind::Load) => Some(Opcode::Ldxw),
+            ("u32", MemOpKind::StoreImm) => Some(Opcode::Stw),
+            ("u32", MemOpKind::StoreReg) => Some(Opcode::Stxw),
+            ("u64", MemOpKind::Load) => Some(Opcode::Ldxdw),
+            ("u64", MemOpKind::StoreImm) => Some(Opcode::Stdw),
+            ("u64", MemOpKind::StoreReg) => Some(Opcode::Stxdw),
+            _ => None,
         }
     }
 

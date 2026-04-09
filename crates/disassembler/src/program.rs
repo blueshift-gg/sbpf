@@ -56,6 +56,14 @@ impl Program {
     }
 
     pub fn to_ixs(self) -> DisassembleResult {
+        self.into_ixs_inner(true)
+    }
+
+    pub fn to_ixs_raw(self) -> DisassembleResult {
+        self.into_ixs_inner(false)
+    }
+
+    fn into_ixs_inner(self, resolve_offsets: bool) -> DisassembleResult {
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -139,52 +147,55 @@ impl Program {
             .unwrap_or(0);
         let text_end_addr = text_sh_addr + text_section.data.len() as u64;
 
-        // Resolve jump/call labels and collect rodata references
         let mut rodata_refs = BTreeSet::new();
 
-        for (idx, ix) in ixs.iter_mut().enumerate() {
-            let is_lddw = ix.opcode == Opcode::Lddw;
+        if resolve_offsets {
+            // Resolve jump/call labels and collect rodata references
 
-            // Resolve jump targets
-            if ix.is_jump()
-                && let Some(Either::Right(off)) = &ix.off
-            {
-                let current_slot = idx_to_slot[idx] as i64;
-                let target_slot = current_slot + 1 + (*off as i64);
-                if target_slot >= 0
-                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
+            for (idx, ix) in ixs.iter_mut().enumerate() {
+                let is_lddw = ix.opcode == Opcode::Lddw;
+
+                // Resolve jump targets
+                if ix.is_jump()
+                    && let Some(Either::Right(off)) = &ix.off
                 {
-                    let new_off = target_idx as i64 - (idx as i64 + 1);
-                    ix.off = Some(Either::Right(new_off as i16));
+                    let current_slot = idx_to_slot[idx] as i64;
+                    let target_slot = current_slot + 1 + (*off as i64);
+                    if target_slot >= 0
+                        && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
+                    {
+                        let new_off = target_idx as i64 - (idx as i64 + 1);
+                        ix.off = Some(Either::Right(new_off as i16));
+                    }
                 }
-            }
 
-            // Resolve internal call targets
-            if ix.opcode == Opcode::Call
-                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-            {
-                let current_slot = idx_to_slot[idx] as i64;
-                let target_slot = current_slot + 1 + *imm;
-                if target_slot >= 0
-                    && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
+                // Resolve internal call targets
+                if ix.opcode == Opcode::Call
+                    && let Some(Either::Right(Number::Int(imm))) = &ix.imm
                 {
-                    let new_rel = target_idx as i64 - (idx as i64 + 1);
-                    ix.imm = Some(Either::Right(Number::Int(new_rel)));
+                    let current_slot = idx_to_slot[idx] as i64;
+                    let target_slot = current_slot + 1 + *imm;
+                    if target_slot >= 0
+                        && let Some(&target_idx) = slot_to_idx.get(target_slot as usize)
+                    {
+                        let new_rel = target_idx as i64 - (idx as i64 + 1);
+                        ix.imm = Some(Either::Right(Number::Int(new_rel)));
+                    }
                 }
-            }
 
-            // Collect rodata references
-            if is_lddw && let Some(Either::Right(Number::Int(imm))) = &ix.imm {
-                let addr = *imm as u64;
-                if rodata_info.is_some() && addr >= rodata_base && addr < rodata_end {
-                    rodata_refs.insert(addr);
-                } else if addr >= text_sh_addr && addr < text_end_addr {
-                    // Convert text address to instruction index for callx.
-                    let byte_offset = addr - text_sh_addr;
-                    let target_slot = (byte_offset / 8) as usize;
-                    if target_slot < slot_to_idx.len() {
-                        let ix_idx = slot_to_idx[target_slot];
-                        ix.imm = Some(Either::Right(Number::Int(ix_idx as i64)));
+                // Collect rodata references
+                if is_lddw && let Some(Either::Right(Number::Int(imm))) = &ix.imm {
+                    let addr = *imm as u64;
+                    if rodata_info.is_some() && addr >= rodata_base && addr < rodata_end {
+                        rodata_refs.insert(addr);
+                    } else if addr >= text_sh_addr && addr < text_end_addr {
+                        // Convert text address to instruction index for callx.
+                        let byte_offset = addr - text_sh_addr;
+                        let target_slot = (byte_offset / 8) as usize;
+                        if target_slot < slot_to_idx.len() {
+                            let ix_idx = slot_to_idx[target_slot];
+                            ix.imm = Some(Either::Right(Number::Int(ix_idx as i64)));
+                        }
                     }
                 }
             }

@@ -9,11 +9,23 @@ use {
 
 #[derive(Args)]
 pub struct DisassembleArgs {
+    #[arg(help = "Path to the ELF file (.so) to disassemble")]
     pub filename: String,
-    #[arg(short, long)]
+    #[arg(short, long, help = "Output full JSON debug information")]
     pub debug: bool,
-    #[arg(short, long, default_value = "default")]
+    #[arg(
+        short,
+        long,
+        default_value = "default",
+        help = "Assembly format: 'default' or 'llvm'"
+    )]
     pub format: String,
+    #[arg(
+        short,
+        long,
+        help = "Output raw instructions without labels or formatting"
+    )]
+    pub raw: bool,
 }
 
 pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
@@ -27,16 +39,26 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
         "llvm" => AsmFormat::Llvm,
         other => anyhow::bail!("unknown format '{}', expected 'default' or 'llvm'", other),
     };
-    let output = disassemble_program(program, args.debug, format)?;
+    let output = disassemble_program(program, args.debug, format, args.raw)?;
     print!("{}", output);
     Ok(())
 }
 
-fn disassemble_program(program: Program, debug: bool, format: AsmFormat) -> Result<String, Error> {
+fn disassemble_program(
+    program: Program,
+    debug: bool,
+    format: AsmFormat,
+    raw: bool,
+) -> Result<String, Error> {
     let mut output = String::new();
 
     if debug {
         output = serde_json::to_string_pretty(&program)?;
+    } else if raw {
+        let (ixs, _, _) = program.to_ixs_raw()?;
+        for ix in &ixs {
+            output.push_str(&format!("{}\n", ix.to_asm(format)?));
+        }
     } else {
         let entrypoint_offset = program.get_entrypoint_offset();
 
@@ -217,7 +239,8 @@ mod tests {
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Default
+                AsmFormat::Default,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -255,7 +278,8 @@ fn_0088:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Llvm
+                AsmFormat::Llvm,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -338,7 +362,8 @@ fn_0088:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Default
+                AsmFormat::Default,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -359,7 +384,8 @@ jmp_0010:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Llvm
+                AsmFormat::Llvm,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -442,7 +468,8 @@ jmp_0010:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Default
+                AsmFormat::Default,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -471,7 +498,8 @@ entrypoint:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Llvm
+                AsmFormat::Llvm,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -522,7 +550,8 @@ entrypoint:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Default
+                AsmFormat::Default,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -538,7 +567,8 @@ entrypoint:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Llvm
+                AsmFormat::Llvm,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -584,7 +614,8 @@ entrypoint:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Default
+                AsmFormat::Default,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -604,7 +635,8 @@ entrypoint:
             disassemble_program(
                 Program::from_bytes(&elf_bytes).unwrap(),
                 false,
-                AsmFormat::Llvm
+                AsmFormat::Llvm,
+                false,
             )
             .unwrap(),
             r#".globl entrypoint
@@ -617,6 +649,101 @@ entrypoint:
 
 .rodata
   str_0000: .ascii "hello"
+"#
+        );
+    }
+
+    #[test]
+    fn test_disassemble_raw() {
+        let elf_bytes = hex!(
+            "7f454c460201010000000000000000000300f70001000000e8000000000000004000000000000000"
+            "0003000000000000000000004000380003004000070006000100000005000000e800000000000000"
+            "e800000000000000e800000000000000a800000000000000a8000000000000000010000000000000"
+            "0100000004000000300200000000000030020000000000003002000000000000a000000000000000"
+            "a0000000000000000010000000000000020000000600000090010000000000009001000000000000"
+            "9001000000000000a000000000000000a0000000000000000800000000000000851000000c000000"
+            "05000500000000001801000001000000000000000000000085100000ffffffff8510000007000000"
+            "95000000000000001801000003000000000000000000000085100000ffffffff8510000006000000"
+            "0500f6ff0000000095000000000000001801000002000000000000000000000085100000ffffffff"
+            "95000000000000001801000004000000000000000000000085100000ffffffff9500000000000000"
+            "1e000000000000000400000000000000110000000000000090020000000000001200000000000000"
+            "40000000000000001300000000000000100000000000000006000000000000003002000000000000"
+            "0b000000000000001800000000000000050000000000000078020000000000000a00000000000000"
+            "18000000000000001600000000000000000000000000000000000000000000000000000000000000"
+            "0000000000000000000000000000000000000000000000000100000010000100e800000000000000"
+            "00000000000000000c000000100000000000000000000000000000000000000000656e747279706f"
+            "696e7400736f6c5f6c6f675f36345f0008010000000000000a000000020000003001000000000000"
+            "0a0000000200000060010000000000000a0000000200000080010000000000000a00000002000000"
+            "002e74657874002e64796e616d6963002e64796e73796d002e64796e737472002e72656c2e64796e"
+            "002e7300000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000100000001000000"
+            "0600000000000000e800000000000000e800000000000000a8000000000000000000000000000000"
+            "04000000000000000000000000000000070000000600000003000000000000009001000000000000"
+            "9001000000000000a000000000000000040000000000000008000000000000001000000000000000"
+            "100000000b0000000200000000000000300200000000000030020000000000004800000000000000"
+            "04000000010000000800000000000000180000000000000018000000030000000200000000000000"
+            "78020000000000007802000000000000180000000000000000000000000000000100000000000000"
+            "00000000000000002000000009000000020000000000000090020000000000009002000000000000"
+            "40000000000000000300000000000000080000000000000010000000000000002900000003000000"
+            "00000000000000000000000000000000d0020000000000002c000000000000000000000000000000"
+            "01000000000000000000000000000000"
+        );
+
+        // Disassembled program should have no labels.
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Default,
+                true,
+            )
+            .unwrap(),
+            r#"call 0xc
+ja +0x5
+lddw r1, 0x1
+call sol_log_64_
+call 0x7
+exit
+lddw r1, 0x3
+call sol_log_64_
+call 0x6
+ja -0xa
+exit
+lddw r1, 0x2
+call sol_log_64_
+exit
+lddw r1, 0x4
+call sol_log_64_
+exit
+"#
+        );
+
+        // Disassembled program should have no labels.
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                false,
+                AsmFormat::Llvm,
+                true,
+            )
+            .unwrap(),
+            r#"call 0xc
+goto +0x5
+r1 = 0x1 ll
+call sol_log_64_
+call 0x7
+exit
+r1 = 0x3 ll
+call sol_log_64_
+call 0x6
+goto -0xa
+exit
+r1 = 0x2 ll
+call sol_log_64_
+exit
+r1 = 0x4 ll
+call sol_log_64_
+exit
 "#
         );
     }
