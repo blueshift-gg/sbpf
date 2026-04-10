@@ -6,6 +6,13 @@ use {
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MemOpKind {
+    Load,
+    StoreImm,
+    StoreReg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OperationType {
     LoadImmediate,
     LoadMemory,
@@ -698,6 +705,100 @@ impl Opcode {
             Opcode::Callx => "callx",
             Opcode::Exit => "exit",
         }
+    }
+
+    pub fn from_size(size: &str, kind: MemOpKind) -> Option<Opcode> {
+        match (size, kind) {
+            ("u8", MemOpKind::Load) => Some(Opcode::Ldxb),
+            ("u8", MemOpKind::StoreImm) => Some(Opcode::Stb),
+            ("u8", MemOpKind::StoreReg) => Some(Opcode::Stxb),
+            ("u16", MemOpKind::Load) => Some(Opcode::Ldxh),
+            ("u16", MemOpKind::StoreImm) => Some(Opcode::Sth),
+            ("u16", MemOpKind::StoreReg) => Some(Opcode::Stxh),
+            ("u32", MemOpKind::Load) => Some(Opcode::Ldxw),
+            ("u32", MemOpKind::StoreImm) => Some(Opcode::Stw),
+            ("u32", MemOpKind::StoreReg) => Some(Opcode::Stxw),
+            ("u64", MemOpKind::Load) => Some(Opcode::Ldxdw),
+            ("u64", MemOpKind::StoreImm) => Some(Opcode::Stdw),
+            ("u64", MemOpKind::StoreReg) => Some(Opcode::Stxdw),
+            _ => None,
+        }
+    }
+
+    pub fn to_size(&self) -> Option<&'static str> {
+        match self {
+            Opcode::Ldxb | Opcode::Stb | Opcode::Stxb => Some("u8"),
+            Opcode::Ldxh | Opcode::Sth | Opcode::Stxh => Some("u16"),
+            Opcode::Ldxw | Opcode::Stw | Opcode::Stxw => Some("u32"),
+            Opcode::Ldxdw | Opcode::Stdw | Opcode::Stxdw => Some("u64"),
+            _ => None,
+        }
+    }
+
+    pub fn to_operator(&self) -> Option<&'static str> {
+        match self {
+            Opcode::Add32Imm | Opcode::Add32Reg | Opcode::Add64Imm | Opcode::Add64Reg => Some("+="),
+            Opcode::Sub32Imm | Opcode::Sub32Reg | Opcode::Sub64Imm | Opcode::Sub64Reg => Some("-="),
+            Opcode::Mul32Imm | Opcode::Mul32Reg | Opcode::Mul64Imm | Opcode::Mul64Reg => Some("*="),
+            Opcode::Div32Imm | Opcode::Div32Reg | Opcode::Div64Imm | Opcode::Div64Reg => Some("/="),
+            Opcode::Or32Imm | Opcode::Or32Reg | Opcode::Or64Imm | Opcode::Or64Reg => Some("|="),
+            Opcode::And32Imm | Opcode::And32Reg | Opcode::And64Imm | Opcode::And64Reg => Some("&="),
+            Opcode::Xor32Imm | Opcode::Xor32Reg | Opcode::Xor64Imm | Opcode::Xor64Reg => Some("^="),
+            Opcode::Lsh32Imm | Opcode::Lsh32Reg | Opcode::Lsh64Imm | Opcode::Lsh64Reg => {
+                Some("<<=")
+            }
+            Opcode::Rsh32Imm | Opcode::Rsh32Reg | Opcode::Rsh64Imm | Opcode::Rsh64Reg => {
+                Some(">>=")
+            }
+            Opcode::Mod32Imm | Opcode::Mod32Reg | Opcode::Mod64Imm | Opcode::Mod64Reg => Some("%="),
+            Opcode::Mov32Imm | Opcode::Mov32Reg | Opcode::Mov64Imm | Opcode::Mov64Reg => Some("="),
+            Opcode::Arsh32Imm | Opcode::Arsh32Reg | Opcode::Arsh64Imm | Opcode::Arsh64Reg => {
+                Some("s>>=")
+            }
+            Opcode::JeqImm | Opcode::JeqReg => Some("=="),
+            Opcode::JneImm | Opcode::JneReg => Some("!="),
+            Opcode::JgtImm | Opcode::JgtReg => Some(">"),
+            Opcode::JgeImm | Opcode::JgeReg => Some(">="),
+            Opcode::JltImm | Opcode::JltReg => Some("<"),
+            Opcode::JleImm | Opcode::JleReg => Some("<="),
+            Opcode::JsgtImm | Opcode::JsgtReg => Some("s>"),
+            Opcode::JsgeImm | Opcode::JsgeReg => Some("s>="),
+            Opcode::JsltImm | Opcode::JsltReg => Some("s<"),
+            Opcode::JsleImm | Opcode::JsleReg => Some("s<="),
+            Opcode::JsetImm | Opcode::JsetReg => Some("&"),
+            _ => None,
+        }
+    }
+
+    pub fn is_32bit(&self) -> bool {
+        matches!(
+            self,
+            Opcode::Add32Imm
+                | Opcode::Add32Reg
+                | Opcode::Sub32Imm
+                | Opcode::Sub32Reg
+                | Opcode::Mul32Imm
+                | Opcode::Mul32Reg
+                | Opcode::Div32Imm
+                | Opcode::Div32Reg
+                | Opcode::Or32Imm
+                | Opcode::Or32Reg
+                | Opcode::And32Imm
+                | Opcode::And32Reg
+                | Opcode::Lsh32Imm
+                | Opcode::Lsh32Reg
+                | Opcode::Rsh32Imm
+                | Opcode::Rsh32Reg
+                | Opcode::Mod32Imm
+                | Opcode::Mod32Reg
+                | Opcode::Xor32Imm
+                | Opcode::Xor32Reg
+                | Opcode::Mov32Imm
+                | Opcode::Mov32Reg
+                | Opcode::Arsh32Imm
+                | Opcode::Arsh32Reg
+                | Opcode::Neg32
+        )
     }
 }
 

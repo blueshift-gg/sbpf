@@ -83,6 +83,16 @@ file = "offsets.s"
 hash = "374f572eb411265ecf6c609a91e4211fa7fa8d8d193a45d1368a3b94d7c2ceb2"
 debug_hash = "fbdab0fb08943d053a0947242d2dee4b8e36998ee88347c0cf03c9c9fc028af7"
 
+[cases.opcodes]
+file = "opcodes.s"
+hash = "8632aefa56ee7a6ab92865a92e3f2ae6dae1bfaf808faae0476b40b65d134a8e"
+debug_hash = "347114f5330b5f10055c3208ac679465d776d77ccf2ceb83a6f2ed64bfd8f15a"
+
+[cases.opcodes_llvm]
+file = "opcodes_llvm.s"
+hash = "8632aefa56ee7a6ab92865a92e3f2ae6dae1bfaf808faae0476b40b65d134a8e"
+debug_hash = "f0d33e22aa0e40e6bf264dca8ee629ff538a1462f671c07f5c680652ddd26d98"
+
 [cases.rodata]
 file = "rodata.s"
 hash = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"

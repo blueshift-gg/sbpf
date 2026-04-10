@@ -5,7 +5,11 @@ use {
         parser::{LineMap, RODataSymbol},
     },
     either::Either,
-    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
+    sbpf_common::{
+        inst_param::Number,
+        instruction::{AsmFormat, Instruction},
+        opcode::Opcode,
+    },
     sbpf_runtime::Runtime,
     serde_json::{Value, json},
     std::collections::HashSet,
@@ -343,8 +347,9 @@ impl Debugger {
     }
 
     pub fn get_instruction_asm(&self) -> Option<String> {
-        let inst = self.runtime.get_instruction()?;
-        let mut asm = inst.to_asm().ok()?;
+        let inst = self.get_instruction()?;
+        let mut asm = inst.to_asm(AsmFormat::Default).ok()?;
+
         // Resolve rodata label.
         if inst.opcode == Opcode::Lddw
             && let Some(Either::Right(Number::Int(imm))) = &inst.imm
