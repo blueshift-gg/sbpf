@@ -28,7 +28,7 @@ pub fn execute_call_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionR
                 10,
                 saved_frame_pointer.wrapping_add(vm.get_stack_frame_size()),
             );
-            let target_pc = vm.get_pc() + 1 + *target as usize;
+            let target_pc = ((vm.get_pc() as i64) + 1 + *target) as usize;
             vm.set_pc(target_pc);
             Ok(())
         }
@@ -37,8 +37,8 @@ pub fn execute_call_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionR
 }
 
 pub fn execute_call_register(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {
-    let reg_num = match &inst.imm {
-        Some(either::Either::Right(Number::Int(n))) => *n as usize,
+    let reg_num = match &inst.dst {
+        Some(reg) => reg.n as usize,
         _ => return Err(ExecutionError::InvalidOperand),
     };
     if reg_num >= 10 {
@@ -89,7 +89,7 @@ mod tests {
         crate::{
             errors::ExecutionError,
             execute::{MockVm, make_test_instruction},
-            inst_param::Number,
+            inst_param::{Number, Register},
             opcode::Opcode,
         },
         either::Either,
@@ -163,13 +163,7 @@ mod tests {
     #[test]
     fn test_callx() {
         // callx r5
-        let inst = make_test_instruction(
-            Opcode::Callx,
-            None,
-            None,
-            None,
-            Some(Either::Right(Number::Int(5))),
-        );
+        let inst = make_test_instruction(Opcode::Callx, Some(Register { n: 5 }), None, None, None);
         let mut vm = MockVm::new();
         vm.registers[5] = 20; // target address
         vm.registers[6] = 100;
@@ -187,13 +181,7 @@ mod tests {
     #[test]
     fn test_callx_r10_invalid() {
         // callx r10
-        let inst = make_test_instruction(
-            Opcode::Callx,
-            None,
-            None,
-            None,
-            Some(Either::Right(Number::Int(10))),
-        );
+        let inst = make_test_instruction(Opcode::Callx, Some(Register { n: 10 }), None, None, None);
         let mut vm = MockVm::new();
 
         let result = execute_call_register(&mut vm, &inst);
@@ -203,13 +191,7 @@ mod tests {
     #[test]
     fn test_callx_depth_exceeded() {
         // callx r5
-        let inst = make_test_instruction(
-            Opcode::Callx,
-            None,
-            None,
-            None,
-            Some(Either::Right(Number::Int(5))),
-        );
+        let inst = make_test_instruction(Opcode::Callx, Some(Register { n: 5 }), None, None, None);
         let mut vm = MockVm::new();
         vm.registers[5] = 0;
         vm.call_depth_limit = 1;

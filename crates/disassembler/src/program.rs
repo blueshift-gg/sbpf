@@ -15,6 +15,9 @@ use {
     std::collections::{BTreeSet, HashMap},
 };
 
+pub type DisassembleResult =
+    Result<(Vec<Instruction>, Option<RodataSection>, Option<usize>), DisassemblerError>;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Program {
     pub elf_header: ELFHeader,
@@ -52,7 +55,7 @@ impl Program {
         })
     }
 
-    pub fn to_ixs(self) -> Result<(Vec<Instruction>, Option<RodataSection>), DisassemblerError> {
+    pub fn to_ixs(self) -> DisassembleResult {
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -124,6 +127,18 @@ impl Program {
             slot_to_idx[slot] = idx;
         }
 
+        let text_sh_addr = self
+            .section_headers
+            .iter()
+            .find(|h| {
+                self.section_header_entries
+                    .iter()
+                    .any(|e| e.label.eq(".text\0") && e.offset == h.sh_offset as usize)
+            })
+            .map(|h| h.sh_addr)
+            .unwrap_or(0);
+        let text_end_addr = text_sh_addr + text_section.data.len() as u64;
+
         // Resolve jump/call labels and collect rodata references
         let mut rodata_refs = BTreeSet::new();
 
@@ -159,25 +174,51 @@ impl Program {
             }
 
             // Collect rodata references
-            if is_lddw
-                && rodata_info.is_some()
-                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-            {
+            if is_lddw && let Some(Either::Right(Number::Int(imm))) = &ix.imm {
                 let addr = *imm as u64;
-                if addr >= rodata_base && addr < rodata_end {
+                if rodata_info.is_some() && addr >= rodata_base && addr < rodata_end {
                     rodata_refs.insert(addr);
+                } else if addr >= text_sh_addr && addr < text_end_addr {
+                    // Convert text address to instruction index for callx.
+                    let byte_offset = addr - text_sh_addr;
+                    let target_slot = (byte_offset / 8) as usize;
+                    if target_slot < slot_to_idx.len() {
+                        let ix_idx = slot_to_idx[target_slot];
+                        ix.imm = Some(Either::Right(Number::Int(ix_idx as i64)));
+                    }
                 }
             }
         }
 
         // Parse rodata section
         let rodata = if let Some((data, base_addr)) = rodata_info {
-            Some(RodataSection::parse(data, base_addr, &rodata_refs))
+            let mut section = RodataSection::parse(data, base_addr, &rodata_refs);
+            let (data_relocs, text_relocs) = self.classify_relocations(
+                &section.data,
+                base_addr,
+                text_section_offset,
+                text_section.data.len() as u64,
+                text_sh_addr,
+                &slot_to_idx,
+            );
+            section.data_relocations = data_relocs;
+            section.text_relocations = text_relocs;
+            Some(section)
         } else {
             None
         };
 
-        Ok((ixs, rodata))
+        // Calculate entrypoint instruction index from byte offset.
+        let entrypoint_idx = self.get_entrypoint_offset().map(|byte_offset| {
+            let entrypoint_slot = (byte_offset / 8) as usize;
+            if entrypoint_slot < slot_to_idx.len() {
+                slot_to_idx[entrypoint_slot]
+            } else {
+                0
+            }
+        });
+
+        Ok((ixs, rodata, entrypoint_idx))
     }
 
     /// Build a hashmap where:
@@ -223,7 +264,84 @@ impl Program {
             rodata_header.sh_addr
         };
 
+        // Check for .data.rel.ro section and combine if present.
+        if let Some(data_rel_ro_entry) = self
+            .section_header_entries
+            .iter()
+            .find(|e| e.label.starts_with(".data.rel.ro"))
+        {
+            let data_rel_ro_header = self
+                .section_headers
+                .iter()
+                .find(|h| h.sh_offset as usize == data_rel_ro_entry.offset);
+
+            if let Some(drr_header) = data_rel_ro_header {
+                let drr_end = drr_header.sh_addr + drr_header.sh_size;
+                let total_size = (drr_end - vaddr) as usize;
+
+                // Allocate combined buffer.
+                let mut combined = vec![0u8; total_size];
+
+                // Copy .rodata at offset 0.
+                let rodata_len = rodata_entry.data.len().min(total_size);
+                combined[..rodata_len].copy_from_slice(&rodata_entry.data[..rodata_len]);
+
+                // Copy .data.rel.ro at its offset relative to rodata base.
+                let drr_offset = (drr_header.sh_addr - vaddr) as usize;
+                let drr_len = data_rel_ro_entry.data.len().min(total_size - drr_offset);
+                combined[drr_offset..drr_offset + drr_len]
+                    .copy_from_slice(&data_rel_ro_entry.data[..drr_len]);
+
+                return Some((combined, vaddr));
+            }
+        }
+
         Some((rodata_entry.data.clone(), vaddr))
+    }
+
+    /// Classify relocations into data and text relocations.
+    fn classify_relocations(
+        &self,
+        rodata_data: &[u8],
+        rodata_base: u64,
+        text_offset: u64,
+        text_len: u64,
+        text_sh_addr: u64,
+        slot_to_idx: &[usize],
+    ) -> (Vec<usize>, Vec<(usize, usize)>) {
+        let rodata_len = rodata_data.len();
+        let text_end_addr = text_sh_addr + text_len;
+        let mut data_relocs = Vec::new();
+        let mut text_relocs = Vec::new();
+
+        for r in &self.relocations {
+            if r.rel_type != crate::relocation::RelocationType::R_BPF_64_RELATIVE {
+                continue;
+            }
+            if r.offset >= text_offset && r.offset < text_offset + text_len {
+                continue;
+            }
+            if r.offset < rodata_base || r.offset + 8 > rodata_base + rodata_len as u64 {
+                continue;
+            }
+            let offset_in_blob = (r.offset - rodata_base) as usize;
+            data_relocs.push(offset_in_blob);
+
+            let imm_offset = offset_in_blob + 4;
+            if imm_offset + 4 <= rodata_len {
+                let ptr =
+                    u32::from_le_bytes(rodata_data[imm_offset..imm_offset + 4].try_into().unwrap())
+                        as u64;
+                if ptr >= text_sh_addr && ptr < text_end_addr {
+                    let target_slot = ((ptr - text_sh_addr) / 8) as usize;
+                    if target_slot < slot_to_idx.len() {
+                        text_relocs.push((offset_in_blob, slot_to_idx[target_slot]));
+                    }
+                }
+            }
+        }
+
+        (data_relocs, text_relocs)
     }
 
     /// Get the entrypoint offset
@@ -356,7 +474,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs().unwrap();
+        let (ixs, _, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 2); // lddw + exit
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
     }
@@ -397,7 +515,7 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _) = program.to_ixs().unwrap();
+        let (ixs, _, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 1);
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
     }

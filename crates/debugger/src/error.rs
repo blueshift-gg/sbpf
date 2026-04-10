@@ -10,8 +10,8 @@ pub enum DebuggerError {
     Dwarf(#[from] gimli::Error),
     #[error("Disassembler error: {0}")]
     Disassembler(#[from] sbpf_disassembler::errors::DisassemblerError),
-    #[error("VM error: {0}")]
-    Vm(#[from] sbpf_vm::errors::SbpfVmError),
+    #[error("Runtime error: {0}")]
+    Runtime(#[from] sbpf_runtime::errors::RuntimeError),
     #[error("Assembler error: {0}")]
     Assembler(String),
     #[error("Deserialize error: {0}")]

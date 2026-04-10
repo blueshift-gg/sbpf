@@ -6,7 +6,7 @@ use {
     },
     either::Either,
     sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
-    sbpf_vm::{syscalls::SyscallHandler, vm::SbpfVm},
+    sbpf_runtime::Runtime,
     serde_json::{Value, json},
     std::collections::HashSet,
 };
@@ -35,8 +35,8 @@ pub enum DebugEvent {
     Error(String),
 }
 
-pub struct Debugger<H: SyscallHandler> {
-    pub vm: SbpfVm<H>,
+pub struct Debugger {
+    pub runtime: Runtime,
     pub breakpoints: HashSet<u64>,
     pub line_breakpoints: HashSet<usize>,
     pub dwarf_line_map: Option<LineMap>,
@@ -51,12 +51,12 @@ pub struct Debugger<H: SyscallHandler> {
     pub instruction_offsets: Vec<u64>,
 }
 
-impl<H: SyscallHandler> Debugger<H> {
-    pub fn new(vm: SbpfVm<H>) -> Self {
-        let initial_compute_budget = vm.config.compute_unit_limit;
+impl Debugger {
+    pub fn new(runtime: Runtime) -> Self {
+        let initial_compute_budget = runtime.config().compute_budget;
 
-        let instruction_offsets: Vec<u64> = vm
-            .program
+        let instruction_offsets: Vec<u64> = runtime
+            .get_program()
             .iter()
             .scan(0u64, |offset, inst| {
                 let current = *offset;
@@ -66,7 +66,7 @@ impl<H: SyscallHandler> Debugger<H> {
             .collect();
 
         Self {
-            vm,
+            runtime,
             breakpoints: HashSet::new(),
             line_breakpoints: HashSet::new(),
             dwarf_line_map: None,
@@ -148,7 +148,6 @@ impl<H: SyscallHandler> Debugger<H> {
         if self.line_breakpoints.is_empty() {
             return "No breakpoints set".to_string();
         }
-
         let mut lines: Vec<_> = self.line_breakpoints.iter().copied().collect();
         lines.sort();
         let lines_str = lines
@@ -164,13 +163,27 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn run(&mut self) -> DebuggerResult<DebugEvent> {
+        let event = self.execute()?;
+
+        // Print collected logs.
+        for log in self.runtime.drain_logs() {
+            println!("{}", log);
+        }
+
+        Ok(event)
+    }
+
+    fn execute(&mut self) -> DebuggerResult<DebugEvent> {
         match self.debug_mode {
             DebugMode::Step => self.execute_step(),
             DebugMode::Next => {
                 // If call depth increases after step, run until it returns to previous depth.
-                let call_depth = self.vm.call_stack.len();
+                let call_depth = self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0);
                 match self.execute_step()? {
-                    DebugEvent::Stopped(_, _) if self.vm.call_stack.len() > call_depth => {
+                    DebugEvent::Stopped(_, _)
+                        if self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0)
+                            > call_depth =>
+                    {
                         self.run_until_call_depth(call_depth)
                     }
                     other => Ok(other),
@@ -178,7 +191,7 @@ impl<H: SyscallHandler> Debugger<H> {
             }
             DebugMode::Finish => {
                 // If call depth > 0, run until it decreases by one level.
-                let call_depth = self.vm.call_stack.len();
+                let call_depth = self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0);
                 if call_depth == 0 {
                     return Ok(DebugEvent::Error("not inside a function call".to_string()));
                 }
@@ -188,13 +201,13 @@ impl<H: SyscallHandler> Debugger<H> {
                 let current_pc = self.get_pc();
 
                 if self.at_breakpoint {
-                    match self.vm.step() {
+                    match self.runtime.step() {
                         Ok(()) => {
                             self.at_breakpoint = false;
                             self.last_breakpoint_pc = None;
 
-                            if self.vm.halted {
-                                let exit_code = self.vm.exit_code.unwrap_or(0);
+                            if self.runtime.is_halted() {
+                                let exit_code = self.runtime.exit_code().unwrap_or(0);
                                 return Ok(DebugEvent::Exit(exit_code));
                             }
                         }
@@ -212,10 +225,10 @@ impl<H: SyscallHandler> Debugger<H> {
                     return Ok(DebugEvent::Breakpoint(current_pc, line_number));
                 }
 
-                match self.vm.step() {
+                match self.runtime.step() {
                     Ok(()) => {
-                        if self.vm.halted {
-                            let exit_code = self.vm.exit_code.unwrap_or(0);
+                        if self.runtime.is_halted() {
+                            let exit_code = self.runtime.exit_code().unwrap_or(0);
                             return Ok(DebugEvent::Exit(exit_code));
                         }
                     }
@@ -230,13 +243,13 @@ impl<H: SyscallHandler> Debugger<H> {
         let current_pc = self.get_pc();
 
         if self.at_breakpoint {
-            match self.vm.step() {
+            match self.runtime.step() {
                 Ok(()) => {
                     self.at_breakpoint = false;
                     self.last_breakpoint_pc = None;
 
-                    if self.vm.halted {
-                        return Ok(DebugEvent::Exit(self.vm.exit_code.unwrap_or(0)));
+                    if self.runtime.is_halted() {
+                        return Ok(DebugEvent::Exit(self.runtime.exit_code().unwrap_or(0)));
                     }
 
                     let new_pc = self.get_pc();
@@ -260,10 +273,10 @@ impl<H: SyscallHandler> Debugger<H> {
             ));
         }
 
-        match self.vm.step() {
+        match self.runtime.step() {
             Ok(()) => {
-                if self.vm.halted {
-                    Ok(DebugEvent::Exit(self.vm.exit_code.unwrap_or(0)))
+                if self.runtime.is_halted() {
+                    Ok(DebugEvent::Exit(self.runtime.exit_code().unwrap_or(0)))
                 } else {
                     let new_pc = self.get_pc();
                     Ok(DebugEvent::Stopped(new_pc, self.get_line_for_pc(new_pc)))
@@ -275,7 +288,7 @@ impl<H: SyscallHandler> Debugger<H> {
 
     // Step through instructions until the current call depth reaches the target depth.
     fn run_until_call_depth(&mut self, target_depth: usize) -> DebuggerResult<DebugEvent> {
-        while self.vm.call_stack.len() > target_depth {
+        while self.runtime.get_call_stack().map(|s| s.len()).unwrap_or(0) > target_depth {
             match self.execute_step()? {
                 DebugEvent::Stopped(_, _) => {}
                 other => return Ok(other),
@@ -286,10 +299,11 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_pc(&self) -> u64 {
+        let idx = self.runtime.get_pc();
         self.instruction_offsets
-            .get(self.vm.pc)
+            .get(idx)
             .copied()
-            .unwrap_or(self.vm.pc as u64)
+            .unwrap_or(idx as u64)
     }
 
     fn instruction_index_to_byte_offset(&self, idx: usize) -> u64 {
@@ -300,20 +314,20 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_registers(&self) -> &[u64] {
-        &self.vm.registers
+        self.runtime
+            .get_registers()
+            .map(|r| r.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn get_register(&self, idx: usize) -> Option<u64> {
-        self.vm.registers.get(idx).copied()
+        self.runtime.get_register(idx)
     }
 
     pub fn set_register_value(&mut self, idx: usize, value: u64) -> Result<(), String> {
-        if let Some(reg) = self.vm.registers.get_mut(idx) {
-            *reg = value;
-            Ok(())
-        } else {
-            Err(format!("Register index {} out of range", idx))
-        }
+        self.runtime
+            .set_register(idx, value)
+            .map_err(|e| e.to_string())
     }
 
     pub fn get_rodata(&self) -> Option<&Vec<RODataSymbol>> {
@@ -321,17 +335,16 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_compute_units(&self) -> u64 {
-        self.vm.compute_meter.get_consumed()
+        self.runtime.compute_units_consumed()
     }
 
     pub fn get_instruction(&self) -> Option<&Instruction> {
-        self.vm.program.get(self.vm.pc)
+        self.runtime.get_instruction()
     }
 
     pub fn get_instruction_asm(&self) -> Option<String> {
-        let inst = self.get_instruction()?;
+        let inst = self.runtime.get_instruction()?;
         let mut asm = inst.to_asm().ok()?;
-
         // Resolve rodata label.
         if inst.opcode == Opcode::Lddw
             && let Some(Either::Right(Number::Int(imm))) = &inst.imm
@@ -375,11 +388,7 @@ impl<H: SyscallHandler> Debugger<H> {
     }
 
     pub fn get_memory(&self, address: u64, size: usize) -> Option<Vec<u8>> {
-        self.vm
-            .memory
-            .read_bytes(address, size)
-            .map(|slice| slice.to_vec())
-            .ok()
+        self.runtime.read_memory(address, size)
     }
 
     fn make_stack_frame(&self, index: usize, pc: u64) -> StackFrame<'_> {
@@ -395,22 +404,23 @@ impl<H: SyscallHandler> Debugger<H> {
 
     pub fn get_stack_frames(&self) -> Vec<StackFrame<'_>> {
         let mut frames = Vec::new();
-
         // Current frame
         let current_pc = self.get_pc();
         frames.push(self.make_stack_frame(0, current_pc));
 
         // Call stack frames
-        for (i, frame) in self.vm.call_stack.iter().rev().enumerate() {
-            let pc = self.instruction_index_to_byte_offset(frame.return_pc);
-            frames.push(self.make_stack_frame(i + 1, pc));
+        if let Some(call_stack) = self.runtime.get_call_stack() {
+            for (i, frame) in call_stack.iter().rev().enumerate() {
+                let pc = self.instruction_index_to_byte_offset(frame.return_pc);
+                frames.push(self.make_stack_frame(i + 1, pc));
+            }
         }
 
         frames
     }
 }
 
-impl<H: SyscallHandler> DebuggerInterface for Debugger<H> {
+impl DebuggerInterface for Debugger {
     fn step(&mut self) -> Value {
         self.set_debug_mode(DebugMode::Step);
         self.run_to_json()
