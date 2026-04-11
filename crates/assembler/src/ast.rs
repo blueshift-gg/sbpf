@@ -270,6 +270,10 @@ impl AST {
                 prog_is_static: program_is_static,
                 arch,
                 debug_sections: Vec::default(),
+                sources: std::collections::HashMap::new(),
+                code_file_info: Vec::new(),
+                rodata_file_info: Vec::new(),
+                label_file_info: std::collections::HashMap::new(),
             })
         }
     }

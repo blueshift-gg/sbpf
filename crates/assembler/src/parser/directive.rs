@@ -1,12 +1,12 @@
 use {
-    super::{ParseContext, Rule, Token, common::parse_number},
+    super::{IncludeSite, ParseContext, Rule, Token, common::parse_number, process_source},
     crate::{
         astnode::{ASTNode, ExternDecl, GlobalDecl, ROData, RodataDecl},
         errors::CompileError,
     },
     pest::iterators::Pair,
     sbpf_common::inst_param::Number,
-    std::collections::HashMap,
+    std::{collections::HashMap, fs, path::PathBuf},
 };
 
 pub fn process_directive_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
@@ -88,9 +88,117 @@ pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     _ => {}
                 }
             }
+            Rule::directive_include => {
+                process_directive_include(inner, ctx);
+            }
             _ => {}
         }
     }
+}
+
+/// Handle `.include "path"` by reading the referenced file and parsing it
+/// into the same `ParseContext` so its nodes are merged into one AST.
+///
+/// Paths are resolved relative to the directory of the file containing
+/// the `.include` directive. Nested includes are supported: an included
+/// file may itself use `.include` with paths relative to its own location.
+///
+/// The current file name (`ctx.current_file`) and base path are swapped
+/// for the duration of the recursive parse, and the `.include` site is
+/// pushed onto `ctx.include_stack` so diagnostics (e.g. `DuplicateLabel`)
+/// can annotate errors with the chain of `.include` directives that led
+/// to the problem.
+fn process_directive_include(pair: Pair<Rule>, ctx: &mut ParseContext) {
+    let span = pair.as_span();
+    let include_span = span.start()..span.end();
+
+    // Extract the `"path"` string literal content.
+    let mut raw_path: Option<String> = None;
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::string_literal {
+            for lit_inner in inner.into_inner() {
+                if lit_inner.as_rule() == Rule::string_content {
+                    raw_path = Some(lit_inner.as_str().to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    let path = match raw_path {
+        Some(p) => p,
+        None => {
+            ctx.errors.push(CompileError::ParseError {
+                error: "Invalid .include directive: expected \"path\"".to_string(),
+                span: include_span,
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    // Resolve the path relative to the including file's directory.
+    let base = match &ctx.base_path {
+        Some(b) => b.clone(),
+        None => {
+            ctx.errors.push(CompileError::ParseError {
+                error: format!(
+                    "Cannot resolve .include \"{}\": no base path available. \
+                     Use assemble_with_base_path to enable .include support.",
+                    path
+                ),
+                span: include_span,
+                custom_label: None,
+            });
+            return;
+        }
+    };
+    let include_path = base.join(&path);
+
+    // Read the included file.
+    let content = match fs::read_to_string(&include_path) {
+        Ok(c) => c,
+        Err(e) => {
+            ctx.errors.push(CompileError::ParseError {
+                error: format!("Failed to read include \"{}\": {}", path, e),
+                span: include_span,
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    // Normalize the identifier we use for this file in diagnostics and
+    // debug info: the path as written, with any `./` prefix stripped.
+    let include_id = path.trim_start_matches("./").to_string();
+
+    // Register the file content (skip if already read via an earlier
+    // include of the same path — this is harmless because duplicate label
+    // detection catches re-parses).
+    ctx.files
+        .entry(include_id.clone())
+        .or_insert_with(|| content.clone());
+
+    // Compute the new base path for nested includes inside the included
+    // file: paths are relative to the included file's own directory.
+    let new_base: PathBuf = include_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Push the include site, swap in the new context, recurse, restore.
+    ctx.include_stack.push(IncludeSite {
+        file: ctx.current_file.clone(),
+        span: include_span,
+    });
+    let old_base = ctx.base_path.replace(new_base);
+    let old_file = std::mem::replace(&mut ctx.current_file, include_id);
+
+    process_source(&content, ctx);
+
+    ctx.current_file = old_file;
+    ctx.base_path = old_base;
+    ctx.include_stack.pop();
 }
 
 pub fn process_rodata_directive(
