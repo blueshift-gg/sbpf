@@ -1,6 +1,6 @@
 pub mod common;
 mod default;
-mod directive;
+pub(crate) mod directive;
 mod llvm;
 
 use {
@@ -16,23 +16,70 @@ use {
     pest::{Parser, iterators::Pair},
     pest_derive::Parser,
     sbpf_common::{inst_param::Number, instruction::Instruction},
-    std::collections::HashMap,
+    std::{
+        collections::HashMap,
+        path::{Path, PathBuf},
+    },
 };
 
 #[derive(Parser)]
 #[grammar = "sbpf.pest"]
 pub struct SbpfParser;
 
-/// Context containing all mutable state during parsing
+/// Location of a label definition, including which file it was defined in.
+///
+/// The file identifier is the main source filename or a relative path to
+/// an included file (as written in the `.include` directive, normalized).
+#[derive(Debug, Clone)]
+pub struct LabelLocation {
+    pub file: String,
+    pub span: std::ops::Range<usize>,
+}
+
+/// An `.include` directive site in some source file, used to build the
+/// include chain reported in diagnostics like `DuplicateLabel`.
+#[derive(Debug, Clone)]
+pub struct IncludeSite {
+    /// The file that contains the `.include` directive.
+    pub file: String,
+    /// The span of the `.include` directive inside `file`.
+    pub span: std::ops::Range<usize>,
+}
+
+/// Context containing all mutable state during parsing.
 pub(crate) struct ParseContext<'a> {
     pub ast: &'a mut AST,
     pub const_map: &'a mut HashMap<String, Number>,
-    pub label_spans: &'a mut HashMap<String, std::ops::Range<usize>>,
+    pub label_spans: &'a mut HashMap<String, LabelLocation>,
     pub errors: Vec<CompileError>,
     pub rodata_phase: bool,
     pub text_offset: u64,
     pub rodata_offset: u64,
     pub missing_text_directive: bool,
+
+    /// Directory used to resolve `.include` paths. Updated when we descend
+    /// into an included file (paths are resolved relative to the including
+    /// file's directory).
+    pub base_path: Option<PathBuf>,
+    /// File currently being parsed. For the main source this is the main
+    /// file name; for included files it is the relative path as written in
+    /// the `.include` directive (normalized).
+    pub current_file: String,
+    /// Chain of `.include` sites leading to the currently-parsed source.
+    /// Empty when parsing the main file. Used to annotate diagnostics with
+    /// the point(s) where an included file was pulled in.
+    pub include_stack: Vec<IncludeSite>,
+    /// Registry of all sources read so far: `file -> content`. Populated on
+    /// each `.include`, plus the main file. Used by the build command to
+    /// emit multi-file diagnostics.
+    pub files: &'a mut HashMap<String, String>,
+    /// `(code_offset, file)` for each instruction emitted, in order.
+    /// Used to build multi-file line tables.
+    pub code_file_info: &'a mut Vec<(u64, String)>,
+    /// `(rodata_offset, file)` for each ROData node, in order.
+    pub rodata_file_info: &'a mut Vec<(u64, String)>,
+    /// Map from label name to the file where it was defined.
+    pub label_file_info: &'a mut HashMap<String, String>,
 }
 
 /// BPF_X flag: Converts immediate variant opcodes to register variant opcodes
@@ -66,20 +113,55 @@ pub struct ParseResult {
 
     // Debug sections we came across while byteparsing
     pub debug_sections: Vec<DebugSection>,
+
+    /// Registry of every source file read during parsing (main + includes).
+    /// `file -> content`. Empty if `.include` was not used.
+    pub sources: HashMap<String, String>,
+
+    /// `(code_offset, file)` for each instruction emitted, in order.
+    /// Used by the assembler to build multi-file debug line tables.
+    pub code_file_info: Vec<(u64, String)>,
+
+    /// `(rodata_offset, file)` for each ROData node, in order.
+    pub rodata_file_info: Vec<(u64, String)>,
+
+    /// Map from label name to the file it was defined in.
+    pub label_file_info: HashMap<String, String>,
 }
 
+/// Parse `source` as a standalone program. `.include` directives inside
+/// `source` will produce an error because no base path is available.
 pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
-    let pairs = SbpfParser::parse(Rule::program, source).map_err(|e| {
-        vec![CompileError::ParseError {
-            error: e.to_string(),
-            span: 0..source.len(),
-            custom_label: None,
-        }]
-    })?;
+    let mut sources_out = HashMap::new();
+    parse_with_base_path(source, arch, None, "source", &mut sources_out)
+}
 
+/// Parse `source` with support for `.include` directives.
+///
+/// `base_path` is the directory used to resolve `.include "<path>"` lines
+/// in the main source. `main_file_name` is the identifier that will be
+/// used for the main file in diagnostics and debug info (typically the
+/// file name without the directory).
+///
+/// `sources_out` is populated with every source read during parsing — the
+/// main file plus any files pulled in via `.include` — keyed by the file
+/// identifier used in diagnostics. It is populated in both the success
+/// and failure paths, so callers can emit multi-file diagnostics even
+/// when assembly fails (e.g. `DuplicateLabel` across includes).
+pub fn parse_with_base_path(
+    source: &str,
+    arch: SbpfArch,
+    base_path: Option<&Path>,
+    main_file_name: &str,
+    sources_out: &mut HashMap<String, String>,
+) -> Result<ParseResult, Vec<CompileError>> {
     let mut ast = AST::new();
     let mut const_map = HashMap::<String, Number>::new();
-    let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
+    let mut label_spans = HashMap::<String, LabelLocation>::new();
+    sources_out.insert(main_file_name.to_string(), source.to_string());
+    let mut code_file_info: Vec<(u64, String)> = Vec::new();
+    let mut rodata_file_info: Vec<(u64, String)> = Vec::new();
+    let mut label_file_info: HashMap<String, String> = HashMap::new();
 
     let (text_offset, rodata_offset, errors) = {
         let mut ctx = ParseContext {
@@ -91,21 +173,16 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
             text_offset: 0,
             rodata_offset: 0,
             missing_text_directive: false,
+            base_path: base_path.map(|p| p.to_path_buf()),
+            current_file: main_file_name.to_string(),
+            include_stack: Vec::new(),
+            files: sources_out,
+            code_file_info: &mut code_file_info,
+            rodata_file_info: &mut rodata_file_info,
+            label_file_info: &mut label_file_info,
         };
 
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::program_default | Rule::program_llvm => {
-                    for statement in pair.into_inner() {
-                        if statement.as_rule() == Rule::EOI {
-                            continue;
-                        }
-                        process_statement(statement, &mut ctx);
-                    }
-                }
-                _ => {}
-            }
-        }
+        process_source(source, &mut ctx);
 
         (ctx.text_offset, ctx.rodata_offset, ctx.errors)
     };
@@ -117,7 +194,43 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
-    ast.build_program(arch)
+    let mut result = ast.build_program(arch)?;
+    result.sources = sources_out.clone();
+    result.code_file_info = code_file_info;
+    result.rodata_file_info = rodata_file_info;
+    result.label_file_info = label_file_info;
+    Ok(result)
+}
+
+/// Parse `source` into `ctx`. Used both for the main file and recursively
+/// for included files. Spans in this source are relative to the source
+/// string; `ctx.current_file` identifies which file they belong to.
+pub(crate) fn process_source(source: &str, ctx: &mut ParseContext) {
+    let pairs = match SbpfParser::parse(Rule::program, source) {
+        Ok(p) => p,
+        Err(e) => {
+            ctx.errors.push(CompileError::ParseError {
+                error: e.to_string(),
+                span: 0..source.len(),
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::program_default | Rule::program_llvm => {
+                for statement in pair.into_inner() {
+                    if statement.as_rule() == Rule::EOI {
+                        continue;
+                    }
+                    process_statement(statement, ctx);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
@@ -138,6 +251,8 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     Ok(instruction) => {
                         if !ctx.rodata_phase {
                             let size = instruction.get_size();
+                            ctx.code_file_info
+                                .push((ctx.text_offset, ctx.current_file.clone()));
                             ctx.ast.nodes.push(ASTNode::Instruction {
                                 instruction,
                                 offset: ctx.text_offset,
@@ -185,17 +300,33 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
 
     if let Some((label_name, label_span)) = label_opt {
         // Check for duplicate labels
-        if let Some(original_span) = ctx.label_spans.get(&label_name) {
+        if let Some(original) = ctx.label_spans.get(&label_name) {
             ctx.errors.push(CompileError::DuplicateLabel {
                 label: label_name,
                 span: label_span,
-                original_span: original_span.clone(),
+                original_span: original.span.clone(),
+                multi: Some(Box::new(crate::errors::DuplicateLabelMulti {
+                    span_file: ctx.current_file.clone(),
+                    original_span_file: original.file.clone(),
+                    include_chain: ctx
+                        .include_stack
+                        .iter()
+                        .map(|s| (s.file.clone(), s.span.clone()))
+                        .collect(),
+                })),
                 custom_label: Some("Label already defined".to_string()),
             });
             return;
         }
-        ctx.label_spans
-            .insert(label_name.clone(), label_span.clone());
+        ctx.label_spans.insert(
+            label_name.clone(),
+            LabelLocation {
+                file: ctx.current_file.clone(),
+                span: label_span.clone(),
+            },
+        );
+        ctx.label_file_info
+            .insert(label_name.clone(), ctx.current_file.clone());
 
         if ctx.rodata_phase {
             // Handle rodata label with directive
@@ -203,6 +334,8 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 match process_rodata_directive(label_name.clone(), label_span.clone(), dir_pair) {
                     Ok(rodata) => {
                         let size = rodata.get_size();
+                        ctx.rodata_file_info
+                            .push((ctx.rodata_offset, ctx.current_file.clone()));
                         ctx.ast.rodata_nodes.push(ASTNode::ROData {
                             rodata,
                             offset: ctx.rodata_offset,
@@ -236,6 +369,8 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 match process_instruction(inst_pair, ctx.const_map, is_llvm) {
                     Ok(instruction) => {
                         let size = instruction.get_size();
+                        ctx.code_file_info
+                            .push((ctx.text_offset, ctx.current_file.clone()));
                         ctx.ast.nodes.push(ASTNode::Instruction {
                             instruction,
                             offset: ctx.text_offset,

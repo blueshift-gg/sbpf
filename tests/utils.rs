@@ -230,3 +230,22 @@ pub fn update_assembly_file(env: &TestEnv, project_name: &str, content: &str) {
         .unwrap_or_else(|_| panic!("Failed to write new {}.s content", project_name));
     println!("✅ Updated {}.s with specified content", project_name);
 }
+
+/// Write an extra assembly file next to the main program file so it can
+/// be referenced via `.include`. `relative_path` is resolved relative to
+/// `src/<project_name>/` and may contain subdirectories, which will be
+/// created if needed.
+#[allow(dead_code)]
+pub fn write_include_file(env: &TestEnv, project_name: &str, relative_path: &str, content: &str) {
+    let file_path = env
+        .project_dir
+        .join(format!("src/{}", project_name))
+        .join(relative_path);
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)
+            .unwrap_or_else(|_| panic!("Failed to create parent directory for {:?}", file_path));
+    }
+    fs::write(&file_path, content)
+        .unwrap_or_else(|_| panic!("Failed to write include file {:?}", file_path));
+    println!("✅ Wrote include file: {:?}", file_path);
+}

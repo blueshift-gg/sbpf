@@ -3,13 +3,13 @@ use {
     clap::{Args, ValueEnum},
     codespan_reporting::{
         diagnostic::{Diagnostic, Label},
-        files::SimpleFile,
+        files::SimpleFiles,
         term,
     },
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
     sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch, errors::CompileError},
-    std::{fs, fs::create_dir_all, path::Path, time::Instant},
+    std::{collections::HashMap, fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
 
@@ -44,30 +44,77 @@ impl From<ArchArg> for SbpfArch {
     }
 }
 
+/// Convert a [`CompileError`] into a [`codespan_reporting`] diagnostic.
+///
+/// The `resolve` closure maps a file identifier (as used by the parser —
+/// either the main file name or a relative `.include` path) to a
+/// [`SimpleFiles`] file id. For errors without explicit file info the
+/// `default_file_id` is used.
+///
+/// Multi-file support: for [`CompileError::DuplicateLabel`] produced by
+/// a multi-file parse (`assemble_with_base_path`), the error carries the
+/// file for both the original and the duplicate definition, plus the
+/// chain of `.include` directives that led to the duplicate. Each of
+/// those becomes a label in the emitted diagnostic so the user sees:
+///
+/// * primary — the redefinition, in its own file
+/// * secondary — the original definition, in its own file
+/// * secondary — one per `.include` site in the chain ("included from
+///   here"), annotating every `.include` directive that pulled in the
+///   file containing the duplicate
 pub trait AsDiagnostic {
-    // currently only support single source file reporting
-    fn to_diagnostic(&self) -> Diagnostic<()>;
+    fn to_diagnostic<F>(&self, default_file_id: usize, resolve: F) -> Diagnostic<usize>
+    where
+        F: Fn(&str) -> usize;
 }
 
 impl AsDiagnostic for CompileError {
-    fn to_diagnostic(&self) -> Diagnostic<()> {
+    fn to_diagnostic<F>(&self, default_file_id: usize, resolve: F) -> Diagnostic<usize>
+    where
+        F: Fn(&str) -> usize,
+    {
         match self {
-            // Show both the redefinition and the original definition
             CompileError::DuplicateLabel {
                 span,
                 original_span,
+                multi,
                 ..
-            } => Diagnostic::error()
-                .with_message(self.to_string())
-                .with_labels(vec![
-                    Label::primary((), span.start..span.end).with_message(self.label()),
-                    Label::secondary((), original_span.start..original_span.end)
+            } => {
+                // Resolve the file ids for the two definitions. In
+                // single-file mode (no `.include`), both fall back to
+                // `default_file_id`. In multi-file mode, the parser
+                // populates `multi` with the actual file names.
+                let (span_id, original_id) = if let Some(m) = multi.as_deref() {
+                    (resolve(&m.span_file), resolve(&m.original_span_file))
+                } else {
+                    (default_file_id, default_file_id)
+                };
+                let mut labels = vec![
+                    Label::primary(span_id, span.start..span.end).with_message(self.label()),
+                    Label::secondary(original_id, original_span.start..original_span.end)
                         .with_message("previous definition is here"),
-                ]),
+                ];
+                // When the duplicate originates inside an included file,
+                // annotate every `.include` directive in the chain so
+                // the user can trace where the second definition came
+                // from.
+                if let Some(m) = multi.as_deref() {
+                    for (include_file, include_span) in &m.include_chain {
+                        let file_id = resolve(include_file);
+                        labels.push(
+                            Label::secondary(file_id, include_span.start..include_span.end)
+                                .with_message("included from here"),
+                        );
+                    }
+                }
+                Diagnostic::error()
+                    .with_message(self.to_string())
+                    .with_labels(labels)
+            }
             _ => Diagnostic::error()
                 .with_message(self.to_string())
                 .with_labels(vec![
-                    Label::primary((), self.span().start..self.span().end)
+                    Label::primary(default_file_id, self.span().start..self.span().end)
                         .with_message(self.label()),
                 ]),
         }
@@ -84,21 +131,25 @@ pub fn build(args: BuildArgs) -> Result<()> {
     // Function to compile assembly
     fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
         let source_code = std::fs::read_to_string(src).unwrap();
-        let file = SimpleFile::new(src.to_string(), source_code.clone());
+
+        let main_file_name = Path::new(src)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown.s")
+            .to_string();
+        let base_path_buf = Path::new(src)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| Path::new(".").to_path_buf());
+        let canonical_base = base_path_buf
+            .canonicalize()
+            .unwrap_or_else(|_| base_path_buf.clone());
 
         // Build assembler options
         let debug_mode = if debug {
-            let filename = Path::new(src)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown.s");
-            let directory = Path::new(src)
-                .parent()
-                .and_then(|p| p.canonicalize().ok())
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
+            let directory = canonical_base.to_string_lossy().to_string();
             Some(DebugMode {
-                filename: filename.to_string(),
+                filename: main_file_name.clone(),
                 directory,
             })
         } else {
@@ -108,16 +159,46 @@ pub fn build(args: BuildArgs) -> Result<()> {
         let options = AssemblerOption { arch, debug_mode };
 
         let assembler = Assembler::new(options);
-        let result = assembler.assemble(&source_code);
+        let result = assembler.assemble_with_base_path(
+            &main_file_name,
+            &source_code,
+            canonical_base.as_path(),
+        );
 
-        let bytecode = match result {
+        // Build a SimpleFiles registry mirroring the parser's view so
+        // diagnostic labels can refer to the correct source file (main
+        // or any `.include`-d file). The main file is always added first
+        // and its id is used as the default for errors without explicit
+        // file info.
+        let mut files = SimpleFiles::new();
+        let mut file_ids: HashMap<String, usize> = HashMap::new();
+        // Ensure the main file is inserted even if parsing bailed before
+        // reading it (shouldn't happen — the assembler always registers
+        // main — but is a defensive fallback).
+        let main_content = result
+            .sources
+            .get(&main_file_name)
+            .cloned()
+            .unwrap_or_else(|| source_code.clone());
+        let main_file_id = files.add(main_file_name.clone(), main_content);
+        file_ids.insert(main_file_name.clone(), main_file_id);
+        for (name, content) in &result.sources {
+            if name == &main_file_name {
+                continue;
+            }
+            let id = files.add(name.clone(), content.clone());
+            file_ids.insert(name.clone(), id);
+        }
+        let resolve = |file: &str| -> usize { *file_ids.get(file).unwrap_or(&main_file_id) };
+
+        let bytecode = match result.bytecode {
             Ok(bytecode) => bytecode,
             Err(errors) => {
                 for error in errors {
                     let writer = StandardStream::stderr(ColorChoice::Auto);
                     let config = term::Config::default();
-                    let diagnostic = error.to_diagnostic();
-                    term::emit(&mut writer.lock(), &config, &file, &diagnostic)?;
+                    let diagnostic = error.to_diagnostic(main_file_id, resolve);
+                    term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
                 }
                 return Err(Error::msg("Compilation failed"));
             }

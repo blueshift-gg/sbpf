@@ -1,5 +1,24 @@
 use {crate::define_compile_errors, std::ops::Range};
 
+/// Multi-file context for a `DuplicateLabel` error produced during a
+/// multi-file assembly (i.e. a program that uses `.include`).
+///
+/// This is boxed inside `CompileError::DuplicateLabel` so that the
+/// single-file code path doesn't grow the enum variant and the whole
+/// `CompileError` stays small (keeping `Result<_, CompileError>` sizes
+/// from growing significantly).
+#[derive(Debug, Clone)]
+pub struct DuplicateLabelMulti {
+    /// File containing the duplicate (second) definition.
+    pub span_file: String,
+    /// File containing the original (first) definition.
+    pub original_span_file: String,
+    /// Chain of `.include` sites that led to the file containing the
+    /// duplicate, from the main file down. Empty when both definitions
+    /// are in the main file.
+    pub include_chain: Vec<(String, Range<usize>)>,
+}
+
 // labels could be overridden by passing a valid custom_label in the error variant
 // if not provided, the label will use default messages from below
 define_compile_errors! {
@@ -89,7 +108,12 @@ define_compile_errors! {
     DuplicateLabel {
         error = "Duplicate label '{label}'",
         label = "Label redefined",
-        fields = { label: String, span: Range<usize>, original_span: Range<usize> }
+        fields = {
+            label: String,
+            span: Range<usize>,
+            original_span: Range<usize>,
+            multi: Option<Box<DuplicateLabelMulti>>
+        }
     },
     BytecodeError {
         error = "Bytecode error: {error}",
