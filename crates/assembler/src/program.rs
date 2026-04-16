@@ -29,13 +29,10 @@ impl Program {
             prog_is_static,
             arch,
             debug_sections,
-            // The following fields are consumed by the assembler before
-            // reaching here (e.g. to build multi-file debug data); they are
-            // not needed for bytecode emission.
+            // Consumed by the assembler before reaching here (e.g. to
+            // build multi-file debug data); not needed for bytecode
+            // emission.
             sources: _,
-            code_file_info: _,
-            rodata_file_info: _,
-            label_file_info: _,
         }: ParseResult,
         debug_data: Option<DebugData>,
     ) -> Self {

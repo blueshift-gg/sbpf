@@ -530,3 +530,60 @@ entrypoint:
 
     env.cleanup();
 }
+
+/// Cyclic includes (A includes B, B includes A) should produce a clear
+/// error instead of infinite recursion / stack overflow.
+#[test]
+fn test_include_cyclic_detection() {
+    let env = TestEnv::new("include_cyclic");
+
+    init_project(&env, "include_cyclic");
+    verify_project_structure(&env, "include_cyclic");
+
+    write_include_file(
+        &env,
+        "include_cyclic",
+        "a.s",
+        r#".include "b.s"
+"#,
+    );
+
+    write_include_file(
+        &env,
+        "include_cyclic",
+        "b.s",
+        r#".include "a.s"
+"#,
+    );
+
+    update_assembly_file(
+        &env,
+        "include_cyclic",
+        r#".globl entrypoint
+.include "a.s"
+.text
+entrypoint:
+    exit
+"#,
+    );
+
+    let output = Command::new(&env.sbpf_bin)
+        .current_dir(&env.project_dir)
+        .arg("build")
+        .output()
+        .expect("Failed to run sbpf build");
+
+    assert!(
+        !output.status.success(),
+        "Build should fail on cyclic include"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Cyclic include") || stderr.contains("cyclic include"),
+        "Error should mention cyclic include: {}",
+        stderr
+    );
+
+    env.cleanup();
+}

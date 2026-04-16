@@ -112,7 +112,8 @@ impl Assembler {
 
         // Build debug data if debug mode is enabled
         let debug_data = if let Some(ref debug_mode) = self.options.debug_mode {
-            let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
+            let (lines, labels, lines_multi, labels_multi) =
+                collect_debug_entries(&parse_result, debug_mode);
             let code_end = parse_result.code_section.get_size();
 
             Some(DebugData {
@@ -120,8 +121,8 @@ impl Assembler {
                 directory: debug_mode.directory.clone(),
                 lines,
                 labels,
-                lines_multi: Vec::new(),
-                labels_multi: Vec::new(),
+                lines_multi,
+                labels_multi,
                 code_start: 0,
                 code_end,
             })
@@ -176,7 +177,7 @@ impl Assembler {
 
         let debug_data = if let Some(ref debug_mode) = self.options.debug_mode {
             let (lines, labels, lines_multi, labels_multi) =
-                collect_multi_file_line_entries(&parse_result, debug_mode);
+                collect_debug_entries(&parse_result, debug_mode);
             let code_end = parse_result.code_section.get_size();
 
             Some(DebugData {
@@ -207,60 +208,14 @@ type LabelEntry = (String, u64, u32); // (label, offset, line)
 type LineMultiEntry = (u64, String, String, u32); // (offset, file, dir, line)
 type LabelMultiEntry = (String, u64, String, String, u32); // (name, offset, file, dir, line)
 
-/// Helper function to collect line and label entries for single-file
-/// sources (no `.include`).
-fn collect_line_and_label_entries(
-    source: &str,
-    parse_result: &ParseResult,
-) -> (Vec<LineEntry>, Vec<LabelEntry>) {
-    let mut files: Files<&str> = Files::new();
-    let file_id = files.add("source", source);
-
-    let mut line_entries = Vec::new();
-    let mut label_entries = Vec::new();
-
-    for node in parse_result.code_section.get_nodes() {
-        match node {
-            ASTNode::Instruction {
-                instruction,
-                offset,
-            } => {
-                let line_index = files.line_index(file_id, instruction.span.start as u32);
-                let line_number = (line_index.to_usize() + 1) as u32;
-                line_entries.push((*offset, line_number));
-            }
-            ASTNode::Label { label, offset } => {
-                let line_index = files.line_index(file_id, label.span.start as u32);
-                let line_number = (line_index.to_usize() + 1) as u32;
-                label_entries.push((label.name.clone(), *offset, line_number));
-            }
-            _ => {}
-        }
-    }
-
-    for node in parse_result.data_section.get_nodes() {
-        if let ASTNode::ROData { rodata, offset } = node {
-            let line_index = files.line_index(file_id, rodata.span.start as u32);
-            let line_number = (line_index.to_usize() + 1) as u32;
-            label_entries.push((rodata.name.clone(), *offset, line_number));
-        }
-    }
-
-    (line_entries, label_entries)
-}
-
-/// Collect line and label entries for a multi-file parse result.
+/// Collect line and label entries from a parse result.
 ///
-/// Returns four vectors: the single-file `lines`/`labels` (always based
-/// on the main source for backwards compatibility with consumers that
-/// only read those), plus `lines_multi`/`labels_multi` which carry per-
-/// instruction file/line info drawn from every included file.
-///
-/// `parse_result.code_file_info` / `rodata_file_info` / `label_file_info`
-/// are the parallel maps populated by the parser; this function builds
-/// `codespan::Files` over each distinct source so line numbers are
-/// relative to the owning file (not a merged view).
-fn collect_multi_file_line_entries(
+/// Works for both single-file and multi-file assemblies: each `ASTNode`
+/// carries an optional `file` field set by the parser. When the file
+/// field differs across nodes (i.e. `.include` was used), this function
+/// returns populated `lines_multi`/`labels_multi` vectors in addition to
+/// the single-file `lines`/`labels`.
+fn collect_debug_entries(
     parse_result: &ParseResult,
     debug_mode: &DebugMode,
 ) -> (
@@ -269,8 +224,6 @@ fn collect_multi_file_line_entries(
     Vec<LineMultiEntry>,
     Vec<LabelMultiEntry>,
 ) {
-    use std::collections::HashMap;
-
     // Build a Files index over every source we read.
     let mut files: Files<String> = Files::new();
     let mut file_ids: HashMap<String, codespan::FileId> = HashMap::new();
@@ -279,17 +232,9 @@ fn collect_multi_file_line_entries(
         file_ids.insert(name.clone(), id);
     }
 
-    let mut offset_to_file: HashMap<u64, String> = HashMap::new();
-    for (offset, file) in &parse_result.code_file_info {
-        offset_to_file.insert(*offset, file.clone());
-    }
-    let mut rodata_offset_to_file: HashMap<u64, String> = HashMap::new();
-    for (offset, file) in &parse_result.rodata_file_info {
-        rodata_offset_to_file.insert(*offset, file.clone());
-    }
-
-    let main_name = debug_mode.filename.clone();
-    let main_dir = debug_mode.directory.clone();
+    let main_name = &debug_mode.filename;
+    let main_dir = &debug_mode.directory;
+    let has_multi = parse_result.sources.len() > 1;
 
     let mut lines = Vec::new();
     let mut labels = Vec::new();
@@ -302,87 +247,75 @@ fn collect_multi_file_line_entries(
             ASTNode::Instruction {
                 instruction,
                 offset,
+                file,
             } => {
-                let file = offset_to_file
-                    .get(offset)
-                    .cloned()
-                    .unwrap_or_else(|| main_name.clone());
-                if let Some(file_id) = file_ids.get(&file) {
+                let f = file.as_deref().unwrap_or(main_name);
+                if let Some(file_id) = file_ids.get(f) {
                     let line_index = files.line_index(*file_id, instruction.span.start as u32);
                     let line_number = (line_index.to_usize() + 1) as u32;
-                    // Always populate single-file view (treats everything
-                    // as main file) for backwards compat.
                     lines.push((*offset, line_number));
-                    // Multi-file view with real file name.
-                    let (filename, directory) = split_file_and_dir(&file, &main_name, &main_dir);
-                    lines_multi.push((*offset, filename, directory, line_number));
+                    if has_multi {
+                        lines_multi.push((
+                            *offset,
+                            f.to_string(),
+                            main_dir.to_string(),
+                            line_number,
+                        ));
+                    }
                 }
             }
-            ASTNode::Label { label, offset } => {
-                let file = parse_result
-                    .label_file_info
-                    .get(&label.name)
-                    .cloned()
-                    .unwrap_or_else(|| main_name.clone());
-                if let Some(file_id) = file_ids.get(&file) {
+            ASTNode::Label {
+                label,
+                offset,
+                file,
+            } => {
+                let f = file.as_deref().unwrap_or(main_name);
+                if let Some(file_id) = file_ids.get(f) {
                     let line_index = files.line_index(*file_id, label.span.start as u32);
                     let line_number = (line_index.to_usize() + 1) as u32;
                     labels.push((label.name.clone(), *offset, line_number));
-                    let (filename, directory) = split_file_and_dir(&file, &main_name, &main_dir);
-                    labels_multi.push((
-                        label.name.clone(),
-                        *offset,
-                        filename,
-                        directory,
-                        line_number,
-                    ));
+                    if has_multi {
+                        labels_multi.push((
+                            label.name.clone(),
+                            *offset,
+                            f.to_string(),
+                            main_dir.to_string(),
+                            line_number,
+                        ));
+                    }
                 }
             }
             _ => {}
         }
     }
 
-    // ROData: also contribute label entries keyed by their own offset.
+    // ROData labels.
     for node in parse_result.data_section.get_nodes() {
-        if let ASTNode::ROData { rodata, offset } = node {
-            let file = parse_result
-                .label_file_info
-                .get(&rodata.name)
-                .cloned()
-                .or_else(|| rodata_offset_to_file.get(offset).cloned())
-                .unwrap_or_else(|| main_name.clone());
-            if let Some(file_id) = file_ids.get(&file) {
+        if let ASTNode::ROData {
+            rodata,
+            offset,
+            file,
+        } = node
+        {
+            let f = file.as_deref().unwrap_or(main_name);
+            if let Some(file_id) = file_ids.get(f) {
                 let line_index = files.line_index(*file_id, rodata.span.start as u32);
                 let line_number = (line_index.to_usize() + 1) as u32;
                 labels.push((rodata.name.clone(), *offset, line_number));
-                let (filename, directory) = split_file_and_dir(&file, &main_name, &main_dir);
-                labels_multi.push((
-                    rodata.name.clone(),
-                    *offset,
-                    filename,
-                    directory,
-                    line_number,
-                ));
+                if has_multi {
+                    labels_multi.push((
+                        rodata.name.clone(),
+                        *offset,
+                        f.to_string(),
+                        main_dir.to_string(),
+                        line_number,
+                    ));
+                }
             }
         }
     }
 
     (lines, labels, lines_multi, labels_multi)
-}
-
-/// Split a parser file identifier into `(filename, directory)` for DWARF.
-///
-/// The main file uses the directory passed in `DebugMode`. Included files
-/// are reported as `(relative_path, main_dir)` — the relative path acts as
-/// the filename since that is how the user referenced the file. This
-/// keeps the DWARF line table self-consistent without needing to canonicalize
-/// absolute paths.
-fn split_file_and_dir(file: &str, main_name: &str, main_dir: &str) -> (String, String) {
-    if file == main_name {
-        (main_name.to_string(), main_dir.to_string())
-    } else {
-        (file.to_string(), main_dir.to_string())
-    }
 }
 
 #[cfg(test)]
@@ -605,6 +538,53 @@ entrypoint:
         assert!(
             bytecode_str.contains(".debug_line_str"),
             "Missing .debug_line_str section"
+        );
+    }
+
+    #[test]
+    fn test_nested_include_uses_root_relative_keys() {
+        use std::fs;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let src = tmp.path().join("src");
+        let modules = src.join("modules");
+        fs::create_dir_all(&modules).unwrap();
+
+        fs::write(
+            src.join("test.s"),
+            ".globl entrypoint\n.include \"modules/a.s\"\nentrypoint:\n    call my_func\n    \
+             exit\n",
+        )
+        .unwrap();
+
+        fs::write(modules.join("a.s"), ".include \"b.s\"\n").unwrap();
+
+        fs::write(modules.join("b.s"), "my_func:\n    mov64 r0, 0\n    exit\n").unwrap();
+
+        let main_source = fs::read_to_string(src.join("test.s")).unwrap();
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble_with_base_path("test.s", &main_source, &src);
+
+        assert!(
+            result.bytecode.is_ok(),
+            "assembly failed: {:?}",
+            result.bytecode.unwrap_err()
+        );
+
+        assert!(
+            result.sources.contains_key("modules/a.s"),
+            "sources should contain root-relative key 'modules/a.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            result.sources.contains_key("modules/b.s"),
+            "sources should contain root-relative key 'modules/b.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            result.sources.contains_key("test.s"),
+            "sources should contain key 'test.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
         );
     }
 }

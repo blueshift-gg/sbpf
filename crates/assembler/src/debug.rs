@@ -138,25 +138,47 @@ fn generate_dwarf_sections(
         None,
     );
 
+    // Map from (filename, directory) to the raw DWARF file index.
+    // Built during line program registration and reused for
+    // DW_AT_decl_file on label DIEs. The main file is always index 0
+    // in DWARF v5; files added via `add_file` get indices 1, 2, ...
+    let mut file_index_map: std::collections::HashMap<(String, String), u32> =
+        std::collections::HashMap::new();
+
     if use_multi {
         use std::collections::HashMap;
 
+        // Pre-register the main file at index 0 — the LineProgram
+        // constructor already set it as the primary source file.
+        file_index_map.insert((data.filename.clone(), data.directory.clone()), 0);
+
         let mut dir_ids: HashMap<String, gimli::write::DirectoryId> = HashMap::new();
         let mut file_ids: HashMap<(String, String), gimli::write::FileId> = HashMap::new();
+        let mut next_file_idx = 1u32;
 
-        // Walk the lines once to register all (dir, file) entries in a
-        // stable order.
-        for (_, filename, directory, _) in &data.lines_multi {
+        // Register all (dir, file) entries from both lines_multi and
+        // labels_multi so that label-only files get a DWARF file index.
+        let all_file_refs = data
+            .lines_multi
+            .iter()
+            .map(|(_, f, d, _)| (f, d))
+            .chain(data.labels_multi.iter().map(|(_, _, f, d, _)| (f, d)));
+
+        for (filename, directory) in all_file_refs {
+            let key = (filename.clone(), directory.clone());
             let dir_id = *dir_ids.entry(directory.clone()).or_insert_with(|| {
                 let id = dwarf.line_strings.add(directory.clone().into_bytes());
                 line_program.add_directory(LineString::LineStringRef(id))
             });
-            file_ids
-                .entry((filename.clone(), directory.clone()))
-                .or_insert_with(|| {
-                    let id = dwarf.line_strings.add(filename.clone().into_bytes());
-                    line_program.add_file(LineString::LineStringRef(id), dir_id, None)
+            file_ids.entry(key.clone()).or_insert_with(|| {
+                let id = dwarf.line_strings.add(filename.clone().into_bytes());
+                file_index_map.entry(key).or_insert_with(|| {
+                    let idx = next_file_idx;
+                    next_file_idx += 1;
+                    idx
                 });
+                line_program.add_file(LineString::LineStringRef(id), dir_id, None)
+            });
         }
 
         line_program.begin_sequence(Some(Address::Constant(code_start)));
@@ -219,9 +241,9 @@ fn generate_dwarf_sections(
     );
     root.set(DW_AT_stmt_list, AttributeValue::LineProgramRef);
 
-    // Set labels.
+    // Add label DIEs.
     if use_multi {
-        for (name, address, _filename, _directory, line) in &data.labels_multi {
+        for (name, address, filename, directory, line) in &data.labels_multi {
             let adjusted_addr = address + text_offset;
             let label_id = dwarf.unit.add(root_id, DW_TAG_label);
             let label_die = dwarf.unit.get_mut(label_id);
@@ -230,11 +252,11 @@ fn generate_dwarf_sections(
                 DW_AT_name,
                 AttributeValue::String(name.clone().into_bytes()),
             );
-            // DW_AT_decl_file: we keep 0 for now (main file). Proper
-            // per-label file attribution would need mapping names back to
-            // file ids; step-debugger line mapping is the primary concern
-            // and uses the line program above.
-            label_die.set(DW_AT_decl_file, AttributeValue::Data4(0));
+            let decl_file = file_index_map
+                .get(&(filename.clone(), directory.clone()))
+                .copied()
+                .unwrap_or(0);
+            label_die.set(DW_AT_decl_file, AttributeValue::Data4(decl_file));
             label_die.set(DW_AT_decl_line, AttributeValue::Data4(*line));
             label_die.set(
                 DW_AT_low_pc,

@@ -46,6 +46,7 @@ pub(crate) fn process_instruction(
     Err(CompileError::ParseError {
         error: "Invalid LLVM instruction".to_string(),
         span: outer_span_range,
+        file: None,
         custom_label: None,
     })
 }
@@ -130,6 +131,7 @@ fn process_alu(
         resolve_alu_opcode(op_str, is_64bit).ok_or_else(|| CompileError::ParseError {
             error: format!("Unknown ALU operator: {}", op_str),
             span: span.clone(),
+            file: None,
             custom_label: None,
         })?;
 
@@ -142,6 +144,7 @@ fn process_alu(
                 error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode_byte, e),
                 span: span.clone(),
                 custom_label: None,
+                file: None,
             })?;
     }
 
@@ -210,6 +213,7 @@ fn process_load(
             CompileError::ParseError {
                 error: "Invalid memory size for load".to_string(),
                 span: span.clone(),
+                file: None,
                 custom_label: None,
             }
         })?;
@@ -252,6 +256,7 @@ fn process_store_imm(
             CompileError::ParseError {
                 error: "Invalid memory size for store".to_string(),
                 span: span.clone(),
+                file: None,
                 custom_label: None,
             }
         })?;
@@ -294,6 +299,7 @@ fn process_store_reg(
             CompileError::ParseError {
                 error: "Invalid memory size for store".to_string(),
                 span: span.clone(),
+                file: None,
                 custom_label: None,
             }
         })?;
@@ -359,6 +365,7 @@ fn process_jump_reg(
     let imm_opcode = resolve_cmp_opcode(op_str).ok_or_else(|| CompileError::ParseError {
         error: format!("Unknown comparison operator: {}", op_str),
         span: span.clone(),
+        file: None,
         custom_label: None,
     })?;
     // Convert Imm variant to Reg variant using BPF_X flag
@@ -369,6 +376,7 @@ fn process_jump_reg(
             error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode_byte, e),
             span: span.clone(),
             custom_label: None,
+            file: None,
         })?;
 
     Ok(Instruction {
@@ -405,6 +413,7 @@ fn process_jump_imm(
     let opcode = resolve_cmp_opcode(op_str).ok_or_else(|| CompileError::ParseError {
         error: format!("Unknown comparison operator: {}", op_str),
         span: span.clone(),
+        file: None,
         custom_label: None,
     })?;
 

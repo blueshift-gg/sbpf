@@ -131,6 +131,7 @@ impl DataSection {
             if let ASTNode::ROData {
                 rodata: ROData { name, args, .. },
                 offset,
+                ..
             } = node
                 && let Some(Token::StringLiteral(str_literal, _)) = args.get(1)
             {
@@ -875,6 +876,7 @@ mod tests {
         let nodes = vec![ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         }];
 
         let section = CodeSection::new(nodes, 8);
@@ -895,6 +897,7 @@ mod tests {
         let nodes = vec![ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         }];
 
         let section = CodeSection::new(nodes, 8);
@@ -912,7 +915,11 @@ mod tests {
             ],
             span: 0..10,
         };
-        let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
+        let nodes = vec![ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        }];
 
         let section = DataSection::new(nodes, 2);
         assert_eq!(section.name(), ".rodata");
@@ -929,7 +936,11 @@ mod tests {
             ],
             span: 0..12,
         };
-        let nodes = vec![ASTNode::ROData { rodata, offset: 0 }];
+        let nodes = vec![ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        }];
 
         let section = DataSection::new(nodes, 4);
         let rodata = section.rodata();
@@ -1041,6 +1052,7 @@ mod tests {
             vec![ASTNode::Instruction {
                 instruction: inst,
                 offset: 0,
+                file: None,
             }],
             8,
         );

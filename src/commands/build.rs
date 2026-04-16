@@ -9,7 +9,12 @@ use {
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
     sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch, errors::CompileError},
-    std::{collections::HashMap, fs, fs::create_dir_all, path::Path, time::Instant},
+    std::{
+        collections::HashMap,
+        fs::{self, create_dir_all},
+        path::Path,
+        time::Instant,
+    },
     termcolor::{ColorChoice, StandardStream},
 };
 
@@ -111,12 +116,18 @@ impl AsDiagnostic for CompileError {
                     .with_message(self.to_string())
                     .with_labels(labels)
             }
-            _ => Diagnostic::error()
-                .with_message(self.to_string())
-                .with_labels(vec![
-                    Label::primary(default_file_id, self.span().start..self.span().end)
-                        .with_message(self.label()),
-                ]),
+            _ => {
+                let file_id = match self.file() {
+                    Some(f) => resolve(f),
+                    None => default_file_id,
+                };
+                Diagnostic::error()
+                    .with_message(self.to_string())
+                    .with_labels(vec![
+                        Label::primary(file_id, self.span().start..self.span().end)
+                            .with_message(self.label()),
+                    ])
+            }
         }
     }
 }
@@ -137,17 +148,17 @@ pub fn build(args: BuildArgs) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or("unknown.s")
             .to_string();
-        let base_path_buf = Path::new(src)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| Path::new(".").to_path_buf());
-        let canonical_base = base_path_buf
-            .canonicalize()
-            .unwrap_or_else(|_| base_path_buf.clone());
+        let base_path_buf = {
+            let p = Path::new(src)
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| Path::new(".").to_path_buf());
+            p.canonicalize().unwrap_or(p)
+        };
 
         // Build assembler options
         let debug_mode = if debug {
-            let directory = canonical_base.to_string_lossy().to_string();
+            let directory = base_path_buf.to_string_lossy().to_string();
             Some(DebugMode {
                 filename: main_file_name.clone(),
                 directory,
@@ -162,38 +173,33 @@ pub fn build(args: BuildArgs) -> Result<()> {
         let result = assembler.assemble_with_base_path(
             &main_file_name,
             &source_code,
-            canonical_base.as_path(),
+            base_path_buf.as_path(),
         );
-
-        // Build a SimpleFiles registry mirroring the parser's view so
-        // diagnostic labels can refer to the correct source file (main
-        // or any `.include`-d file). The main file is always added first
-        // and its id is used as the default for errors without explicit
-        // file info.
-        let mut files = SimpleFiles::new();
-        let mut file_ids: HashMap<String, usize> = HashMap::new();
-        // Ensure the main file is inserted even if parsing bailed before
-        // reading it (shouldn't happen — the assembler always registers
-        // main — but is a defensive fallback).
-        let main_content = result
-            .sources
-            .get(&main_file_name)
-            .cloned()
-            .unwrap_or_else(|| source_code.clone());
-        let main_file_id = files.add(main_file_name.clone(), main_content);
-        file_ids.insert(main_file_name.clone(), main_file_id);
-        for (name, content) in &result.sources {
-            if name == &main_file_name {
-                continue;
-            }
-            let id = files.add(name.clone(), content.clone());
-            file_ids.insert(name.clone(), id);
-        }
-        let resolve = |file: &str| -> usize { *file_ids.get(file).unwrap_or(&main_file_id) };
 
         let bytecode = match result.bytecode {
             Ok(bytecode) => bytecode,
             Err(errors) => {
+                // Build a SimpleFiles registry only when there is an
+                // error — this is the only code path that needs it.
+                let mut files = SimpleFiles::new();
+                let mut file_ids: HashMap<String, usize> = HashMap::new();
+                let main_content = result
+                    .sources
+                    .get(&main_file_name)
+                    .cloned()
+                    .unwrap_or_else(|| source_code.clone());
+                let main_file_id = files.add(main_file_name.clone(), main_content);
+                file_ids.insert(main_file_name.clone(), main_file_id);
+                for (name, content) in &result.sources {
+                    if name == &main_file_name {
+                        continue;
+                    }
+                    let id = files.add(name.clone(), content.clone());
+                    file_ids.insert(name.clone(), id);
+                }
+                let resolve =
+                    |file: &str| -> usize { *file_ids.get(file).unwrap_or(&main_file_id) };
+
                 for error in errors {
                     let writer = StandardStream::stderr(ColorChoice::Auto);
                     let config = term::Config::default();
