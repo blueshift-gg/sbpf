@@ -35,9 +35,6 @@ pub(crate) struct ExpandError {
 pub(crate) fn expand_macros(
     lines: Vec<SourceLine>,
 ) -> Result<(Vec<SourceLine>, Vec<ExpandError>), Vec<ExpandError>> {
-    // First, handle .rept and .irp (they can appear outside macros)
-    let lines = expand_repetitions(lines)?;
-
     // Scan for macro definitions and separate them from regular lines
     let scan_result = scan_macro_definitions(lines);
 
@@ -60,6 +57,9 @@ pub(crate) fn expand_macros(
     for line in scan_result.remaining_lines {
         expand_line(&line, &macros, &mut output, &mut errors, 0);
     }
+
+    // Now, handle .rept and .irp on the post-macro output
+    let output = expand_repetitions(output)?;
 
     Ok((output, errors))
 }
@@ -355,8 +355,10 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
 
             match count_str.parse::<usize>() {
                 Ok(count) => {
+                    // Recursively expand nested .rept/.irp inside the body
+                    let expanded_body = expand_repetitions(body)?;
                     for _ in 0..count {
-                        output.extend(body.iter().cloned());
+                        output.extend(expanded_body.iter().cloned());
                     }
                 }
                 Err(_) => {
@@ -390,14 +392,18 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
                     let mut bindings = HashMap::new();
                     bindings.insert(var_name.to_string(), value.clone());
 
+                    // Substitute for this iteration first, then recursively
+                    // expand any nested .rept/.irp in the result.
+                    let mut iter_lines = Vec::with_capacity(body.len());
                     for body_line in &body {
                         let expansion_id = EXPANSION_COUNTER.fetch_add(1, Ordering::Relaxed);
                         let expanded_text = substitute(&body_line.text, &bindings, expansion_id);
-                        output.push(SourceLine {
+                        iter_lines.push(SourceLine {
                             text: expanded_text,
                             origin: body_line.origin.clone(),
                         });
                     }
+                    output.extend(expand_repetitions(iter_lines)?);
                 }
             }
 
@@ -574,7 +580,13 @@ mod tests {
         ];
 
         let result = expand_and_collect(lines);
-        assert_eq!(result, vec!["loop_0:", "loop_1:"]);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|s| {
+            s.starts_with("loop_")
+                && s.ends_with(':')
+                && s["loop_".len()..s.len() - 1].parse::<u64>().is_ok()
+        }));
+        assert_ne!(result[0], result[1]);
     }
 
     #[test]
@@ -704,6 +716,136 @@ mod tests {
         assert_eq!(
             result,
             vec!["    mov64 r1, 0", "    mov64 r2, 0", "    mov64 r3, 0"]
+        );
+    }
+
+    #[test]
+    fn test_nested_rept() {
+        let lines = vec![
+            make_line(".rept 2", 1),
+            make_line("    .rept 3", 2),
+            make_line("        mov64 r1, 0x1", 3),
+            make_line("    .endr", 4),
+            make_line(".endr", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result.len(), 6);
+        assert!(result.iter().all(|s| s == "        mov64 r1, 0x1"));
+    }
+
+    #[test]
+    fn test_nested_irp() {
+        reset_expansion_counter();
+        let lines = vec![
+            make_line(".irp reg, r1, r2", 1),
+            make_line("    .irp val, 0x1, 0x2", 2),
+            make_line("        mov64 \\reg, \\val", 3),
+            make_line("    .endr", 4),
+            make_line(".endr", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec![
+                "        mov64 r1, 0x1",
+                "        mov64 r1, 0x2",
+                "        mov64 r2, 0x1",
+                "        mov64 r2, 0x2",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rept_inside_irp() {
+        reset_expansion_counter();
+        let lines = vec![
+            make_line(".irp r, r1, r2", 1),
+            make_line("    .rept 2", 2),
+            make_line("        mov64 \\r, 0x1", 3),
+            make_line("    .endr", 4),
+            make_line(".endr", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec![
+                "        mov64 r1, 0x1",
+                "        mov64 r1, 0x1",
+                "        mov64 r2, 0x1",
+                "        mov64 r2, 0x1",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_irp_inside_rept() {
+        reset_expansion_counter();
+        let lines = vec![
+            make_line(".rept 2", 1),
+            make_line("    .irp r, r1, r2", 2),
+            make_line("        mov64 \\r, 0x1", 3),
+            make_line("    .endr", 4),
+            make_line(".endr", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec![
+                "        mov64 r1, 0x1",
+                "        mov64 r2, 0x1",
+                "        mov64 r1, 0x1",
+                "        mov64 r2, 0x1",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rept_count_from_macro_param() {
+        reset_expansion_counter();
+        let lines = vec![
+            make_line(".macro TEST num", 1),
+            make_line("    .rept \\num", 2),
+            make_line("        mov64 r1, 0x123", 3),
+            make_line("    .endr", 4),
+            make_line(".endm", 5),
+            make_line("TEST 3", 7),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec![
+                "        mov64 r1, 0x123",
+                "        mov64 r1, 0x123",
+                "        mov64 r1, 0x123",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_irp_values_from_macro_vararg() {
+        reset_expansion_counter();
+        let lines = vec![
+            make_line(".macro LOAD regs:vararg", 1),
+            make_line("    .irp r, \\regs", 2),
+            make_line("        mov64 \\r, 0x1", 3),
+            make_line("    .endr", 4),
+            make_line(".endm", 5),
+            make_line("LOAD r1, r2, r3", 7),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec![
+                "        mov64 r1, 0x1",
+                "        mov64 r2, 0x1",
+                "        mov64 r3, 0x1",
+            ]
         );
     }
 

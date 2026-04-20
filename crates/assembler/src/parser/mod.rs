@@ -249,11 +249,9 @@ fn scan_statement_for_labels(
                     }
                 }
             }
-            Rule::instr_default | Rule::instr_llvm => {
-                if !*rodata_phase {
-                    let size = instr_size(&inner);
-                    *text_offset += size;
-                }
+            Rule::instr_default | Rule::instr_llvm if !*rodata_phase => {
+                let size = instr_size(&inner);
+                *text_offset += size;
             }
             _ => {}
         }
