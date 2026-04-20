@@ -780,7 +780,9 @@ done:
   exit
 "#;
         let assembler = Assembler::new(AssemblerOption::default());
-        let original = assembler.assemble(source).expect("failed to assemble source");
+        let original = assembler
+            .assemble(source)
+            .expect("failed to assemble source");
 
         let llvm_disassembly = disassemble_program(
             Program::from_bytes(&original).expect("failed to parse original bytes"),
