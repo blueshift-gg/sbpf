@@ -12,7 +12,12 @@ use {
         AssembleErrors, Assembler, AssemblerOption, DebugMode, FileRegistry, FsFileResolver,
         SbpfArch, SourceOrigin, errors::CompileError,
     },
-    std::{collections::HashMap, fs, fs::create_dir_all, path::Path, time::Instant},
+    std::{
+        collections::HashMap,
+        fs::{self, create_dir_all},
+        path::Path,
+        time::Instant,
+    },
     termcolor::{ColorChoice, StandardStream},
 };
 
@@ -87,7 +92,10 @@ fn emit_assembler_errors(assemble_errors: &AssembleErrors) -> Result<()> {
     let mut file_id_map: HashMap<u32, usize> = HashMap::new();
 
     for file_id in registry.file_ids() {
-        let cs_id = files.add(registry.path(file_id).to_string(), registry.content(file_id).to_string());
+        let cs_id = files.add(
+            registry.path(file_id).to_string(),
+            registry.content(file_id).to_string(),
+        );
         file_id_map.insert(file_id.index(), cs_id);
     }
 
@@ -141,11 +149,7 @@ fn emit_assembler_errors(assemble_errors: &AssembleErrors) -> Result<()> {
 }
 
 /// Build notes describing the macro expansion chain for an error.
-fn build_expansion_notes(
-    origin: &SourceOrigin,
-    registry: &FileRegistry,
-    notes: &mut Vec<String>,
-) {
+fn build_expansion_notes(origin: &SourceOrigin, registry: &FileRegistry, notes: &mut Vec<String>) {
     if let Some(ref expansion) = origin.macro_expansion {
         // Note about which macro this is in
         let invocation = &expansion.invocation_origin;

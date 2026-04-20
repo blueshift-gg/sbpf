@@ -1,7 +1,9 @@
 use {
+    super::{
+        FileResolver, SourceLine,
+        source_map::{FileRegistry, SourceOrigin},
+    },
     crate::errors::CompileError,
-    super::{FileResolver, SourceLine},
-    super::source_map::{FileRegistry, SourceOrigin},
     std::collections::HashSet,
 };
 
@@ -79,7 +81,8 @@ fn resolve_recursive(
         if let Some(include_path) = parse_include_directive(line_text) {
             // Calculate a span for error reporting.
             // We use the byte offset of this line in the source.
-            let line_start: usize = source.lines()
+            let line_start: usize = source
+                .lines()
                 .take(line_idx)
                 .map(|l| l.len() + 1) // +1 for newline
                 .sum();
@@ -155,8 +158,7 @@ fn resolve_recursive(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::preprocessor::MockFileResolver;
+    use {super::*, crate::preprocessor::MockFileResolver};
 
     #[test]
     fn test_parse_include_directive() {
@@ -175,8 +177,7 @@ mod tests {
     fn test_no_includes() {
         let source = "mov64 r1, 1\nexit\n";
         let mut registry = FileRegistry::new();
-        let result =
-            resolve_includes(source, "<input>", None, &mut registry).unwrap();
+        let result = resolve_includes(source, "<input>", None, &mut registry).unwrap();
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].text, "mov64 r1, 1");
@@ -192,8 +193,7 @@ mod tests {
 
         let source = "before\n.include \"macros.s\"\nafter";
         let mut registry = FileRegistry::new();
-        let result =
-            resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
+        let result = resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
 
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].text, "before");
@@ -216,8 +216,7 @@ mod tests {
 
         let source = ".include \"a.s\"";
         let mut registry = FileRegistry::new();
-        let result =
-            resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
+        let result = resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
 
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].text, "a_line");
@@ -250,7 +249,9 @@ mod tests {
 
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(&errors[0], CompileError::IncludeNotFound { path, .. } if path == "missing.s"));
+        assert!(
+            matches!(&errors[0], CompileError::IncludeNotFound { path, .. } if path == "missing.s")
+        );
     }
 
     #[test]
@@ -263,8 +264,7 @@ mod tests {
 
         let source = ".include \"b.s\"\n.include \"c.s\"";
         let mut registry = FileRegistry::new();
-        let result =
-            resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
+        let result = resolve_includes(source, "<input>", Some(&resolver), &mut registry).unwrap();
 
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].text, "d_line");

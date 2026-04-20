@@ -164,8 +164,7 @@ fn eval_operand_term(
         match inner.as_rule() {
             Rule::expression => {
                 // Parenthesized sub-expression — recurse, but must fully resolve
-                let result =
-                    eval_operand_expression(inner, const_map, label_offset_map)?;
+                let result = eval_operand_expression(inner, const_map, label_offset_map)?;
                 return match result {
                     Either::Right(val) => Ok(val),
                     Either::Left(name) => Err(CompileError::ParseError {
@@ -191,10 +190,7 @@ fn eval_operand_term(
                     return Ok(value.clone());
                 }
                 return Err(CompileError::ParseError {
-                    error: format!(
-                        "Undefined symbol '{}' in arithmetic expression",
-                        name
-                    ),
+                    error: format!("Undefined symbol '{}' in arithmetic expression", name),
                     span: inner.as_span().start()..inner.as_span().end(),
                     custom_label: None,
                 });

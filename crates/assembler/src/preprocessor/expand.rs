@@ -1,10 +1,14 @@
 use {
+    super::{
+        SourceLine,
+        macro_def::{MacroDef, scan_macro_definitions},
+        source_map::SourceOrigin,
+    },
     crate::errors::CompileError,
-    super::SourceLine,
-    super::macro_def::{MacroDef, scan_macro_definitions},
-    super::source_map::SourceOrigin,
-    std::collections::HashMap,
-    std::sync::atomic::{AtomicU64, Ordering},
+    std::{
+        collections::HashMap,
+        sync::atomic::{AtomicU64, Ordering},
+    },
 };
 
 const MAX_EXPANSION_DEPTH: u32 = 100;
@@ -445,8 +449,7 @@ fn find_endr_block(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::preprocessor::source_map::FileId;
+    use {super::*, crate::preprocessor::source_map::FileId};
 
     fn make_line(text: &str, line: u32) -> SourceLine {
         SourceLine {
@@ -476,7 +479,10 @@ mod tests {
     fn test_split_args() {
         assert_eq!(split_args("a, b, c"), vec!["a", "b", "c"]);
         assert_eq!(split_args("r1, 42"), vec!["r1", "42"]);
-        assert_eq!(split_args("\"hello, world\", 1"), vec!["\"hello, world\"", "1"]);
+        assert_eq!(
+            split_args("\"hello, world\", 1"),
+            vec!["\"hello, world\"", "1"]
+        );
         assert_eq!(split_args(""), Vec::<String>::new());
         assert_eq!(split_args("single"), vec!["single"]);
     }
@@ -584,12 +590,8 @@ mod tests {
         ];
 
         let result = expand_and_collect(lines);
-        assert_eq!(
-            result,
-            vec!["e1:", "    .ascii \"error\"", "e1_end:"]
-        );
+        assert_eq!(result, vec!["e1:", "    .ascii \"error\"", "e1_end:"]);
     }
-
 
     #[test]
     fn test_nested_macro_expansion() {
@@ -640,7 +642,11 @@ mod tests {
         assert!(!errors.is_empty());
         assert!(matches!(
             &errors[0].error,
-            CompileError::MacroArgCount { expected: 2, got: 1, .. }
+            CompileError::MacroArgCount {
+                expected: 2,
+                got: 1,
+                ..
+            }
         ));
         assert!(errors[0].origin.is_some());
         assert_eq!(errors[0].origin.as_ref().unwrap().line, 4);
@@ -658,10 +664,7 @@ mod tests {
         ];
 
         let result = expand_and_collect(lines);
-        assert_eq!(
-            result,
-            vec!["    .ascii \"hello\"", "    .ascii a, b, c"]
-        );
+        assert_eq!(result, vec!["    .ascii \"hello\"", "    .ascii a, b, c"]);
     }
 
     #[test]
@@ -700,25 +703,21 @@ mod tests {
         let result = expand_and_collect(lines);
         assert_eq!(
             result,
-            vec![
-                "    mov64 r1, 0",
-                "    mov64 r2, 0",
-                "    mov64 r3, 0"
-            ]
+            vec!["    mov64 r1, 0", "    mov64 r2, 0", "    mov64 r3, 0"]
         );
     }
 
     #[test]
     fn test_unclosed_rept() {
-        let lines = vec![
-            make_line(".rept 3", 1),
-            make_line("    nop", 2),
-        ];
+        let lines = vec![make_line(".rept 3", 1), make_line("    nop", 2)];
 
         let result = expand_macros(lines);
         assert!(result.is_err());
         let errors = result.unwrap_err();
-        assert!(matches!(&errors[0].error, CompileError::UnclosedRept { .. }));
+        assert!(matches!(
+            &errors[0].error,
+            CompileError::UnclosedRept { .. }
+        ));
         assert!(errors[0].origin.is_some());
     }
 
@@ -749,12 +748,12 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                "",       // blank line between definitions
-                "",       // blank line after definitions
+                "", // blank line between definitions
+                "", // blank line after definitions
                 "e1:",
                 "    .ascii \"error\"",
                 "e1_end:",
-                "",       // blank line
+                "", // blank line
                 "    lddw r0, 1",
                 "    lddw r1, e1",
                 "    lddw r2, e1_end - e1",

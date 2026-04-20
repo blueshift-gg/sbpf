@@ -177,16 +177,16 @@ impl SourceMap {
         let mut location = format!("{}:{}", file_path, origin.line);
 
         if let Some(ref expansion) = origin.macro_expansion {
-            location.push_str(&format!(" (in expansion of macro '{}'", expansion.macro_name));
+            location.push_str(&format!(
+                " (in expansion of macro '{}'",
+                expansion.macro_name
+            ));
             let mut current = &expansion.invocation_origin;
             loop {
                 let inv_path = self.file_registry.path(current.file_id);
                 location.push_str(&format!(", invoked at {}:{}", inv_path, current.line));
                 if let Some(ref inner) = current.macro_expansion {
-                    location.push_str(&format!(
-                        ", in expansion of macro '{}'",
-                        inner.macro_name
-                    ));
+                    location.push_str(&format!(", in expansion of macro '{}'", inner.macro_name));
                     current = &inner.invocation_origin;
                 } else {
                     break;

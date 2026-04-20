@@ -98,14 +98,8 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
                 positives,
                 negatives,
             } => {
-                let pos: Vec<String> = positives
-                    .iter()
-                    .filter_map(rule_display_name)
-                    .collect();
-                let neg: Vec<String> = negatives
-                    .iter()
-                    .filter_map(rule_display_name)
-                    .collect();
+                let pos: Vec<String> = positives.iter().filter_map(rule_display_name).collect();
+                let neg: Vec<String> = negatives.iter().filter_map(rule_display_name).collect();
                 let mut parts = Vec::new();
                 if !pos.is_empty() {
                     parts.push(format!("expected {}", pos.join(", ")));
@@ -316,15 +310,9 @@ fn scan_label(
     // Bare label (no directive or instruction attached)
     if let Some(name) = label_name {
         if *rodata_phase {
-            map.insert(
-                name,
-                (Number::Int(*rodata_offset as i64), Section::Rodata),
-            );
+            map.insert(name, (Number::Int(*rodata_offset as i64), Section::Rodata));
         } else {
-            map.insert(
-                name,
-                (Number::Int(*text_offset as i64), Section::Text),
-            );
+            map.insert(name, (Number::Int(*text_offset as i64), Section::Text));
         }
     }
 }
@@ -535,7 +523,9 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     Err(e) => ctx.errors.push(e),
                 }
             } else if let Some(inst_pair) = instruction_opt {
-                if let Err(e) = process_instruction(inst_pair, ctx.const_map, ctx.label_offset_map, is_llvm) {
+                if let Err(e) =
+                    process_instruction(inst_pair, ctx.const_map, ctx.label_offset_map, is_llvm)
+                {
                     ctx.errors.push(e);
                 }
                 if !ctx.missing_text_directive {

@@ -20,7 +20,9 @@ pub(crate) fn process_instruction(
 
         match inner.as_rule() {
             Rule::instr_exit => return process_exit(span_range),
-            Rule::instr_lddw => return process_lddw(inner, const_map, label_offset_map, span_range),
+            Rule::instr_lddw => {
+                return process_lddw(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_call => return process_call(inner, const_map, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
             Rule::instr_neg32 => return process_neg32(inner, span_range),
@@ -32,9 +34,13 @@ pub(crate) fn process_instruction(
                 return process_alu_reg(inner, span_range);
             }
             Rule::instr_load => return process_load(inner, const_map, span_range),
-            Rule::instr_store_imm => return process_store_imm(inner, const_map, label_offset_map, span_range),
+            Rule::instr_store_imm => {
+                return process_store_imm(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_store_reg => return process_store_reg(inner, const_map, span_range),
-            Rule::instr_jump_imm => return process_jump_imm(inner, const_map, label_offset_map, span_range),
+            Rule::instr_jump_imm => {
+                return process_jump_imm(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_jump_reg => return process_jump_reg(inner, span_range),
             Rule::instr_jump_uncond => return process_jump_uncond(inner, const_map, span_range),
             Rule::instr_endian => return process_endian(inner, span_range),

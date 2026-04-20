@@ -1,7 +1,6 @@
 use {
+    super::{SourceLine, source_map::SourceOrigin},
     crate::errors::CompileError,
-    super::SourceLine,
-    super::source_map::SourceOrigin,
 };
 
 /// A macro parameter
@@ -122,10 +121,8 @@ pub(crate) fn scan_macro_definitions(lines: Vec<SourceLine>) -> MacroScanResult 
 
     // Check for unclosed macro at end of input
     if let Some((name, _, _, _)) = current_macro {
-        let origin = macro_start_origin.unwrap_or(SourceOrigin::new(
-            super::source_map::FileId(0),
-            0,
-        ));
+        let origin =
+            macro_start_origin.unwrap_or(SourceOrigin::new(super::source_map::FileId(0), 0));
         errors.push((
             CompileError::UnclosedMacro {
                 name,
@@ -213,8 +210,10 @@ fn parse_params(params_str: &str) -> Option<Vec<Param>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::preprocessor::source_map::{FileId, SourceOrigin};
+    use {
+        super::*,
+        crate::preprocessor::source_map::{FileId, SourceOrigin},
+    };
 
     fn make_source_line(text: &str, line: u32) -> SourceLine {
         SourceLine {

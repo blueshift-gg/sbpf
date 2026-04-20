@@ -23,20 +23,30 @@ pub(crate) fn process_instruction(
         let span_range = span.start()..span.end();
 
         match inner.as_rule() {
-            Rule::instr_llvm_alu64 => return process_alu(inner, const_map, label_offset_map, span_range, true),
-            Rule::instr_llvm_alu32 => return process_alu(inner, const_map, label_offset_map, span_range, false),
+            Rule::instr_llvm_alu64 => {
+                return process_alu(inner, const_map, label_offset_map, span_range, true);
+            }
+            Rule::instr_llvm_alu32 => {
+                return process_alu(inner, const_map, label_offset_map, span_range, false);
+            }
             Rule::instr_llvm_neg64 => return process_neg(inner, span_range, true),
             Rule::instr_llvm_neg32 => return process_neg(inner, span_range, false),
             Rule::instr_llvm_load => return process_load(inner, const_map, span_range),
-            Rule::instr_llvm_store_imm => return process_store_imm(inner, const_map, label_offset_map, span_range),
+            Rule::instr_llvm_store_imm => {
+                return process_store_imm(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_llvm_store_reg => return process_store_reg(inner, const_map, span_range),
-            Rule::instr_llvm_lddw => return process_lddw(inner, const_map, label_offset_map, span_range),
+            Rule::instr_llvm_lddw => {
+                return process_lddw(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_llvm_endian => return process_endian(inner, span_range),
             Rule::instr_llvm_jump_uncond => {
                 return process_jump_uncond(inner, const_map, span_range);
             }
             Rule::instr_llvm_jump_reg => return process_jump_reg(inner, span_range),
-            Rule::instr_llvm_jump_imm => return process_jump_imm(inner, const_map, label_offset_map, span_range),
+            Rule::instr_llvm_jump_imm => {
+                return process_jump_imm(inner, const_map, label_offset_map, span_range);
+            }
             Rule::instr_exit => return process_exit(span_range),
             Rule::instr_call => return process_call(inner, const_map, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),

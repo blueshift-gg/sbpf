@@ -33,7 +33,7 @@ pub use self::{
     errors::CompileError,
     parser::{ParseResult, Token, parse},
     preprocessor::{
-        preprocess, FileResolver, FsFileResolver, MockFileResolver, PreprocessResult,
+        FileResolver, FsFileResolver, MockFileResolver, PreprocessResult, preprocess,
         source_map::{FileRegistry, SourceMap, SourceOrigin},
     },
     program::Program,
@@ -164,8 +164,8 @@ impl Assembler {
         resolver: Option<&dyn FileResolver>,
     ) -> Result<Vec<u8>, AssembleErrors> {
         // Run preprocessor
-        let preprocess_result = preprocess(source, source_path, resolver).map_err(|failure| {
-            AssembleErrors {
+        let preprocess_result =
+            preprocess(source, source_path, resolver).map_err(|failure| AssembleErrors {
                 errors: failure
                     .errors
                     .into_iter()
@@ -176,8 +176,7 @@ impl Assembler {
                     })
                     .collect(),
                 file_registry: failure.file_registry,
-            }
-        })?;
+            })?;
 
         let expanded = &preprocess_result.expanded_source;
         let source_map = &preprocess_result.source_map;
@@ -235,24 +234,19 @@ impl Assembler {
     }
 
     /// Convenience method: read a file from disk and assemble with full preprocessing.
-    pub fn assemble_file(
-        &self,
-        path: &std::path::Path,
-    ) -> Result<Vec<u8>, AssembleErrors> {
-        let source = std::fs::read_to_string(path).map_err(|e| {
-            AssembleErrors {
-                errors: vec![AssemblerError {
-                    error: CompileError::IncludeReadError {
-                        path: path.display().to_string(),
-                        reason: e.to_string(),
-                        span: 0..0,
-                        custom_label: Some("Failed to read source file".to_string()),
-                    },
-                    origin: None,
-                    column: None,
-                }],
-                file_registry: FileRegistry::new(),
-            }
+    pub fn assemble_file(&self, path: &std::path::Path) -> Result<Vec<u8>, AssembleErrors> {
+        let source = std::fs::read_to_string(path).map_err(|e| AssembleErrors {
+            errors: vec![AssemblerError {
+                error: CompileError::IncludeReadError {
+                    path: path.display().to_string(),
+                    reason: e.to_string(),
+                    span: 0..0,
+                    custom_label: Some("Failed to read source file".to_string()),
+                },
+                origin: None,
+                column: None,
+            }],
+            file_registry: FileRegistry::new(),
         })?;
 
         let source_path = path.to_string_lossy();
@@ -359,8 +353,16 @@ mod tests {
         let errors = result.unwrap_err();
         let span = errors[0].span();
         // The error should point somewhere near ".bogus" (byte ~20), NOT 0..len
-        assert!(span.start > 0, "Error span should not start at 0, got {:?}", span);
-        assert!(span.end < source.len(), "Error span should not cover entire source, got {:?}", span);
+        assert!(
+            span.start > 0,
+            "Error span should not start at 0, got {:?}",
+            span
+        );
+        assert!(
+            span.end < source.len(),
+            "Error span should not cover entire source, got {:?}",
+            span
+        );
         // Verify the span actually points at ".bogus", not at "thing2"
         let error_text = &source[span.start..span.end.min(source.len())];
         assert!(
@@ -581,7 +583,11 @@ mod tests {
             message_end:
         "#;
         let result = assemble(source);
-        assert!(result.is_ok(), "Forward reference failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Forward reference failed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -600,7 +606,11 @@ mod tests {
         message_end:
         "#;
         let result = assemble(source);
-        assert!(result.is_ok(), "Multi-line rodata failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Multi-line rodata failed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -703,10 +713,12 @@ entrypoint:
         }
         impl FileResolver for TestResolver {
             fn resolve(&self, path: &str, _base: &str) -> Result<String, std::io::Error> {
-                self.files
-                    .get(path)
-                    .cloned()
-                    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("not found: {}", path)))
+                self.files.get(path).cloned().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("not found: {}", path),
+                    )
+                })
             }
         }
 
@@ -739,8 +751,7 @@ e:
 "#;
         let resolver = TestResolver { files };
         let assembler = Assembler::new(AssemblerOption::default());
-        let result =
-            assembler.assemble_with_preprocess(source, "main.s", Some(&resolver));
+        let result = assembler.assemble_with_preprocess(source, "main.s", Some(&resolver));
         assert!(result.is_err());
         let errors = result.unwrap_err();
         let err = &errors.errors[0];
