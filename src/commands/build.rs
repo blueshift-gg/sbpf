@@ -3,13 +3,16 @@ use {
     clap::{Args, ValueEnum},
     codespan_reporting::{
         diagnostic::{Diagnostic, Label},
-        files::SimpleFile,
+        files::SimpleFiles,
         term,
     },
     ed25519_dalek::SigningKey,
     rand::rngs::OsRng,
-    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch, errors::CompileError},
-    std::{fs, fs::create_dir_all, path::Path, time::Instant},
+    sbpf_assembler::{
+        AssembleErrors, Assembler, AssemblerOption, DebugMode, FileRegistry, FsFileResolver,
+        SbpfArch, SourceOrigin, errors::CompileError,
+    },
+    std::{collections::HashMap, fs, fs::create_dir_all, path::Path, time::Instant},
     termcolor::{ColorChoice, StandardStream},
 };
 
@@ -44,15 +47,13 @@ impl From<ArchArg> for SbpfArch {
     }
 }
 
-pub trait AsDiagnostic {
-    // currently only support single source file reporting
-    fn to_diagnostic(&self) -> Diagnostic<()>;
+pub trait AsDiagnostic<FileId> {
+    fn to_diagnostic(&self) -> Diagnostic<FileId>;
 }
 
-impl AsDiagnostic for CompileError {
+impl AsDiagnostic<()> for CompileError {
     fn to_diagnostic(&self) -> Diagnostic<()> {
         match self {
-            // Show both the redefinition and the original definition
             CompileError::DuplicateLabel {
                 span,
                 original_span,
@@ -74,6 +75,93 @@ impl AsDiagnostic for CompileError {
     }
 }
 
+/// Render assembly errors against original source files using the FileRegistry.
+///
+/// Each error's `SourceOrigin` tells us which original file and line the error
+/// came from, even if it was in a macro expansion or an included file.
+fn emit_assembler_errors(assemble_errors: &AssembleErrors) -> Result<()> {
+    let registry = &assemble_errors.file_registry;
+
+    // Build a codespan SimpleFiles from the FileRegistry
+    let mut files = SimpleFiles::new();
+    let mut file_id_map: HashMap<u32, usize> = HashMap::new();
+
+    for file_id in registry.file_ids() {
+        let cs_id = files.add(registry.path(file_id).to_string(), registry.content(file_id).to_string());
+        file_id_map.insert(file_id.index(), cs_id);
+    }
+
+    let writer = StandardStream::stderr(ColorChoice::Auto);
+    let config = term::Config::default();
+
+    for assembler_error in &assemble_errors.errors {
+        let error = &assembler_error.error;
+
+        if let Some(ref origin) = assembler_error.origin {
+            // We have a resolved source origin -- point into the original file
+            if let Some(&cs_file_id) = file_id_map.get(&(origin.file_id.index())) {
+                let line_start = registry.line_byte_offset(origin.file_id, origin.line);
+                let line_len = registry.line_length(origin.file_id, origin.line);
+                let line_end = line_start + line_len;
+
+                // If we have column info, highlight from that column to end of line.
+                // Otherwise highlight the whole line.
+                let highlight_start = if let Some(col) = assembler_error.column {
+                    (line_start + col).min(line_end)
+                } else {
+                    line_start
+                };
+
+                let mut diagnostic = Diagnostic::error()
+                    .with_message(error.to_string())
+                    .with_labels(vec![
+                        Label::primary(cs_file_id, highlight_start..line_end)
+                            .with_message(error.label()),
+                    ]);
+
+                // Add macro expansion chain as notes
+                let mut notes = Vec::new();
+                build_expansion_notes(origin, registry, &mut notes);
+                if !notes.is_empty() {
+                    diagnostic = diagnostic.with_notes(notes);
+                }
+
+                term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+            } else {
+                // File not in registry (shouldn't happen), fall back to text-only
+                eprintln!("error: {}", error);
+            }
+        } else {
+            // No origin -- preprocessor error without file context, just print the message
+            eprintln!("error: {}", error);
+        }
+    }
+
+    Ok(())
+}
+
+/// Build notes describing the macro expansion chain for an error.
+fn build_expansion_notes(
+    origin: &SourceOrigin,
+    registry: &FileRegistry,
+    notes: &mut Vec<String>,
+) {
+    if let Some(ref expansion) = origin.macro_expansion {
+        // Note about which macro this is in
+        let invocation = &expansion.invocation_origin;
+        let inv_file = registry.path(invocation.file_id);
+        notes.push(format!(
+            "in expansion of macro '{}', invoked at {}:{}",
+            expansion.macro_name, inv_file, invocation.line
+        ));
+
+        // Recurse for nested expansions
+        if invocation.macro_expansion.is_some() {
+            build_expansion_notes(invocation, registry, notes);
+        }
+    }
+}
+
 pub fn build(args: BuildArgs) -> Result<()> {
     // Set src/out directory
     let src = "src";
@@ -81,10 +169,10 @@ pub fn build(args: BuildArgs) -> Result<()> {
 
     // Create necessary directories
     create_dir_all(deploy)?;
-    // Function to compile assembly
+    // Function to compile assembly with preprocessing (includes + macros)
     fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
-        let source_code = std::fs::read_to_string(src).unwrap();
-        let file = SimpleFile::new(src.to_string(), source_code.clone());
+        let source_code = std::fs::read_to_string(src)
+            .map_err(|e| Error::msg(format!("Failed to read '{}': {}", src, e)))?;
 
         // Build assembler options
         let debug_mode = if debug {
@@ -106,19 +194,15 @@ pub fn build(args: BuildArgs) -> Result<()> {
         };
 
         let options = AssemblerOption { arch, debug_mode };
-
         let assembler = Assembler::new(options);
-        let result = assembler.assemble(&source_code);
+        let resolver = FsFileResolver::new();
+
+        let result = assembler.assemble_with_preprocess(&source_code, src, Some(&resolver));
 
         let bytecode = match result {
             Ok(bytecode) => bytecode,
-            Err(errors) => {
-                for error in errors {
-                    let writer = StandardStream::stderr(ColorChoice::Auto);
-                    let config = term::Config::default();
-                    let diagnostic = error.to_diagnostic();
-                    term::emit(&mut writer.lock(), &config, &file, &diagnostic)?;
-                }
+            Err(assemble_errors) => {
+                emit_assembler_errors(&assemble_errors)?;
                 return Err(Error::msg("Compilation failed"));
             }
         };

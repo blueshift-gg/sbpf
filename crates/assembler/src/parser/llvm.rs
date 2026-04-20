@@ -1,5 +1,5 @@
 use {
-    super::{BPF_X, Rule, common::*},
+    super::{BPF_X, Rule, Section, common::*},
     crate::errors::CompileError,
     pest::iterators::Pair,
     sbpf_common::{
@@ -13,6 +13,7 @@ use {
 pub(crate) fn process_instruction(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
 ) -> Result<Instruction, CompileError> {
     let outer_span = pair.as_span();
     let outer_span_range = outer_span.start()..outer_span.end();
@@ -22,20 +23,20 @@ pub(crate) fn process_instruction(
         let span_range = span.start()..span.end();
 
         match inner.as_rule() {
-            Rule::instr_llvm_alu64 => return process_alu(inner, const_map, span_range, true),
-            Rule::instr_llvm_alu32 => return process_alu(inner, const_map, span_range, false),
+            Rule::instr_llvm_alu64 => return process_alu(inner, const_map, label_offset_map, span_range, true),
+            Rule::instr_llvm_alu32 => return process_alu(inner, const_map, label_offset_map, span_range, false),
             Rule::instr_llvm_neg64 => return process_neg(inner, span_range, true),
             Rule::instr_llvm_neg32 => return process_neg(inner, span_range, false),
             Rule::instr_llvm_load => return process_load(inner, const_map, span_range),
-            Rule::instr_llvm_store_imm => return process_store_imm(inner, const_map, span_range),
+            Rule::instr_llvm_store_imm => return process_store_imm(inner, const_map, label_offset_map, span_range),
             Rule::instr_llvm_store_reg => return process_store_reg(inner, const_map, span_range),
-            Rule::instr_llvm_lddw => return process_lddw(inner, const_map, span_range),
+            Rule::instr_llvm_lddw => return process_lddw(inner, const_map, label_offset_map, span_range),
             Rule::instr_llvm_endian => return process_endian(inner, span_range),
             Rule::instr_llvm_jump_uncond => {
                 return process_jump_uncond(inner, const_map, span_range);
             }
             Rule::instr_llvm_jump_reg => return process_jump_reg(inner, span_range),
-            Rule::instr_llvm_jump_imm => return process_jump_imm(inner, const_map, span_range),
+            Rule::instr_llvm_jump_imm => return process_jump_imm(inner, const_map, label_offset_map, span_range),
             Rule::instr_exit => return process_exit(span_range),
             Rule::instr_call => return process_call(inner, const_map, span_range),
             Rule::instr_callx => return process_callx(inner, span_range),
@@ -100,6 +101,7 @@ fn resolve_cmp_opcode(op: &str) -> Option<Opcode> {
 fn process_alu(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
     span: std::ops::Range<usize>,
     is_64bit: bool,
 ) -> Result<Instruction, CompileError> {
@@ -118,7 +120,7 @@ fn process_alu(
                 }
             }
             Rule::alu_op => op = Some(inner.as_str().to_string()),
-            Rule::operand => imm = Some(parse_operand(inner, const_map)?),
+            Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             _ => {}
         }
     }
@@ -227,6 +229,7 @@ fn process_load(
 fn process_store_imm(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut size = None;
@@ -242,7 +245,7 @@ fn process_store_imm(
                 dst = Some(d);
                 off = Some(o);
             }
-            Rule::operand => imm = Some(parse_operand(inner, const_map)?),
+            Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             _ => {}
         }
     }
@@ -384,6 +387,7 @@ fn process_jump_reg(
 fn process_jump_imm(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut dst = None;
@@ -395,7 +399,7 @@ fn process_jump_imm(
         match inner.as_rule() {
             Rule::register => dst = Some(parse_register(inner)?),
             Rule::cmp_op => op = Some(inner.as_str().to_string()),
-            Rule::operand => imm = Some(parse_operand(inner, const_map)?),
+            Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             Rule::jump_target => off = Some(parse_jump_target(inner, const_map)?),
             _ => {}
         }
