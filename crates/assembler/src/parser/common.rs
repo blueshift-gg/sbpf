@@ -24,6 +24,7 @@ pub fn parse_register(pair: Pair<Rule>) -> Result<Register, CompileError> {
             register: reg_str.to_string(),
             span: span.start()..span.end(),
             custom_label: None,
+            file: None,
         })
     }
 }
@@ -73,6 +74,7 @@ pub fn parse_operand(
     Err(CompileError::ParseError {
         error: "Invalid operand".to_string(),
         span: span_range,
+        file: None,
         custom_label: None,
     })
 }
@@ -100,6 +102,7 @@ pub fn parse_jump_target(
     Err(CompileError::ParseError {
         error: "Invalid jump target".to_string(),
         span: span_range,
+        file: None,
         custom_label: None,
     })
 }
@@ -185,6 +188,7 @@ pub fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
         number: number_str,
         span: span_range,
         custom_label: None,
+        file: None,
     })
 }
 
@@ -247,6 +251,7 @@ pub fn process_endian(
                         .map_err(|_| CompileError::ParseError {
                             error: format!("Invalid endian size in '{}'", op_str),
                             span: inner_span.start()..inner_span.end(),
+                            file: None,
                             custom_label: None,
                         })?;
                     (Opcode::Be, size)
@@ -256,6 +261,7 @@ pub fn process_endian(
                         .map_err(|_| CompileError::ParseError {
                             error: format!("Invalid endian size in '{}'", op_str),
                             span: inner_span.start()..inner_span.end(),
+                            file: None,
                             custom_label: None,
                         })?;
                     (Opcode::Le, size)
@@ -263,6 +269,7 @@ pub fn process_endian(
                     return Err(CompileError::ParseError {
                         error: format!("Invalid endian operation '{}'", op_str),
                         span: inner_span.start()..inner_span.end(),
+                        file: None,
                         custom_label: None,
                     });
                 };

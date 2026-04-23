@@ -1,12 +1,15 @@
 use {
-    super::{ParseContext, Rule, Token, common::parse_number},
+    super::{
+        ParseContext, Rule, SourceLocation, Token, attach_file_to_error, common::parse_number,
+        process_source,
+    },
     crate::{
         astnode::{ASTNode, ExternDecl, GlobalDecl, ROData, RodataDecl},
         errors::CompileError,
     },
     pest::iterators::Pair,
     sbpf_common::inst_param::Number,
-    std::collections::HashMap,
+    std::{collections::HashMap, fs, path::PathBuf},
 };
 
 pub fn process_directive_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
@@ -62,7 +65,7 @@ pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                         }
                         Rule::expression => match eval_expression(equ_inner, ctx.const_map) {
                             Ok(v) => value = Some(v),
-                            Err(e) => ctx.errors.push(e),
+                            Err(e) => ctx.errors.push(attach_file_to_error(e, &ctx.current_file)),
                         },
                         _ => {}
                     }
@@ -88,9 +91,150 @@ pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     _ => {}
                 }
             }
+            Rule::directive_include => {
+                process_directive_include(inner, ctx);
+            }
             _ => {}
         }
     }
+}
+
+/// Handle `.include "path"` by reading the referenced file and parsing it
+/// into the same `ParseContext` so its nodes are merged into one AST.
+///
+/// Paths are resolved relative to the directory of the file containing
+/// the `.include` directive. Nested includes are supported: an included
+/// file may itself use `.include` with paths relative to its own location.
+///
+/// Cyclic includes are detected via `ctx.include_set` — a set of
+/// canonicalized paths currently being parsed. If a cycle is found, a
+/// compile error is emitted instead of recursing.
+///
+/// The file identifier used in diagnostics and debug info is the path
+/// relative to the project root (the original `base_path` passed to
+/// `parse_with_base_path`), so that `modules/a.s` including `b.s`
+/// registers as `modules/b.s`, not just `b.s`.
+fn process_directive_include(pair: Pair<Rule>, ctx: &mut ParseContext) {
+    let span = pair.as_span();
+    let include_span = span.start()..span.end();
+
+    // Extract the `"path"` string literal content.
+    let mut raw_path: Option<String> = None;
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::string_literal {
+            for lit_inner in inner.into_inner() {
+                if lit_inner.as_rule() == Rule::string_content {
+                    raw_path = Some(lit_inner.as_str().to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    let path = match raw_path {
+        Some(p) => p,
+        None => {
+            ctx.errors.push(CompileError::ParseError {
+                error: "Invalid .include directive: expected \"path\"".to_string(),
+                span: include_span,
+                file: Some(ctx.current_file.clone()),
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    // Resolve the path relative to the including file's directory.
+    let base = match &ctx.base_path {
+        Some(b) => b.clone(),
+        None => {
+            ctx.errors.push(CompileError::ParseError {
+                error: format!(
+                    "Cannot resolve .include \"{}\": no base path available. Use \
+                     assemble_with_base_path to enable .include support.",
+                    path
+                ),
+                span: include_span,
+                file: Some(ctx.current_file.clone()),
+                custom_label: None,
+            });
+            return;
+        }
+    };
+    let include_path = base.join(&path);
+
+    // Cycle detection: canonicalize the path and check the include set.
+    let canonical = include_path
+        .canonicalize()
+        .unwrap_or_else(|_| include_path.clone());
+    if ctx.include_set.contains(&canonical) {
+        ctx.errors.push(CompileError::ParseError {
+            error: format!(
+                "Cyclic include detected: \"{}\" is already being parsed",
+                path
+            ),
+            span: include_span,
+            file: Some(ctx.current_file.clone()),
+            custom_label: Some("cyclic include".to_string()),
+        });
+        return;
+    }
+
+    // Read the included file.
+    let content = match fs::read_to_string(&include_path) {
+        Ok(c) => c,
+        Err(e) => {
+            ctx.errors.push(CompileError::ParseError {
+                error: format!("Failed to read include \"{}\": {}", path, e),
+                span: include_span,
+                file: Some(ctx.current_file.clone()),
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    // Build the file identifier relative to the project root so that
+    // nested paths are correct (e.g. `modules/b.s` instead of `b.s`).
+    let include_id = if let Some(root) = &ctx.root_base_path {
+        canonical
+            .strip_prefix(root)
+            .unwrap_or(&canonical)
+            .to_string_lossy()
+            .to_string()
+    } else {
+        path.trim_start_matches("./").to_string()
+    };
+
+    // Register the file content (skip if already read via an earlier
+    // include of the same path — this is harmless because duplicate label
+    // detection catches re-parses).
+    ctx.files
+        .entry(include_id.clone())
+        .or_insert_with(|| content.clone());
+
+    // Compute the new base path for nested includes inside the included
+    // file: paths are relative to the included file's own directory.
+    let new_base: PathBuf = include_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Push the include site, swap in the new context, recurse, restore.
+    ctx.include_stack.push(SourceLocation {
+        file: ctx.current_file.clone(),
+        span: include_span,
+    });
+    ctx.include_set.insert(canonical.clone());
+    let old_base = ctx.base_path.replace(new_base);
+    let old_file = std::mem::replace(&mut ctx.current_file, include_id);
+
+    process_source(&content, ctx);
+
+    ctx.current_file = old_file;
+    ctx.base_path = old_base;
+    ctx.include_set.remove(&canonical);
+    ctx.include_stack.pop();
 }
 
 pub fn process_rodata_directive(
@@ -106,6 +250,7 @@ pub fn process_rodata_directive(
             .ok_or_else(|| CompileError::ParseError {
                 error: "No directive content found".to_string(),
                 span: label_span.clone(),
+                file: None,
                 custom_label: None,
             })?
     };
@@ -183,6 +328,7 @@ pub fn process_rodata_directive(
     Err(CompileError::InvalidRodataDecl {
         span: label_span,
         custom_label: None,
+        file: None,
     })
 }
 
@@ -228,6 +374,7 @@ fn eval_expression(
     stack.pop().ok_or_else(|| CompileError::ParseError {
         error: "Invalid expression".to_string(),
         span: span_range,
+        file: None,
         custom_label: None,
     })
 }
@@ -255,6 +402,7 @@ fn eval_term(
                 return Err(CompileError::ParseError {
                     error: format!("Undefined constant: {}", name),
                     span: inner.as_span().start()..inner.as_span().end(),
+                    file: None,
                     custom_label: None,
                 });
             }
@@ -265,6 +413,7 @@ fn eval_term(
     Err(CompileError::ParseError {
         error: "Invalid term".to_string(),
         span: span_range,
+        file: None,
         custom_label: None,
     })
 }

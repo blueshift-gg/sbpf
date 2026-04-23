@@ -29,6 +29,10 @@ impl Program {
             prog_is_static,
             arch,
             debug_sections,
+            // Consumed by the assembler before reaching here (e.g. to
+            // build multi-file debug data); not needed for bytecode
+            // emission.
+            sources: _,
         }: ParseResult,
         debug_data: Option<DebugData>,
     ) -> Self {
@@ -550,6 +554,8 @@ mod tests {
             directory: "/test".to_string(),
             lines: vec![],
             labels: vec![],
+            lines_multi: Vec::new(),
+            labels_multi: Vec::new(),
             code_start: 0,
             code_end: 8,
         });

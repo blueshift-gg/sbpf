@@ -1,4 +1,8 @@
-use {anyhow::Result, codespan::Files};
+use {
+    anyhow::Result,
+    codespan::Files,
+    std::{collections::HashMap, path::Path},
+};
 
 // Parser
 pub mod parser;
@@ -28,7 +32,7 @@ pub use self::{
     astnode::ASTNode,
     debug::DebugData,
     errors::CompileError,
-    parser::{ParseResult, Token, parse},
+    parser::{ParseResult, Token, parse, parse_with_base_path},
     program::Program,
 };
 
@@ -71,6 +75,18 @@ pub struct AssemblerOption {
     pub debug_mode: Option<DebugMode>,
 }
 
+/// Result of `Assembler::assemble_with_base_path`. Carries the source
+/// registry populated by `.include` handling alongside the bytecode
+/// result, so callers can render multi-file diagnostics on error.
+pub struct AssembleResult {
+    /// Every source file read during parsing, keyed by the identifier
+    /// used in diagnostics (main file name or the relative `.include`
+    /// path). Populated on both success and failure.
+    pub sources: HashMap<String, String>,
+    /// The assembled bytecode, or a list of compile errors.
+    pub bytecode: Result<Vec<u8>, Vec<CompileError>>,
+}
+
 /// Assembler for SBPF assembly code
 #[derive(Debug, Clone)]
 pub struct Assembler {
@@ -83,6 +99,9 @@ impl Assembler {
         Self { options }
     }
 
+    /// Assemble a single source string. Does not support `.include`;
+    /// callers that need multi-file assembly should use
+    /// `assemble_with_base_path`.
     pub fn assemble(&self, source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
         let parse_result = match parse(source, self.options.arch) {
             Ok(result) => result,
@@ -93,7 +112,8 @@ impl Assembler {
 
         // Build debug data if debug mode is enabled
         let debug_data = if let Some(ref debug_mode) = self.options.debug_mode {
-            let (lines, labels) = collect_line_and_label_entries(source, &parse_result);
+            let (lines, labels, lines_multi, labels_multi) =
+                collect_debug_entries(&parse_result, debug_mode);
             let code_end = parse_result.code_section.get_size();
 
             Some(DebugData {
@@ -101,6 +121,8 @@ impl Assembler {
                 directory: debug_mode.directory.clone(),
                 lines,
                 labels,
+                lines_multi,
+                labels_multi,
                 code_start: 0,
                 code_end,
             })
@@ -112,50 +134,188 @@ impl Assembler {
         let bytecode = program.emit_bytecode();
         Ok(bytecode)
     }
+
+    /// Assemble `source` with `.include` support.
+    ///
+    /// * `main_file_name` — identifier used for the main file in
+    ///   diagnostics and DWARF debug info (typically the file's basename).
+    /// * `source` — contents of the main file.
+    /// * `base_path` — directory used to resolve `.include` paths in the
+    ///   main file (nested includes are resolved relative to the
+    ///   including file's directory).
+    ///
+    /// Returns `AssembleResult` with the full source registry (main plus
+    /// every file pulled in via `.include`) so callers can produce
+    /// multi-file diagnostics even when assembly fails. The registry is
+    /// populated in both the success and failure paths.
+    pub fn assemble_with_base_path(
+        &self,
+        main_file_name: &str,
+        source: &str,
+        base_path: &Path,
+    ) -> AssembleResult {
+        let mut sources: HashMap<String, String> = HashMap::new();
+        let parse_result = match parse_with_base_path(
+            source,
+            self.options.arch,
+            Some(base_path),
+            main_file_name,
+            &mut sources,
+        ) {
+            Ok(result) => result,
+            Err(errors) => {
+                // Parsing failed. `sources` has every file read during
+                // parsing (main + any included files that were read
+                // before the error), so multi-file diagnostics can still
+                // be rendered by the caller.
+                return AssembleResult {
+                    sources,
+                    bytecode: Err(errors),
+                };
+            }
+        };
+
+        let debug_data = if let Some(ref debug_mode) = self.options.debug_mode {
+            let (lines, labels, lines_multi, labels_multi) =
+                collect_debug_entries(&parse_result, debug_mode);
+            let code_end = parse_result.code_section.get_size();
+
+            Some(DebugData {
+                filename: debug_mode.filename.clone(),
+                directory: debug_mode.directory.clone(),
+                lines,
+                labels,
+                lines_multi,
+                labels_multi,
+                code_start: 0,
+                code_end,
+            })
+        } else {
+            None
+        };
+
+        let program = Program::from_parse_result(parse_result, debug_data);
+        let bytecode = program.emit_bytecode();
+        AssembleResult {
+            sources,
+            bytecode: Ok(bytecode),
+        }
+    }
 }
 
 type LineEntry = (u64, u32); // (offset, line)
 type LabelEntry = (String, u64, u32); // (label, offset, line)
+type LineMultiEntry = (u64, String, String, u32); // (offset, file, dir, line)
+type LabelMultiEntry = (String, u64, String, String, u32); // (name, offset, file, dir, line)
 
-/// Helper function to collect line and label entries
-fn collect_line_and_label_entries(
-    source: &str,
+/// Collect line and label entries from a parse result.
+///
+/// Works for both single-file and multi-file assemblies: each `ASTNode`
+/// carries an optional `file` field set by the parser. When the file
+/// field differs across nodes (i.e. `.include` was used), this function
+/// returns populated `lines_multi`/`labels_multi` vectors in addition to
+/// the single-file `lines`/`labels`.
+fn collect_debug_entries(
     parse_result: &ParseResult,
-) -> (Vec<LineEntry>, Vec<LabelEntry>) {
-    let mut files: Files<&str> = Files::new();
-    let file_id = files.add("source", source);
+    debug_mode: &DebugMode,
+) -> (
+    Vec<LineEntry>,
+    Vec<LabelEntry>,
+    Vec<LineMultiEntry>,
+    Vec<LabelMultiEntry>,
+) {
+    // Build a Files index over every source we read.
+    let mut files: Files<String> = Files::new();
+    let mut file_ids: HashMap<String, codespan::FileId> = HashMap::new();
+    for (name, content) in &parse_result.sources {
+        let id = files.add(name.clone(), content.clone());
+        file_ids.insert(name.clone(), id);
+    }
 
-    let mut line_entries = Vec::new();
-    let mut label_entries = Vec::new();
+    let main_name = &debug_mode.filename;
+    let main_dir = &debug_mode.directory;
+    let has_multi = parse_result.sources.len() > 1;
 
+    let mut lines = Vec::new();
+    let mut labels = Vec::new();
+    let mut lines_multi = Vec::new();
+    let mut labels_multi = Vec::new();
+
+    // Code section: instructions and labels.
     for node in parse_result.code_section.get_nodes() {
         match node {
             ASTNode::Instruction {
                 instruction,
                 offset,
+                file,
             } => {
-                let line_index = files.line_index(file_id, instruction.span.start as u32);
-                let line_number = (line_index.to_usize() + 1) as u32;
-                line_entries.push((*offset, line_number));
+                let f = file.as_deref().unwrap_or(main_name);
+                if let Some(file_id) = file_ids.get(f) {
+                    let line_index = files.line_index(*file_id, instruction.span.start as u32);
+                    let line_number = (line_index.to_usize() + 1) as u32;
+                    lines.push((*offset, line_number));
+                    if has_multi {
+                        lines_multi.push((
+                            *offset,
+                            f.to_string(),
+                            main_dir.to_string(),
+                            line_number,
+                        ));
+                    }
+                }
             }
-            ASTNode::Label { label, offset } => {
-                let line_index = files.line_index(file_id, label.span.start as u32);
-                let line_number = (line_index.to_usize() + 1) as u32;
-                label_entries.push((label.name.clone(), *offset, line_number));
+            ASTNode::Label {
+                label,
+                offset,
+                file,
+            } => {
+                let f = file.as_deref().unwrap_or(main_name);
+                if let Some(file_id) = file_ids.get(f) {
+                    let line_index = files.line_index(*file_id, label.span.start as u32);
+                    let line_number = (line_index.to_usize() + 1) as u32;
+                    labels.push((label.name.clone(), *offset, line_number));
+                    if has_multi {
+                        labels_multi.push((
+                            label.name.clone(),
+                            *offset,
+                            f.to_string(),
+                            main_dir.to_string(),
+                            line_number,
+                        ));
+                    }
+                }
             }
             _ => {}
         }
     }
 
+    // ROData labels.
     for node in parse_result.data_section.get_nodes() {
-        if let ASTNode::ROData { rodata, offset } = node {
-            let line_index = files.line_index(file_id, rodata.span.start as u32);
-            let line_number = (line_index.to_usize() + 1) as u32;
-            label_entries.push((rodata.name.clone(), *offset, line_number));
+        if let ASTNode::ROData {
+            rodata,
+            offset,
+            file,
+        } = node
+        {
+            let f = file.as_deref().unwrap_or(main_name);
+            if let Some(file_id) = file_ids.get(f) {
+                let line_index = files.line_index(*file_id, rodata.span.start as u32);
+                let line_number = (line_index.to_usize() + 1) as u32;
+                labels.push((rodata.name.clone(), *offset, line_number));
+                if has_multi {
+                    labels_multi.push((
+                        rodata.name.clone(),
+                        *offset,
+                        f.to_string(),
+                        main_dir.to_string(),
+                        line_number,
+                    ));
+                }
+            }
         }
     }
 
-    (line_entries, label_entries)
+    (lines, labels, lines_multi, labels_multi)
 }
 
 #[cfg(test)]
@@ -378,6 +538,53 @@ entrypoint:
         assert!(
             bytecode_str.contains(".debug_line_str"),
             "Missing .debug_line_str section"
+        );
+    }
+
+    #[test]
+    fn test_nested_include_uses_root_relative_keys() {
+        use std::fs;
+
+        let tmp = tempfile::tempdir().expect("failed to create temp dir");
+        let src = tmp.path().join("src");
+        let modules = src.join("modules");
+        fs::create_dir_all(&modules).unwrap();
+
+        fs::write(
+            src.join("test.s"),
+            ".globl entrypoint\n.include \"modules/a.s\"\nentrypoint:\n    call my_func\n    \
+             exit\n",
+        )
+        .unwrap();
+
+        fs::write(modules.join("a.s"), ".include \"b.s\"\n").unwrap();
+
+        fs::write(modules.join("b.s"), "my_func:\n    mov64 r0, 0\n    exit\n").unwrap();
+
+        let main_source = fs::read_to_string(src.join("test.s")).unwrap();
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble_with_base_path("test.s", &main_source, &src);
+
+        assert!(
+            result.bytecode.is_ok(),
+            "assembly failed: {:?}",
+            result.bytecode.unwrap_err()
+        );
+
+        assert!(
+            result.sources.contains_key("modules/a.s"),
+            "sources should contain root-relative key 'modules/a.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            result.sources.contains_key("modules/b.s"),
+            "sources should contain root-relative key 'modules/b.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            result.sources.contains_key("test.s"),
+            "sources should contain key 'test.s', got: {:?}",
+            result.sources.keys().collect::<Vec<_>>()
         );
     }
 }

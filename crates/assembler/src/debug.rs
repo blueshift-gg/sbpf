@@ -16,6 +16,14 @@ pub struct DebugData {
     pub directory: String,
     pub lines: Vec<(u64, u32)>,
     pub labels: Vec<(String, u64, u32)>,
+    /// Multi-file line entries: `(offset, filename, directory, line)`.
+    /// When non-empty, used instead of `lines` for DWARF emission so the
+    /// step debugger can map each instruction back to the `.s` file that
+    /// contained it (including included files).
+    pub lines_multi: Vec<(u64, String, String, u32)>,
+    /// Multi-file label entries: `(name, offset, filename, directory, line)`.
+    /// When non-empty, used instead of `labels` for DWARF emission.
+    pub labels_multi: Vec<(String, u64, String, String, u32)>,
     pub code_start: u64,
     pub code_end: u64,
 }
@@ -89,7 +97,12 @@ pub fn generate_debug_sections(
     sections
 }
 
-// Generate DWARF sections using gimli
+// Generate DWARF sections using gimli.
+//
+// If `data.lines_multi` / `data.labels_multi` are non-empty, the line
+// program is built with one DWARF file entry per distinct source file,
+// so the step debugger can resolve each instruction to the correct
+// included `.s` file. Otherwise the single-file path is used.
 fn generate_dwarf_sections(
     data: &DebugData,
     text_offset: u64,
@@ -109,33 +122,92 @@ fn generate_dwarf_sections(
 
     let mut dwarf = DwarfUnit::new(encoding);
 
-    // Add strings.
-    let dir_string_id = dwarf.line_strings.add(data.directory.clone().into_bytes());
-    let file_string_id = dwarf.line_strings.add(data.filename.clone().into_bytes());
+    let use_multi = !data.lines_multi.is_empty();
 
-    // Create line program.
+    // Build the line program. In multi-file mode we register every
+    // `(directory, filename)` referenced by `lines_multi` and emit rows
+    // that point at the right file id.
+    let main_dir_string_id = dwarf.line_strings.add(data.directory.clone().into_bytes());
+    let main_file_string_id = dwarf.line_strings.add(data.filename.clone().into_bytes());
     let mut line_program = LineProgram::new(
         encoding,
         line_encoding,
-        LineString::LineStringRef(dir_string_id),
+        LineString::LineStringRef(main_dir_string_id),
         None,
-        LineString::LineStringRef(file_string_id),
+        LineString::LineStringRef(main_file_string_id),
         None,
     );
 
-    let dir_id = line_program.default_directory();
-    let file_id = line_program.add_file(LineString::LineStringRef(file_string_id), dir_id, None);
+    // Map from (filename, directory) to the raw DWARF file index.
+    // Built during line program registration and reused for
+    // DW_AT_decl_file on label DIEs. The main file is always index 0
+    // in DWARF v5; files added via `add_file` get indices 1, 2, ...
+    let mut file_index_map: std::collections::HashMap<(String, String), u32> =
+        std::collections::HashMap::new();
 
-    // Add line entries.
-    line_program.begin_sequence(Some(Address::Constant(code_start)));
-    for (address, line) in &data.lines {
-        let adjusted_addr = address + text_offset;
-        line_program.row().file = file_id;
-        line_program.row().address_offset = adjusted_addr - code_start;
-        line_program.row().line = *line as u64;
-        line_program.generate_row();
+    if use_multi {
+        use std::collections::HashMap;
+
+        // Pre-register the main file at index 0 — the LineProgram
+        // constructor already set it as the primary source file.
+        file_index_map.insert((data.filename.clone(), data.directory.clone()), 0);
+
+        let mut dir_ids: HashMap<String, gimli::write::DirectoryId> = HashMap::new();
+        let mut file_ids: HashMap<(String, String), gimli::write::FileId> = HashMap::new();
+        let mut next_file_idx = 1u32;
+
+        // Register all (dir, file) entries from both lines_multi and
+        // labels_multi so that label-only files get a DWARF file index.
+        let all_file_refs = data
+            .lines_multi
+            .iter()
+            .map(|(_, f, d, _)| (f, d))
+            .chain(data.labels_multi.iter().map(|(_, _, f, d, _)| (f, d)));
+
+        for (filename, directory) in all_file_refs {
+            let key = (filename.clone(), directory.clone());
+            let dir_id = *dir_ids.entry(directory.clone()).or_insert_with(|| {
+                let id = dwarf.line_strings.add(directory.clone().into_bytes());
+                line_program.add_directory(LineString::LineStringRef(id))
+            });
+            file_ids.entry(key.clone()).or_insert_with(|| {
+                let id = dwarf.line_strings.add(filename.clone().into_bytes());
+                file_index_map.entry(key).or_insert_with(|| {
+                    let idx = next_file_idx;
+                    next_file_idx += 1;
+                    idx
+                });
+                line_program.add_file(LineString::LineStringRef(id), dir_id, None)
+            });
+        }
+
+        line_program.begin_sequence(Some(Address::Constant(code_start)));
+        for (address, filename, directory, line) in &data.lines_multi {
+            let adjusted_addr = address + text_offset;
+            if let Some(file_id) = file_ids.get(&(filename.clone(), directory.clone())) {
+                line_program.row().file = *file_id;
+            }
+            line_program.row().address_offset = adjusted_addr - code_start;
+            line_program.row().line = *line as u64;
+            line_program.generate_row();
+        }
+        line_program.end_sequence(code_end);
+    } else {
+        let dir_id = line_program.default_directory();
+        let file_id =
+            line_program.add_file(LineString::LineStringRef(main_file_string_id), dir_id, None);
+
+        // Add line entries.
+        line_program.begin_sequence(Some(Address::Constant(code_start)));
+        for (address, line) in &data.lines {
+            let adjusted_addr = address + text_offset;
+            line_program.row().file = file_id;
+            line_program.row().address_offset = adjusted_addr - code_start;
+            line_program.row().line = *line as u64;
+            line_program.generate_row();
+        }
+        line_program.end_sequence(code_end);
     }
-    line_program.end_sequence(code_end);
 
     dwarf.unit.line_program = line_program;
 
@@ -169,22 +241,45 @@ fn generate_dwarf_sections(
     );
     root.set(DW_AT_stmt_list, AttributeValue::LineProgramRef);
 
-    // Set labels.
-    for (name, address, line) in &data.labels {
-        let adjusted_addr = address + text_offset;
-        let label_id = dwarf.unit.add(root_id, DW_TAG_label);
-        let label_die = dwarf.unit.get_mut(label_id);
+    // Add label DIEs.
+    if use_multi {
+        for (name, address, filename, directory, line) in &data.labels_multi {
+            let adjusted_addr = address + text_offset;
+            let label_id = dwarf.unit.add(root_id, DW_TAG_label);
+            let label_die = dwarf.unit.get_mut(label_id);
 
-        label_die.set(
-            DW_AT_name,
-            AttributeValue::String(name.clone().into_bytes()),
-        );
-        label_die.set(DW_AT_decl_file, AttributeValue::Data4(0));
-        label_die.set(DW_AT_decl_line, AttributeValue::Data4(*line));
-        label_die.set(
-            DW_AT_low_pc,
-            AttributeValue::Address(Address::Constant(adjusted_addr)),
-        );
+            label_die.set(
+                DW_AT_name,
+                AttributeValue::String(name.clone().into_bytes()),
+            );
+            let decl_file = file_index_map
+                .get(&(filename.clone(), directory.clone()))
+                .copied()
+                .unwrap_or(0);
+            label_die.set(DW_AT_decl_file, AttributeValue::Data4(decl_file));
+            label_die.set(DW_AT_decl_line, AttributeValue::Data4(*line));
+            label_die.set(
+                DW_AT_low_pc,
+                AttributeValue::Address(Address::Constant(adjusted_addr)),
+            );
+        }
+    } else {
+        for (name, address, line) in &data.labels {
+            let adjusted_addr = address + text_offset;
+            let label_id = dwarf.unit.add(root_id, DW_TAG_label);
+            let label_die = dwarf.unit.get_mut(label_id);
+
+            label_die.set(
+                DW_AT_name,
+                AttributeValue::String(name.clone().into_bytes()),
+            );
+            label_die.set(DW_AT_decl_file, AttributeValue::Data4(0));
+            label_die.set(DW_AT_decl_line, AttributeValue::Data4(*line));
+            label_die.set(
+                DW_AT_low_pc,
+                AttributeValue::Address(Address::Constant(adjusted_addr)),
+            );
+        }
     }
 
     // Write sections.
@@ -247,6 +342,8 @@ mod tests {
             directory: "/tmp".to_string(),
             lines: vec![(0, 5), (8, 6)],
             labels: vec![("entrypoint".to_string(), 0, 4)],
+            lines_multi: Vec::new(),
+            labels_multi: Vec::new(),
             code_start: 0,
             code_end: 16,
         };

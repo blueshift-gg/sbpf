@@ -113,7 +113,7 @@ impl AST {
         // iterate through text labels and rodata labels and find the pair
         // of each label and offset
         for (idx, node) in self.nodes.iter().enumerate() {
-            if let ASTNode::Label { label, offset } = node {
+            if let ASTNode::Label { label, offset, .. } = node {
                 label_offset_map.insert(label.name.clone(), *offset);
                 // Also track numeric labels separately for forward/backward resolution
                 numeric_labels.push((label.name.clone(), *offset, idx));
@@ -121,7 +121,7 @@ impl AST {
         }
 
         for node in &self.rodata_nodes {
-            if let ASTNode::ROData { rodata, offset } = node {
+            if let ASTNode::ROData { rodata, offset, .. } = node {
                 label_offset_map.insert(rodata.name.clone(), *offset + self.text_size);
             }
         }
@@ -144,6 +144,7 @@ impl AST {
             if let ASTNode::Instruction {
                 instruction: inst,
                 offset,
+                ..
             } = node
                 && inst.is_syscall()
                 && let Some(Either::Left(syscall_name)) = &inst.imm
@@ -197,6 +198,7 @@ impl AST {
                             label: label.clone(),
                             span: inst.span.clone(),
                             custom_label: None,
+                            file: None,
                         });
                     }
                 } else if inst.opcode == Opcode::Call
@@ -236,6 +238,7 @@ impl AST {
                             label: name.clone(),
                             span: inst.span.clone(),
                             custom_label: None,
+                            file: None,
                         });
                     }
                 }
@@ -270,6 +273,7 @@ impl AST {
                 prog_is_static: program_is_static,
                 arch,
                 debug_sections: Vec::default(),
+                sources: std::collections::HashMap::new(),
             })
         }
     }
@@ -311,6 +315,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         });
 
         let found = ast.get_instruction_at_offset(0);
@@ -335,6 +340,7 @@ mod tests {
         ast.rodata_nodes.push(ASTNode::ROData {
             rodata: rodata.clone(),
             offset: 0,
+            file: None,
         });
 
         let found = ast.get_rodata_at_offset(0);
@@ -378,6 +384,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         });
         ast.set_text_size(8);
         ast.set_rodata_size(0);
@@ -404,6 +411,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         });
         ast.set_text_size(8);
 
@@ -426,6 +434,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: syscall_inst,
             offset: 0,
+            file: None,
         });
 
         let exit_inst = Instruction {
@@ -439,6 +448,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: exit_inst,
             offset: 8,
+            file: None,
         });
 
         ast.set_text_size(16);
@@ -467,6 +477,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: syscall_inst,
             offset: 0,
+            file: None,
         });
 
         let exit_inst = Instruction {
@@ -480,6 +491,7 @@ mod tests {
         ast.nodes.push(ASTNode::Instruction {
             instruction: exit_inst,
             offset: 8,
+            file: None,
         });
 
         ast.set_text_size(16);

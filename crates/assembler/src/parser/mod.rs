@@ -1,6 +1,6 @@
 pub mod common;
 mod default;
-mod directive;
+pub(crate) mod directive;
 mod llvm;
 
 use {
@@ -16,23 +16,65 @@ use {
     pest::{Parser, iterators::Pair},
     pest_derive::Parser,
     sbpf_common::{inst_param::Number, instruction::Instruction},
-    std::collections::HashMap,
+    std::{
+        collections::{HashMap, HashSet},
+        path::{Path, PathBuf},
+    },
 };
 
 #[derive(Parser)]
 #[grammar = "sbpf.pest"]
 pub struct SbpfParser;
 
-/// Context containing all mutable state during parsing
+/// A location in a source file — used both for label definitions and
+/// `.include` directive sites in the include chain.
+#[derive(Debug, Clone)]
+pub struct SourceLocation {
+    pub file: String,
+    pub span: std::ops::Range<usize>,
+}
+
+/// Context containing all mutable state during parsing.
 pub(crate) struct ParseContext<'a> {
     pub ast: &'a mut AST,
     pub const_map: &'a mut HashMap<String, Number>,
-    pub label_spans: &'a mut HashMap<String, std::ops::Range<usize>>,
+    pub label_spans: &'a mut HashMap<String, SourceLocation>,
     pub errors: Vec<CompileError>,
     pub rodata_phase: bool,
     pub text_offset: u64,
     pub rodata_offset: u64,
     pub missing_text_directive: bool,
+
+    /// Directory used to resolve `.include` paths. Updated when we descend
+    /// into an included file (paths are resolved relative to the including
+    /// file's directory).
+    pub base_path: Option<PathBuf>,
+    /// The root base path (directory of the main source file). Used to
+    /// compute include identifiers relative to the project root so that
+    /// nested includes like `modules/a.s` including `b.s` register as
+    /// `modules/b.s` rather than just `b.s`.
+    pub root_base_path: Option<PathBuf>,
+    /// File currently being parsed. For the main source this is the main
+    /// file name; for included files it is the relative path from the
+    /// project root.
+    pub current_file: String,
+    /// Chain of `.include` sites leading to the currently-parsed source.
+    /// Empty when parsing the main file. Used to annotate diagnostics with
+    /// the point(s) where an included file was pulled in.
+    pub include_stack: Vec<SourceLocation>,
+    /// Registry of all sources read so far: `file -> content`. Populated on
+    /// each `.include`, plus the main file. Used by the build command to
+    /// emit multi-file diagnostics.
+    pub files: &'a mut HashMap<String, String>,
+    /// Canonicalized paths of files currently being parsed, used to detect
+    /// cyclic includes. A file is added before recursing and removed after.
+    pub include_set: HashSet<PathBuf>,
+}
+
+/// If the error has no file attribution yet, fill in the given file name
+/// so that errors originating from included files carry the correct attribution.
+pub(crate) fn attach_file_to_error(error: CompileError, file: &str) -> CompileError {
+    error.with_file(file)
 }
 
 /// BPF_X flag: Converts immediate variant opcodes to register variant opcodes
@@ -66,20 +108,42 @@ pub struct ParseResult {
 
     // Debug sections we came across while byteparsing
     pub debug_sections: Vec<DebugSection>,
+
+    /// Registry of every source file read during parsing (main + includes).
+    /// `file -> content`. Empty if `.include` was not used.
+    pub sources: HashMap<String, String>,
 }
 
+/// Parse `source` as a standalone program. `.include` directives inside
+/// `source` will produce an error because no base path is available.
 pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
-    let pairs = SbpfParser::parse(Rule::program, source).map_err(|e| {
-        vec![CompileError::ParseError {
-            error: e.to_string(),
-            span: 0..source.len(),
-            custom_label: None,
-        }]
-    })?;
+    let mut sources_out = HashMap::new();
+    parse_with_base_path(source, arch, None, "source", &mut sources_out)
+}
 
+/// Parse `source` with support for `.include` directives.
+///
+/// `base_path` is the directory used to resolve `.include "<path>"` lines
+/// in the main source. `main_file_name` is the identifier that will be
+/// used for the main file in diagnostics and debug info (typically the
+/// file name without the directory).
+///
+/// `sources_out` is populated with every source read during parsing — the
+/// main file plus any files pulled in via `.include` — keyed by the file
+/// identifier used in diagnostics. It is populated in both the success
+/// and failure paths, so callers can emit multi-file diagnostics even
+/// when assembly fails (e.g. `DuplicateLabel` across includes).
+pub fn parse_with_base_path(
+    source: &str,
+    arch: SbpfArch,
+    base_path: Option<&Path>,
+    main_file_name: &str,
+    sources_out: &mut HashMap<String, String>,
+) -> Result<ParseResult, Vec<CompileError>> {
     let mut ast = AST::new();
     let mut const_map = HashMap::<String, Number>::new();
-    let mut label_spans = HashMap::<String, std::ops::Range<usize>>::new();
+    let mut label_spans = HashMap::<String, SourceLocation>::new();
+    sources_out.insert(main_file_name.to_string(), source.to_string());
 
     let (text_offset, rodata_offset, errors) = {
         let mut ctx = ParseContext {
@@ -91,21 +155,15 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
             text_offset: 0,
             rodata_offset: 0,
             missing_text_directive: false,
+            base_path: base_path.map(|p| p.to_path_buf()),
+            root_base_path: base_path.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf())),
+            current_file: main_file_name.to_string(),
+            include_stack: Vec::new(),
+            files: sources_out,
+            include_set: HashSet::new(),
         };
 
-        for pair in pairs {
-            match pair.as_rule() {
-                Rule::program_default | Rule::program_llvm => {
-                    for statement in pair.into_inner() {
-                        if statement.as_rule() == Rule::EOI {
-                            continue;
-                        }
-                        process_statement(statement, &mut ctx);
-                    }
-                }
-                _ => {}
-            }
-        }
+        process_source(source, &mut ctx);
 
         (ctx.text_offset, ctx.rodata_offset, ctx.errors)
     };
@@ -117,7 +175,50 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
-    ast.build_program(arch)
+    let mut result = ast.build_program(arch)?;
+    result.sources = sources_out.clone();
+    Ok(result)
+}
+
+/// Parse `source` into `ctx`. Used both for the main file and recursively
+/// for included files. Spans in this source are relative to the source
+/// string; `ctx.current_file` identifies which file they belong to.
+pub(crate) fn process_source(source: &str, ctx: &mut ParseContext) {
+    let pairs = match SbpfParser::parse(Rule::program, source) {
+        Ok(p) => p,
+        Err(e) => {
+            // Include the file name in the error so the user knows which
+            // file has the syntax problem — especially important for
+            // included files where the span is relative to that file's
+            // text, not the main source.
+            let error_msg = if ctx.include_stack.is_empty() {
+                e.to_string()
+            } else {
+                format!("in \"{}\": {}", ctx.current_file, e)
+            };
+            ctx.errors.push(CompileError::ParseError {
+                error: error_msg,
+                span: 0..source.len(),
+                file: Some(ctx.current_file.clone()),
+                custom_label: None,
+            });
+            return;
+        }
+    };
+
+    for pair in pairs {
+        match pair.as_rule() {
+            Rule::program_default | Rule::program_llvm => {
+                for statement in pair.into_inner() {
+                    if statement.as_rule() == Rule::EOI {
+                        continue;
+                    }
+                    process_statement(statement, ctx);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
@@ -141,11 +242,12 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                             ctx.ast.nodes.push(ASTNode::Instruction {
                                 instruction,
                                 offset: ctx.text_offset,
+                                file: Some(ctx.current_file.clone()),
                             });
                             ctx.text_offset += size;
                         }
                     }
-                    Err(e) => ctx.errors.push(e),
+                    Err(e) => ctx.errors.push(attach_file_to_error(e, &ctx.current_file)),
                 }
 
                 if ctx.rodata_phase && !ctx.missing_text_directive {
@@ -153,6 +255,7 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     ctx.errors.push(CompileError::MissingTextDirective {
                         span: span_range,
                         custom_label: None,
+                        file: None,
                     });
                 }
             }
@@ -171,7 +274,7 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
         match item.as_rule() {
             Rule::identifier | Rule::numeric_label => match extract_label_from_pair(item) {
                 Ok(label) => label_opt = Some(label),
-                Err(e) => ctx.errors.push(e),
+                Err(e) => ctx.errors.push(attach_file_to_error(e, &ctx.current_file)),
             },
             Rule::directive_inner => {
                 directive_opt = Some(item);
@@ -185,17 +288,32 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
 
     if let Some((label_name, label_span)) = label_opt {
         // Check for duplicate labels
-        if let Some(original_span) = ctx.label_spans.get(&label_name) {
+        if let Some(original) = ctx.label_spans.get(&label_name) {
             ctx.errors.push(CompileError::DuplicateLabel {
                 label: label_name,
                 span: label_span,
-                original_span: original_span.clone(),
+                original_span: original.span.clone(),
+                multi: Some(Box::new(crate::errors::DuplicateLabelMulti {
+                    span_file: ctx.current_file.clone(),
+                    original_span_file: original.file.clone(),
+                    include_chain: ctx
+                        .include_stack
+                        .iter()
+                        .map(|s| (s.file.clone(), s.span.clone()))
+                        .collect(),
+                })),
                 custom_label: Some("Label already defined".to_string()),
+                file: Some(ctx.current_file.clone()),
             });
             return;
         }
-        ctx.label_spans
-            .insert(label_name.clone(), label_span.clone());
+        ctx.label_spans.insert(
+            label_name.clone(),
+            SourceLocation {
+                file: ctx.current_file.clone(),
+                span: label_span.clone(),
+            },
+        );
 
         if ctx.rodata_phase {
             // Handle rodata label with directive
@@ -206,20 +324,22 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                         ctx.ast.rodata_nodes.push(ASTNode::ROData {
                             rodata,
                             offset: ctx.rodata_offset,
+                            file: Some(ctx.current_file.clone()),
                         });
                         ctx.rodata_offset += size;
                     }
-                    Err(e) => ctx.errors.push(e),
+                    Err(e) => ctx.errors.push(attach_file_to_error(e, &ctx.current_file)),
                 }
             } else if let Some(inst_pair) = instruction_opt {
                 if let Err(e) = process_instruction(inst_pair, ctx.const_map, is_llvm) {
-                    ctx.errors.push(e);
+                    ctx.errors.push(attach_file_to_error(e, &ctx.current_file));
                 }
                 if !ctx.missing_text_directive {
                     ctx.missing_text_directive = true;
                     ctx.errors.push(CompileError::MissingTextDirective {
                         span: label_span,
                         custom_label: None,
+                        file: None,
                     });
                 }
             }
@@ -230,6 +350,7 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     span: label_span,
                 },
                 offset: ctx.text_offset,
+                file: Some(ctx.current_file.clone()),
             });
 
             if let Some(inst_pair) = instruction_opt {
@@ -239,10 +360,11 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                         ctx.ast.nodes.push(ASTNode::Instruction {
                             instruction,
                             offset: ctx.text_offset,
+                            file: Some(ctx.current_file.clone()),
                         });
                         ctx.text_offset += size;
                     }
-                    Err(e) => ctx.errors.push(e),
+                    Err(e) => ctx.errors.push(attach_file_to_error(e, &ctx.current_file)),
                 }
             }
         }

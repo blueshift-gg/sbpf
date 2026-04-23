@@ -13,7 +13,7 @@ macro_rules! define_compile_errors {
         pub enum CompileError {
             $(
                 #[error($error_msg)]
-                $variant { $( $field_name: $field_ty ),*, custom_label: Option<String> }
+                $variant { $( $field_name: $field_ty ),*, custom_label: Option<String>, file: Option<String> }
             ),*
         }
 
@@ -31,6 +31,25 @@ macro_rules! define_compile_errors {
                     $(
                         Self::$variant { span, .. } => span,
                     )*
+                }
+            }
+
+            pub fn file(&self) -> Option<&str> {
+                match self {
+                    $(
+                        Self::$variant { file, .. } => file.as_deref(),
+                    )*
+                }
+            }
+
+            pub fn with_file(self, f: &str) -> Self {
+                match self {
+                    $(
+                        Self::$variant { file: None, $( $field_name ),*, custom_label } => {
+                            Self::$variant { $( $field_name ),*, custom_label, file: Some(f.to_string()) }
+                        }
+                    ),*,
+                    other => other,
                 }
             }
         }
@@ -74,17 +93,28 @@ mod tests {
         let err1 = CompileError::TestError1 {
             span: 0..10,
             custom_label: None,
+            file: None,
         };
         assert_eq!(err1.label(), "test label 1");
         assert_eq!(err1.span(), &(0..10));
         assert_eq!(err1.to_string(), "Test error 1");
+        assert_eq!(err1.file(), None);
+
+        let err1 = err1.with_file("test.s");
+        assert_eq!(err1.file(), Some("test.s"));
 
         let err2 = CompileError::TestError2 {
             span: 5..15,
             message: "custom message".to_string(),
             custom_label: Some("custom".to_string()),
+            file: Some("main.s".to_string()),
         };
         assert_eq!(err2.label(), "custom");
         assert_eq!(err2.span(), &(5..15));
+        assert_eq!(err2.file(), Some("main.s"));
+
+        // with_file should not overwrite existing file
+        let err2 = err2.with_file("other.s");
+        assert_eq!(err2.file(), Some("main.s"));
     }
 }

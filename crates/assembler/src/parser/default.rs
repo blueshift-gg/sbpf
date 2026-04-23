@@ -44,6 +44,7 @@ pub(crate) fn process_instruction(
     Err(CompileError::ParseError {
         error: "Invalid instruction".to_string(),
         span: outer_span_range,
+        file: None,
         custom_label: None,
     })
 }
@@ -199,6 +200,7 @@ fn process_alu_reg(
                                     error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode, e),
                                     span: inner_span.start()..inner_span.end(),
                                     custom_label: None,
+                                    file: None,
                                 })?,
                         );
                 }
@@ -279,6 +281,7 @@ fn process_jump_reg(
                                     error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode, e),
                                     span: inner_span.start()..inner_span.end(),
                                     custom_label: None,
+                                    file: None,
                                 })?,
                         );
                 }

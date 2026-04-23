@@ -25,15 +25,21 @@ pub enum ASTNode {
     Label {
         label: Label,
         offset: u64,
+        /// Source file this label was defined in (`None` in single-file mode).
+        file: Option<String>,
     },
     // present in both AST and bytecode
     ROData {
         rodata: ROData,
         offset: u64,
+        /// Source file this rodata was defined in (`None` in single-file mode).
+        file: Option<String>,
     },
     Instruction {
         instruction: Instruction,
         offset: u64,
+        /// Source file this instruction was defined in (`None` in single-file mode).
+        file: Option<String>,
     },
 }
 
@@ -113,6 +119,7 @@ impl ROData {
             return Err(CompileError::OutOfRangeLiteral {
                 span,
                 custom_label: None,
+                file: None,
             });
         }
         Ok(())
@@ -152,6 +159,7 @@ impl ROData {
                     return Err(CompileError::InvalidRODataDirective {
                         span: directive_span.clone(),
                         custom_label: None,
+                        file: None,
                     });
                 }
             }
@@ -203,6 +211,7 @@ impl ROData {
                     return Err(CompileError::InvalidRODataDirective {
                         span: directive_span.clone(),
                         custom_label: None,
+                        file: None,
                     });
                 }
             },
@@ -210,6 +219,7 @@ impl ROData {
                 return Err(CompileError::InvalidRodataDecl {
                     span: self.span.clone(),
                     custom_label: None,
+                    file: None,
                 });
             }
         }
@@ -487,6 +497,7 @@ mod tests {
         let node = ASTNode::Instruction {
             instruction: inst,
             offset: 0,
+            file: None,
         };
 
         let bytecode = node.bytecode();
@@ -504,7 +515,11 @@ mod tests {
             ],
             span: 0..10,
         };
-        let node = ASTNode::ROData { rodata, offset: 0 };
+        let node = ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        };
 
         let bytecode = node.bytecode();
         assert!(bytecode.is_some());
@@ -521,7 +536,11 @@ mod tests {
             ],
             span: 0..13,
         };
-        let node = ASTNode::ROData { rodata, offset: 0 };
+        let node = ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        };
 
         let bytecode = node.bytecode();
         assert!(bytecode.is_some());
@@ -538,7 +557,11 @@ mod tests {
             ],
             span: 0..12,
         };
-        let node = ASTNode::ROData { rodata, offset: 0 };
+        let node = ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        };
 
         let bytecode = node.bytecode();
         assert!(bytecode.is_some());
@@ -557,7 +580,11 @@ mod tests {
             ],
             span: 0..14,
         };
-        let node = ASTNode::ROData { rodata, offset: 0 };
+        let node = ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        };
 
         let bytecode = node.bytecode();
         assert!(bytecode.is_some());
@@ -575,7 +602,11 @@ mod tests {
             ],
             span: 0..21,
         };
-        let node = ASTNode::ROData { rodata, offset: 0 };
+        let node = ASTNode::ROData {
+            rodata,
+            offset: 0,
+            file: None,
+        };
 
         let bytecode = node.bytecode();
         assert!(bytecode.is_some());
@@ -591,6 +622,7 @@ mod tests {
                 span: 0..4,
             },
             offset: 0,
+            file: None,
         };
         assert!(node.bytecode().is_none());
     }
