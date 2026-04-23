@@ -32,6 +32,18 @@ pub const REGISTERED_SYSCALLS: &[&str] = &[
     "sol_log_data",
     "sol_get_processed_sibling_instruction",
     "sol_get_stack_height",
+    "sol_sha512",
+    "sol_curve_multiscalar_mul",
+    "sol_curve_decompress",
+    "sol_curve_pairing_map",
+    "sol_get_epoch_rewards_sysvar",
+    "sol_alt_bn128_group_op",
+    "sol_big_mod_exp",
+    "sol_poseidon",
+    "sol_remaining_compute_units",
+    "sol_alt_bn128_compression",
+    "sol_get_sysvar",
+    "sol_get_epoch_stake",
 ];
 
 pub static SYSCALLS: SyscallMap<'static> =
