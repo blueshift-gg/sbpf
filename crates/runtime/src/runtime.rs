@@ -11,6 +11,7 @@ use {
     sbpf_common::{execute::Vm, instruction::Instruction},
     sbpf_vm::{
         compute::ComputeMeter,
+        memory::Memory,
         vm::{CallFrame, SbpfVm, SbpfVmConfig},
     },
     solana_account::Account,
@@ -115,7 +116,7 @@ impl Runtime {
         }
         self.account_metas = instruction.accounts.clone();
 
-        let (input, pre_lens) = serialize::serialize_parameters(
+        let (input, pre_lens, instruction_data_offset) = serialize::serialize_parameters(
             &self.accounts,
             &self.account_metas,
             &instruction.data,
@@ -144,6 +145,7 @@ impl Runtime {
         );
         vm.compute_meter = ComputeMeter::new(self.config.compute_budget);
         vm.set_entrypoint(self.entrypoint);
+        vm.registers[2] = Memory::INPUT_START + instruction_data_offset as u64;
 
         self.pre_lens = pre_lens;
         self.vm = Some(vm);

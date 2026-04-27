@@ -16,6 +16,7 @@ use {
     request::CpiRequest,
     sbpf_vm::{
         compute::ComputeMeter,
+        memory::Memory,
         vm::{SbpfVm, SbpfVmConfig},
     },
     solana_account::Account,
@@ -109,7 +110,7 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
         })
         .collect();
 
-    let (input, pre_lens) = serialize::serialize_parameters(
+    let (input, pre_lens, instruction_data_offset) = serialize::serialize_parameters(
         ctx.accounts,
         &account_metas,
         &ctx.request.data,
@@ -132,6 +133,7 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
     let mut callee_vm = SbpfVm::new_with_config(instructions, input, rodata, handler, vm_config);
     callee_vm.compute_meter = ComputeMeter::new(ctx.compute_remaining);
     callee_vm.set_entrypoint(entrypoint);
+    callee_vm.registers[2] = Memory::INPUT_START + instruction_data_offset as u64;
 
     loop {
         if let Err(e) = callee_vm.step() {

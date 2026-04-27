@@ -56,7 +56,7 @@ pub fn serialize_parameters(
     account_metas: &[AccountMeta],
     instruction_data: &[u8],
     program_id: &Address,
-) -> RuntimeResult<(Vec<u8>, Vec<usize>)> {
+) -> RuntimeResult<(Vec<u8>, Vec<usize>, usize)> {
     let mut seen: HashMap<Address, usize> = HashMap::new();
     let mut serialize_accounts = Vec::with_capacity(account_metas.len());
 
@@ -105,10 +105,11 @@ pub fn serialize_parameters(
     }
 
     s.write::<u64>((instruction_data.len() as u64).to_le());
+    let instruction_data_offset = s.buffer.len();
     s.write_all(instruction_data);
     s.write_all(program_id.as_ref());
 
-    Ok((s.finish(), pre_lens))
+    Ok((s.finish(), pre_lens, instruction_data_offset))
 }
 
 struct Deserializer<'a> {
@@ -242,7 +243,8 @@ mod tests {
                 is_writable: true,
             },
         ];
-        let (input, pre_lens) = serialize_parameters(&accounts, &metas, b"ix", &PROGRAM).unwrap();
+        let (input, pre_lens, _) =
+            serialize_parameters(&accounts, &metas, b"ix", &PROGRAM).unwrap();
         deserialize_parameters(&mut accounts, &metas, &input, &pre_lens, &PROGRAM).unwrap();
 
         assert_eq!(accounts[&ACCT_1].lamports, 100);
@@ -259,7 +261,8 @@ mod tests {
             is_signer: false,
             is_writable: false,
         }];
-        let (mut input, pre_lens) = serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
+        let (mut input, pre_lens, _) =
+            serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
 
         // Try to update lamports.
         let lamport_offset = 8 + 8 + 32 + 32;
@@ -277,7 +280,8 @@ mod tests {
             is_signer: false,
             is_writable: true,
         }];
-        let (mut input, pre_lens) = serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
+        let (mut input, pre_lens, _) =
+            serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
 
         // Try modifying data.
         let data_offset = 8 + 8 + 32 + 32 + 8 + 8;
@@ -296,7 +300,8 @@ mod tests {
             is_signer: false,
             is_writable: true,
         }];
-        let (mut input, pre_lens) = serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
+        let (mut input, pre_lens, _) =
+            serialize_parameters(&accounts, &metas, b"", &PROGRAM).unwrap();
 
         let lamport_offset = 8 + 8 + 32 + 32;
         input[lamport_offset..lamport_offset + 8].copy_from_slice(&50u64.to_le_bytes());
@@ -316,5 +321,37 @@ mod tests {
         }];
         let result = serialize_parameters(&accounts, &metas, b"", &PROGRAM);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn check_instruction_data_offset() {
+        let accounts = accounts_map(&[(ACCT_1, make_account(PROGRAM, 100, b"data"))]);
+        let metas = vec![AccountMeta {
+            pubkey: ACCT_1,
+            is_signer: false,
+            is_writable: true,
+        }];
+        let ix_data = b"instruction";
+        let (input, _, offset) =
+            serialize_parameters(&accounts, &metas, ix_data, &PROGRAM).unwrap();
+
+        // Check offset points to instruction data
+        assert_eq!(&input[offset..(offset + ix_data.len())], ix_data);
+    }
+
+    #[test]
+    fn check_instruction_data_offset_no_data() {
+        let accounts = accounts_map(&[(ACCT_1, make_account(PROGRAM, 100, b"data"))]);
+        let metas = vec![AccountMeta {
+            pubkey: ACCT_1,
+            is_signer: false,
+            is_writable: true,
+        }];
+        let ix_data = b""; // no data
+        let (input, _, offset) =
+            serialize_parameters(&accounts, &metas, ix_data, &PROGRAM).unwrap();
+
+        // Check offset points to program ID (since data is empty)
+        assert_eq!(&input[offset..offset + 32], PROGRAM.as_ref());
     }
 }
