@@ -168,7 +168,11 @@ fn disassemble_program(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex};
+    use {
+        super::*,
+        hex_literal::hex,
+        sbpf_assembler::{Assembler, AssemblerOption},
+    };
 
     #[test]
     fn test_disassemble_with_labels() {
@@ -745,6 +749,56 @@ r1 = 0x4 ll
 call sol_log_64_
 exit
 "#
+        );
+    }
+
+    #[test]
+    fn test_llvm_roundtrip() {
+        let source = r#"
+.globl entrypoint
+.rodata
+message: .ascii "Hello!"
+.text
+entrypoint:
+  lddw r1, message
+  call helper
+  ja skip
+
+loop:
+  mov64 r1, 0x1
+  ja done
+
+skip:
+  mov64 r1, 0x2
+  ja loop
+
+helper:
+  mov64 r0, 0x7
+  exit
+
+done:
+  exit
+"#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let original = assembler
+            .assemble(source)
+            .expect("failed to assemble source");
+
+        let llvm_disassembly = disassemble_program(
+            Program::from_bytes(&original).expect("failed to parse original bytes"),
+            false,
+            AsmFormat::Llvm,
+            false,
+        )
+        .expect("failed to disassemble original bytes");
+
+        let roundtrip = assembler
+            .assemble(&llvm_disassembly)
+            .expect("failed to reassemble llvm disassembly");
+
+        assert_eq!(
+            original, roundtrip,
+            "llvm disassembly should roundtrip back to identical bytecode"
         );
     }
 }
