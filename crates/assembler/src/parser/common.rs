@@ -1,5 +1,5 @@
 use {
-    super::Rule,
+    super::{Rule, Section},
     crate::errors::CompileError,
     either::Either,
     pest::iterators::Pair,
@@ -28,50 +28,179 @@ pub fn parse_register(pair: Pair<Rule>) -> Result<Register, CompileError> {
     }
 }
 
-pub fn parse_operand(
+pub(crate) fn parse_operand(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
 ) -> Result<Either<String, Number>, CompileError> {
+    let span = pair.as_span();
+    let span_range = span.start()..span.end();
+
+    // operand = { expression }, so unwrap the inner expression
+    let expr = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| CompileError::ParseError {
+            error: "Invalid operand".to_string(),
+            span: span_range.clone(),
+            custom_label: None,
+        })?;
+
+    eval_operand_expression(expr, const_map, label_offset_map)
+}
+
+/// Evaluate an expression used as an instruction operand.
+///
+/// - A bare symbol not found in const_map or label_offset_map is returned as
+///   `Either::Left` for deferred resolution (e.g. `lddw r1, label`).
+/// - Multi-term expressions (arithmetic) resolve all symbols immediately from
+///   const_map and label_offset_map. Labels must be in the same section.
+fn eval_operand_expression(
+    pair: Pair<Rule>,
+    const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
+) -> Result<Either<String, Number>, CompileError> {
+    let span = pair.as_span();
+    let span_range = span.start()..span.end();
+
+    let mut terms: Vec<Number> = Vec::new();
+    let mut ops: Vec<&str> = Vec::new();
+    let mut is_single_symbol = false;
+    let mut single_symbol_name = String::new();
+    let mut label_sections: Vec<(String, Section)> = Vec::new();
+
+    let inner_pairs: Vec<_> = pair.into_inner().collect();
+
+    // Check if this is a single bare symbol (no operators)
+    if inner_pairs.len() == 1 && inner_pairs[0].as_rule() == Rule::term {
+        let term_inners: Vec<_> = inner_pairs[0].clone().into_inner().collect();
+        if term_inners.len() == 1 && term_inners[0].as_rule() == Rule::symbol {
+            is_single_symbol = true;
+            single_symbol_name = term_inners[0].as_str().to_string();
+        }
+    }
+
+    // For a bare symbol not in const_map, defer resolution
+    if is_single_symbol {
+        if let Some(value) = const_map.get(&single_symbol_name) {
+            return Ok(Either::Right(value.clone()));
+        }
+        // Not in const_map — return as unresolved for build_program to handle
+        return Ok(Either::Left(single_symbol_name));
+    }
+
+    // Multi-term expression: resolve everything now
+    for inner in inner_pairs {
+        match inner.as_rule() {
+            Rule::term => {
+                let val =
+                    eval_operand_term(inner, const_map, label_offset_map, &mut label_sections)?;
+                terms.push(val);
+            }
+            Rule::bin_op => {
+                ops.push(match inner.as_str() {
+                    "+" => "+",
+                    "-" => "-",
+                    "*" => "*",
+                    "/" => "/",
+                    _ => "+",
+                });
+            }
+            _ => {}
+        }
+    }
+
+    // Bounds check: all labels in the expression must be from the same section
+    if label_sections.len() > 1 {
+        let first_section = label_sections[0].1;
+        for (name, section) in &label_sections[1..] {
+            if *section != first_section {
+                return Err(CompileError::CrossSectionArithmetic {
+                    label1: label_sections[0].0.clone(),
+                    label2: name.clone(),
+                    span: span_range,
+                    custom_label: None,
+                });
+            }
+        }
+    }
+
+    // Evaluate left-to-right
+    if terms.is_empty() {
+        return Err(CompileError::ParseError {
+            error: "Invalid operand expression".to_string(),
+            span: span_range,
+            custom_label: None,
+        });
+    }
+
+    let mut result = terms[0].clone();
+    for (i, op) in ops.iter().enumerate() {
+        if i + 1 < terms.len() {
+            let rhs = terms[i + 1].clone();
+            result = match *op {
+                "+" => result + rhs,
+                "-" => result - rhs,
+                "*" => result * rhs,
+                "/" => result / rhs,
+                _ => result,
+            };
+        }
+    }
+
+    Ok(Either::Right(result))
+}
+
+fn eval_operand_term(
+    pair: Pair<Rule>,
+    const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
+    label_sections: &mut Vec<(String, Section)>,
+) -> Result<Number, CompileError> {
     let span = pair.as_span();
     let span_range = span.start()..span.end();
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::number => return Ok(Either::Right(parse_number(inner)?)),
+            Rule::expression => {
+                // Parenthesized sub-expression — recurse, but must fully resolve
+                let result = eval_operand_expression(inner, const_map, label_offset_map)?;
+                return match result {
+                    Either::Right(val) => Ok(val),
+                    Either::Left(name) => Err(CompileError::ParseError {
+                        error: format!(
+                            "Cannot use unresolved symbol '{}' in arithmetic expression",
+                            name
+                        ),
+                        span: span_range,
+                        custom_label: None,
+                    }),
+                };
+            }
+            Rule::number => {
+                return parse_number(inner);
+            }
             Rule::symbol => {
                 let name = inner.as_str().to_string();
                 if let Some(value) = const_map.get(&name) {
-                    return Ok(Either::Right(value.clone()));
+                    return Ok(value.clone());
                 }
-                return Ok(Either::Left(name));
-            }
-            Rule::operand_expr => {
-                let mut sym_name = None;
-                let mut num_value = None;
-
-                for expr_inner in inner.into_inner() {
-                    match expr_inner.as_rule() {
-                        Rule::symbol => sym_name = Some(expr_inner.as_str().to_string()),
-                        Rule::number => num_value = Some(parse_number(expr_inner)?),
-                        _ => {}
-                    }
+                if let Some((value, section)) = label_offset_map.get(&name) {
+                    label_sections.push((name, *section));
+                    return Ok(value.clone());
                 }
-
-                if let (Some(sym), Some(num)) = (sym_name, num_value) {
-                    if let Some(base_value) = const_map.get(&sym) {
-                        let result = base_value.clone() + num;
-                        return Ok(Either::Right(result));
-                    } else {
-                        return Ok(Either::Left(sym));
-                    }
-                }
+                return Err(CompileError::ParseError {
+                    error: format!("Undefined symbol '{}' in arithmetic expression", name),
+                    span: inner.as_span().start()..inner.as_span().end(),
+                    custom_label: None,
+                });
             }
             _ => {}
         }
     }
 
     Err(CompileError::ParseError {
-        error: "Invalid operand".to_string(),
+        error: "Invalid term in expression".to_string(),
         span: span_range,
         custom_label: None,
     })
@@ -201,9 +330,10 @@ pub fn process_exit(span: std::ops::Range<usize>) -> Result<Instruction, Compile
     })
 }
 
-pub fn process_lddw(
+pub(crate) fn process_lddw(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
+    label_offset_map: &HashMap<String, (Number, Section)>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
     let mut dst = None;
@@ -212,7 +342,7 @@ pub fn process_lddw(
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::register => dst = Some(parse_register(inner)?),
-            Rule::operand => imm = Some(parse_operand(inner, const_map)?),
+            Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             _ => {}
         }
     }

@@ -16,6 +16,7 @@ pub fn process_directive_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
 }
 
 pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
+    let pair_clone = pair.clone();
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::directive_globl => {
@@ -86,6 +87,32 @@ pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                         });
                     }
                     _ => {}
+                }
+            }
+            // Data directives (.ascii, .byte, etc.) — handle as rodata if
+            // we're in the rodata phase and there's a pending label.
+            Rule::directive_ascii
+            | Rule::directive_byte
+            | Rule::directive_short
+            | Rule::directive_word
+            | Rule::directive_int
+            | Rule::directive_long
+            | Rule::directive_quad => {
+                if ctx.rodata_phase
+                    && let Some((label_name, label_span)) = ctx.pending_rodata_label.take()
+                {
+                    match process_rodata_directive(label_name, label_span, pair_clone) {
+                        Ok(rodata) => {
+                            let size = rodata.get_size();
+                            ctx.ast.rodata_nodes.push(ASTNode::ROData {
+                                rodata,
+                                offset: ctx.rodata_offset,
+                            });
+                            ctx.rodata_offset += size;
+                        }
+                        Err(e) => ctx.errors.push(e),
+                    }
+                    return;
                 }
             }
             _ => {}

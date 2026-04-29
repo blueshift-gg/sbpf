@@ -31,9 +31,8 @@ bin_op     = { "+" | "-" | "*" | "/" }
 term       = { "(" ~ expression ~ ")" | number | symbol }
 expression = { term ~ (bin_op ~ term)* }
 
-// Operand.
-operand_expr = { symbol ~ "+" ~ number }
-operand      = { operand_expr | number | symbol }
+// Operand (full arithmetic expression support for label math, .equ constants, etc.)
+operand = { expression }
 
 // Memory offset.
 memory_op     = { "+" | "-" }
@@ -70,7 +69,7 @@ directive_section = {
 // Data directives
 directive_ascii = { ".ascii" ~ string_literal }
 directive_byte  = { ".byte" ~ number ~ ("," ~ number)* }
-directive_short = { ".short" ~ number ~ ("," ~ number)* }
+directive_short = { (".short" | ".half") ~ number ~ ("," ~ number)* }
 directive_word  = { ".word" ~ number ~ ("," ~ number)* }
 directive_int   = { ".int" ~ number ~ ("," ~ number)* }
 directive_long  = { ".long" ~ number ~ ("," ~ number)* }
