@@ -46,7 +46,7 @@ members = [
 exclude = ["examples"]
 
 [workspace.package]
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/blueshift-gg/sbpf"
