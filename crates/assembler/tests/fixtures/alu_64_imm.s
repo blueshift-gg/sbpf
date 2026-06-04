@@ -7,7 +7,6 @@ entrypoint:
   div64 r4, 0x3
   // sdiv64 r5, 0x4
   mod64 r6, 0x7
-  smod64 r7, 0x6
   or64 r8, 0xff
   and64 r9, 0xf0
   xor64 r1, 0x1

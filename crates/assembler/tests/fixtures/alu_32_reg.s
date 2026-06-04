@@ -8,7 +8,6 @@ entrypoint:
   div32 r4, r1
   // sdiv32 r5, r6
   mod32 r6, r1
-  smod32 r7, r8
   or32 r8, r9
   and32 r9, r1
   xor32 r1, r2
