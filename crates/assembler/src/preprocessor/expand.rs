@@ -16,12 +16,6 @@ const MAX_EXPANSION_DEPTH: u32 = 100;
 /// Global expansion counter for `\@` unique IDs
 static EXPANSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Reset the expansion counter (for testing)
-#[cfg(test)]
-pub(crate) fn reset_expansion_counter() {
-    EXPANSION_COUNTER.store(0, Ordering::Relaxed);
-}
-
 /// An expansion error paired with its source origin
 #[derive(Debug)]
 pub(crate) struct ExpandError {
@@ -527,7 +521,6 @@ mod tests {
 
     #[test]
     fn test_simple_macro_expansion() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro NOP", 1),
             make_line("    mov64 r0, 0", 2),
@@ -541,7 +534,6 @@ mod tests {
 
     #[test]
     fn test_macro_with_args() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro MOV dst, src", 1),
             make_line("    mov64 \\dst, \\src", 2),
@@ -555,7 +547,6 @@ mod tests {
 
     #[test]
     fn test_macro_with_default() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro SET reg, val=0", 1),
             make_line("    mov64 \\reg, \\val", 2),
@@ -570,7 +561,6 @@ mod tests {
 
     #[test]
     fn test_macro_unique_id() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro LOOP", 1),
             make_line("loop_\\@:", 2),
@@ -591,7 +581,6 @@ mod tests {
 
     #[test]
     fn test_macro_concatenation() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro DEF_STR name, text", 1),
             make_line("\\name:", 2),
@@ -607,7 +596,6 @@ mod tests {
 
     #[test]
     fn test_nested_macro_expansion() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro INNER val", 1),
             make_line("    mov64 r0, \\val", 2),
@@ -666,7 +654,6 @@ mod tests {
 
     #[test]
     fn test_vararg() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro LOG fmt, args:vararg", 1),
             make_line("    .ascii \\fmt", 2),
@@ -705,7 +692,6 @@ mod tests {
 
     #[test]
     fn test_irp() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".irp reg, r1, r2, r3", 1),
             make_line("    mov64 \\reg, 0", 2),
@@ -736,7 +722,6 @@ mod tests {
 
     #[test]
     fn test_nested_irp() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".irp reg, r1, r2", 1),
             make_line("    .irp val, 0x1, 0x2", 2),
@@ -759,7 +744,6 @@ mod tests {
 
     #[test]
     fn test_rept_inside_irp() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".irp r, r1, r2", 1),
             make_line("    .rept 2", 2),
@@ -782,7 +766,6 @@ mod tests {
 
     #[test]
     fn test_irp_inside_rept() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".rept 2", 1),
             make_line("    .irp r, r1, r2", 2),
@@ -805,7 +788,6 @@ mod tests {
 
     #[test]
     fn test_rept_count_from_macro_param() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro TEST num", 1),
             make_line("    .rept \\num", 2),
@@ -828,7 +810,6 @@ mod tests {
 
     #[test]
     fn test_irp_values_from_macro_vararg() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro LOAD regs:vararg", 1),
             make_line("    .irp r, \\regs", 2),
@@ -865,7 +846,6 @@ mod tests {
 
     #[test]
     fn test_full_example_from_spec() {
-        reset_expansion_counter();
         let lines = vec![
             make_line(".macro DEF_STR name, text", 1),
             make_line("\\name:", 2),
