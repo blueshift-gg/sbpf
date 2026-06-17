@@ -12,17 +12,17 @@
 				"import": "./dist/node/sbpf_assembler.js",
 				"require": "./dist/node/sbpf_assembler.js"
 			},
-			"browser": {
+			"import": {
 				"types": "./dist/web/sbpf_assembler.d.ts",
 				"default": "./dist/web/sbpf_assembler.js"
-			},
-			"import": {
-				"types": "./dist/bundler/sbpf_assembler.d.ts",
-				"default": "./dist/bundler/sbpf_assembler.js"
 			},
 			"require": {
 				"types": "./dist/node/sbpf_assembler.d.ts",
 				"default": "./dist/node/sbpf_assembler.js"
+			},
+			"default": {
+				"types": "./dist/web/sbpf_assembler.d.ts",
+				"default": "./dist/web/sbpf_assembler.js"
 			}
 		},
 		"./bundler": "./dist/bundler/sbpf_assembler.js",
