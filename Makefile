@@ -6,9 +6,11 @@ node:
 bundler:
 	wasm-pack build crates/assembler --release --no-pack --out-dir ../../dist/bundler --target bundler
 	rm dist/bundler/.gitignore
+	printf '{"type": "module"}' > dist/bundler/package.json
 web:
 	wasm-pack build crates/assembler --release --no-pack --out-dir ../../dist/web --target web
 	rm dist/web/.gitignore
+	printf '{"type": "module"}' > dist/web/package.json
 
 .PHONY: test-examples
 test-examples:
