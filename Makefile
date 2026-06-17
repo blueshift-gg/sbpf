@@ -1,16 +1,16 @@
 build:
 	make node; make bundler; make web
 node:
-	wasm-pack build crates/assembler --release --no-pack --out-dir ../../dist/node --target nodejs
-	rm dist/node/.gitignore
+	wasm-pack build crates/assembler --release --no-pack --out-dir ../../npm/dist/node --target nodejs
+	rm npm/dist/node/.gitignore
 bundler:
-	wasm-pack build crates/assembler --release --no-pack --out-dir ../../dist/bundler --target bundler
-	rm dist/bundler/.gitignore
-	printf '{"type": "module"}' > dist/bundler/package.json
+	wasm-pack build crates/assembler --release --no-pack --out-dir ../../npm/dist/bundler --target bundler
+	rm npm/dist/bundler/.gitignore
+	printf '{"type": "module"}' > npm/dist/bundler/package.json
 web:
-	wasm-pack build crates/assembler --release --no-pack --out-dir ../../dist/web --target web
-	rm dist/web/.gitignore
-	printf '{"type": "module"}' > dist/web/package.json
+	wasm-pack build crates/assembler --release --no-pack --out-dir ../../npm/dist/web --target web
+	rm npm/dist/web/.gitignore
+	printf '{"type": "module"}' > npm/dist/web/package.json
 
 .PHONY: test-examples
 test-examples:
@@ -35,4 +35,4 @@ release:
 		fi; \
 	done
 release-npm:
-	npm publish --access public
+	cd npm && npm publish --access public
