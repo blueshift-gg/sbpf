@@ -1,0 +1,19 @@
+[package]
+name = "sbpf-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Intermediate representation and control-flow graph for SBPF programs"
+keywords = ["solana", "bpf", "ir", "cfg"]
+categories = ["development-tools", "compilers"]
+rust-version.workspace = true
+
+[lib]
+name = "sbpf_ir"
+
+[dependencies]
+either = { workspace = true }
+sbpf-common = { workspace = true }
+smallvec = { workspace = true }

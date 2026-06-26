@@ -114,6 +114,7 @@ test_2:              // line 17
             filename: "test.s".to_string(),
             directory: "/test".to_string(),
         }),
+        ..Default::default()
     };
     let assembler = sbpf_assembler::Assembler::new(options);
     let bytecode = assembler
