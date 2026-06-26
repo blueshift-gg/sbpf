@@ -197,7 +197,11 @@ pub fn build(args: BuildArgs) -> Result<()> {
             None
         };
 
-        let options = AssemblerOption { arch, debug_mode };
+        let options = AssemblerOption {
+            arch,
+            debug_mode,
+            ..AssemblerOption::default()
+        };
         let assembler = Assembler::new(options);
         let resolver = FsFileResolver::new();
 

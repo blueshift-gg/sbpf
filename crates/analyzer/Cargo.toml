@@ -1,0 +1,22 @@
+[package]
+name = "sbpf-transform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Transform passes for SBPF assembly programs"
+keywords = ["solana", "bpf", "analysis", "cfg"]
+categories = ["development-tools", "compilers"]
+rust-version.workspace = true
+
+[lib]
+name = "sbpf_transform"
+
+[dependencies]
+sbpf-common = { workspace = true }
+sbpf-ir = { workspace = true }
+smallvec = { workspace = true }
+
+[dev-dependencies]
+either = { workspace = true }

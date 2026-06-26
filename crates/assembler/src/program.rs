@@ -3,7 +3,7 @@ use {
         debug::{self, DebugData, reuse_debug_sections},
         dynsym::{DynamicSymbol, RelDyn, RelocationType},
         header::{ElfHeader, ProgramHeader},
-        parser::ParseResult,
+        parser::ProgramLayout,
         section::{
             DebugSection, DynStrSection, DynSymSection, DynamicSection, NullSection, RelDynSection,
             Section, SectionType, ShStrTabSection,
@@ -21,7 +21,7 @@ pub struct Program {
 
 impl Program {
     pub fn from_parse_result(
-        ParseResult {
+        ProgramLayout {
             code_section,
             data_section,
             dynamic_symbols,
@@ -29,7 +29,7 @@ impl Program {
             prog_is_static,
             arch,
             debug_sections,
-        }: ParseResult,
+        }: ProgramLayout,
         debug_data: Option<DebugData>,
     ) -> Self {
         let mut elf_header = ElfHeader::new();
