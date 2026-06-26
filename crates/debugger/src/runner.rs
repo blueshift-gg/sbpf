@@ -50,6 +50,7 @@ pub fn load_session_from_asm(
             filename,
             directory,
         }),
+        ..AssemblerOption::default()
     };
     let assembler = Assembler::new(options);
     let bytecode = assembler

@@ -14,6 +14,7 @@ pub mod macros;
 pub mod ast;
 pub mod astnode;
 pub mod dynsym;
+pub mod optimizer;
 
 // ELF header, program, section
 pub mod header;
@@ -28,10 +29,11 @@ pub mod debug;
 pub mod wasm;
 
 pub use self::{
+    ast::OptimizationConfig,
     astnode::ASTNode,
     debug::DebugData,
     errors::CompileError,
-    parser::{ParseResult, Token, parse},
+    parser::{ProgramLayout, Token, parse, parse_with_optimization},
     preprocessor::{
         FileResolver, FsFileResolver, MockFileResolver, PreprocessResult, preprocess,
         source_map::{FileRegistry, SourceMap, SourceOrigin},
@@ -76,6 +78,8 @@ pub struct AssemblerOption {
     pub arch: SbpfArch,
     /// Optional debug mode configuration
     pub debug_mode: Option<DebugMode>,
+    /// Optional optimization and CFG diagnostic configuration
+    pub optimization: OptimizationConfig,
 }
 
 /// An error enriched with source location information from preprocessing.
@@ -124,7 +128,11 @@ impl Assembler {
     /// Assemble source code directly (no preprocessing).
     /// This is the original API -- macros and includes are not supported.
     pub fn assemble(&self, source: &str) -> Result<Vec<u8>, Vec<CompileError>> {
-        let parse_result = match parse(source, self.options.arch) {
+        let parse_result = match parse_with_optimization(
+            source,
+            self.options.arch,
+            self.options.optimization.clone(),
+        ) {
             Ok(result) => result,
             Err(errors) => {
                 return Err(errors);
@@ -182,7 +190,11 @@ impl Assembler {
         let source_map = &preprocess_result.source_map;
 
         // Parse the expanded source
-        let parse_result = match parse(expanded, self.options.arch) {
+        let parse_result = match parse_with_optimization(
+            expanded,
+            self.options.arch,
+            self.options.optimization.clone(),
+        ) {
             Ok(result) => result,
             Err(errors) => {
                 // Extract file registry from source map before moving errors
@@ -261,7 +273,7 @@ type LabelEntry = (String, u64, u32); // (label, offset, line)
 /// Helper function to collect line and label entries
 fn collect_line_and_label_entries(
     source: &str,
-    parse_result: &ParseResult,
+    parse_result: &ProgramLayout,
 ) -> (Vec<LineEntry>, Vec<LabelEntry>) {
     let mut files: Files<&str> = Files::new();
     let file_id = files.add("source", source);
@@ -318,6 +330,7 @@ pub fn assemble_with_debug_data(
             filename: filename.to_string(),
             directory: directory.to_string(),
         }),
+        ..AssemblerOption::default()
     };
     let assembler = Assembler::new(options);
     assembler.assemble(source)

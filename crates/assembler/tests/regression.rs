@@ -126,6 +126,7 @@ fn test_regression() {
                 filename: case.file.clone(),
                 directory: "/test".to_string(),
             }),
+            ..Default::default()
         };
         let debug_assembler = sbpf_assembler::Assembler::new(debug_options);
         let debug_actual = match debug_assembler.assemble(&source) {

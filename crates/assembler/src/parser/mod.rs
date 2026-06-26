@@ -6,7 +6,7 @@ mod llvm;
 use {
     crate::{
         SbpfArch,
-        ast::AST,
+        ast::{AST, OptimizationConfig, build_program},
         astnode::{ASTNode, Label},
         dynsym::{DynamicSymbolMap, RelDynMap},
         errors::CompileError,
@@ -62,7 +62,7 @@ pub enum Token {
     VectorLiteral(Vec<Number>, std::ops::Range<usize>),
 }
 
-pub struct ParseResult {
+pub struct ProgramLayout {
     // TODO: parse result is basically 1. static part 2. dynamic part of the program
     pub code_section: CodeSection,
 
@@ -82,7 +82,15 @@ pub struct ParseResult {
     pub debug_sections: Vec<DebugSection>,
 }
 
-pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileError>> {
+pub fn parse(source: &str, arch: SbpfArch) -> Result<ProgramLayout, Vec<CompileError>> {
+    parse_with_optimization(source, arch, OptimizationConfig::default())
+}
+
+pub fn parse_with_optimization(
+    source: &str,
+    arch: SbpfArch,
+    optimization: OptimizationConfig,
+) -> Result<ProgramLayout, Vec<CompileError>> {
     let pairs = SbpfParser::parse(Rule::program, source).map_err(|e| {
         // Extract the actual byte position from the pest error so the source
         // map can resolve it back to the original file/line.
@@ -170,7 +178,7 @@ pub fn parse(source: &str, arch: SbpfArch) -> Result<ParseResult, Vec<CompileErr
     ast.set_text_size(text_offset);
     ast.set_rodata_size(rodata_offset);
 
-    ast.build_program(arch)
+    build_program(ast, arch, optimization)
 }
 
 /// Pass 1: lightweight scan of the parse tree to collect all label offsets.
