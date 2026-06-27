@@ -219,4 +219,143 @@ mod tests {
             span: 0..0,
         }
     }
+
+    #[test]
+    fn test_remove_dead_functions_keeps_self_recursive_function() {
+        let self_call = call_instruction("entrypoint");
+        let exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&self_call),
+            InputNode::Instruction(&exit),
+        ];
+        let function_entries = HashSet::from(["entrypoint".to_string()]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+
+        // Verify the self-loop edge was actually created before running DFE.
+        // entrypoint is block 0; the call back to itself must produce edge 0 -> 0.
+        assert!(
+            cfg.successors(0).contains(&0),
+            "self-loop edge 0 -> 0 must exist for a self-recursive call"
+        );
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert!(
+            removed.is_empty(),
+            "self-recursive function should not be removed"
+        );
+        assert_eq!(cfg.functions().len(), 1);
+        assert_eq!(cfg.functions()[0].name(), "entrypoint");
+    }
+
+    #[test]
+    fn test_remove_dead_functions_keeps_mutually_recursive_functions() {
+        let call_helper = call_instruction("helper");
+        let entry_exit = instruction(Opcode::Exit, None);
+        let call_back = call_instruction("entrypoint");
+        let helper_exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&call_helper),
+            InputNode::Instruction(&entry_exit),
+            InputNode::Label("helper"),
+            InputNode::Instruction(&call_back),
+            InputNode::Instruction(&helper_exit),
+        ];
+        let function_entries = HashSet::from(["entrypoint".to_string(), "helper".to_string()]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+
+        // entrypoint=block 0, helper=block 1.
+        // Verify both directions of the cycle exist before running DFE.
+        assert!(
+            cfg.successors(0).contains(&1),
+            "entrypoint must have a call edge to helper"
+        );
+        assert!(
+            cfg.successors(1).contains(&0),
+            "helper must have a back-edge to entrypoint"
+        );
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert!(
+            removed.is_empty(),
+            "mutually recursive functions should not be removed"
+        );
+        assert_eq!(cfg.functions().len(), 2);
+    }
+
+    #[test]
+    fn test_remove_dead_functions_removes_unreachable_self_recursive_function() {
+        let entry_exit = instruction(Opcode::Exit, None);
+        let dead_self_call = call_instruction("dead");
+        let dead_exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&entry_exit),
+            InputNode::Label("dead"),
+            InputNode::Instruction(&dead_self_call),
+            InputNode::Instruction(&dead_exit),
+        ];
+        let function_entries = HashSet::from(["entrypoint".to_string(), "dead".to_string()]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+
+        // entrypoint=block 0, dead=block 1. Verify the self-loop exists before DFE.
+        assert!(
+            cfg.successors(1).contains(&1),
+            "dead function must have a self-loop edge 1 -> 1"
+        );
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].name, "dead");
+        assert_eq!(cfg.functions().len(), 1);
+        assert_eq!(cfg.functions()[0].name(), "entrypoint");
+    }
+
+    #[test]
+    fn test_remove_dead_functions_removes_unreachable_mutually_recursive_functions() {
+        let entry_exit = instruction(Opcode::Exit, None);
+        let call_b = call_instruction("dead_b");
+        let dead_a_exit = instruction(Opcode::Exit, None);
+        let call_a = call_instruction("dead_a");
+        let dead_b_exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&entry_exit),
+            InputNode::Label("dead_a"),
+            InputNode::Instruction(&call_b),
+            InputNode::Instruction(&dead_a_exit),
+            InputNode::Label("dead_b"),
+            InputNode::Instruction(&call_a),
+            InputNode::Instruction(&dead_b_exit),
+        ];
+        let function_entries = HashSet::from([
+            "entrypoint".to_string(),
+            "dead_a".to_string(),
+            "dead_b".to_string(),
+        ]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+
+        // entrypoint=block 0, dead_a=block 1, dead_b=block 2.
+        // Verify both directions of the dead cycle exist before DFE.
+        assert!(
+            cfg.successors(1).contains(&2),
+            "dead_a must have a call edge to dead_b"
+        );
+        assert!(
+            cfg.successors(2).contains(&1),
+            "dead_b must have a back-edge to dead_a"
+        );
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert_eq!(removed.len(), 2);
+        assert!(removed.iter().any(|f| f.name == "dead_a"));
+        assert!(removed.iter().any(|f| f.name == "dead_b"));
+        assert_eq!(cfg.functions().len(), 1);
+        assert_eq!(cfg.functions()[0].name(), "entrypoint");
+    }
 }
