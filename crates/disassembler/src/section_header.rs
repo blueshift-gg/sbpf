@@ -139,6 +139,13 @@ impl SectionHeader {
             });
         }
 
+        // v3 binaries omit the section header table entirely. With no section
+        // headers there are no names to resolve, so return empty here; the
+        // caller reconstructs .text/.rodata views from the program headers.
+        if section_headers.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
         let elf_header = elf_file.elf_header();
         let e_shstrndx = elf_header.e_shstrndx.get(endian);
         let shstrndx = &section_headers[e_shstrndx as usize];

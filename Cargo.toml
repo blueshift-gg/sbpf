@@ -46,7 +46,7 @@ members = [
 exclude = ["examples"]
 
 [workspace.package]
-version = "0.1.9"
+version = "0.2.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/blueshift-gg/sbpf"
@@ -86,10 +86,10 @@ solana-epoch-schedule = "3.0.0"
 solana-system-interface = { version = "3.1.0", features = ["bincode"] }
 solana-program-pack = "3.1.0"
 solana-last-restart-slot = "3.0.0"
-sbpf-assembler = { path = "crates/assembler", version = "0.1.8" }
-sbpf-disassembler = { path = "crates/disassembler", version = "0.1.8" }
-sbpf-debugger = { path = "crates/debugger", version = "0.1.8" }
-sbpf-common = { path = "crates/common", version = "0.1.8" }
-sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.1.8" }
-sbpf-runtime = { path = "crates/runtime", version = "0.1.8" }
-sbpf-vm = { path = "crates/vm", version = "0.1.8" }
+sbpf-assembler = { path = "crates/assembler", version = "0.2.2" }
+sbpf-disassembler = { path = "crates/disassembler", version = "0.2.2" }
+sbpf-debugger = { path = "crates/debugger", version = "0.2.2" }
+sbpf-common = { path = "crates/common", version = "0.2.2" }
+sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.2.2" }
+sbpf-runtime = { path = "crates/runtime", version = "0.2.2" }
+sbpf-vm = { path = "crates/vm", version = "0.2.2" }

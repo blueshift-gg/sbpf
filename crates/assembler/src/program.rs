@@ -121,30 +121,10 @@ impl Program {
         current_offset += padding;
 
         if arch.is_v3() {
-            // Generate debug sections
-            let debug_sections = Self::generate_debug_sections(
-                debug_sections,
-                &debug_data,
-                text_offset,
-                &mut section_names,
-                &mut current_offset,
-            );
-
-            for debug_section in debug_sections {
-                sections.push(debug_section);
-            }
-
-            let mut shstrtab_section = ShStrTabSection::new(
-                section_names
-                    .iter()
-                    .map(|name| name.len() + 1)
-                    .sum::<usize>() as u32,
-                section_names,
-            );
-            shstrtab_section.set_offset(current_offset);
-            current_offset += shstrtab_section.size();
-            sections.push(SectionType::ShStrTab(shstrtab_section));
-
+            // v3 programs are loaded entirely through program headers; the
+            // loader never reads the section header table. We therefore omit
+            // section headers along with the .shstrtab and debug sections that
+            // exist only to support them, keeping v3 binaries minimal.
             if has_rodata {
                 // 2 headers: rodata (PF_R) then bytecode (PF_X)
                 let rodata_offset = base_offset;
@@ -376,11 +356,14 @@ impl Program {
             sections.push(SectionType::ShStrTab(shstrtab_section));
         }
 
-        // Update section header offset in ELF header
-        let padding = (8 - (current_offset % 8)) % 8;
-        elf_header.e_shoff = current_offset + padding;
-        elf_header.e_shnum = sections.len() as u16;
-        elf_header.e_shstrndx = sections.len() as u16 - 1;
+        // Update section header offset in ELF header. v3 binaries carry no
+        // section header table, so these fields stay zeroed.
+        if !arch.is_v3() {
+            let padding = (8 - (current_offset % 8)) % 8;
+            elf_header.e_shoff = current_offset + padding;
+            elf_header.e_shnum = sections.len() as u16;
+            elf_header.e_shstrndx = sections.len() as u16 - 1;
+        }
 
         Self {
             elf_header,
@@ -407,9 +390,12 @@ impl Program {
             bytes.extend(section.bytecode());
         }
 
-        // Emit section headers
-        for section in &self.sections {
-            bytes.extend(section.section_header_bytecode());
+        // Emit section headers (omitted when there is no section header table,
+        // e.g. v3 binaries).
+        if self.elf_header.e_shoff != 0 {
+            for section in &self.sections {
+                bytes.extend(section.section_header_bytecode());
+            }
         }
 
         bytes

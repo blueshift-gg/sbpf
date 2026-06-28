@@ -155,9 +155,12 @@ edition = "2021"
 [dependencies]
 
 [dev-dependencies]
-mollusk-svm = "0.7.2"
-solana-instruction = "3.1.0"
-solana-address = "2.0.0"
+
+
+mollusk-svm = "0.13.3"
+solana-account = "3.4.0"
+solana-address = "2.6.1"
+solana-instruction = "3.3.0"
 
 [features]
 test-sbf = []"#;

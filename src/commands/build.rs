@@ -28,7 +28,7 @@ pub struct BuildArgs {
     #[arg(
         short = 'a',
         long,
-        default_value = "v0",
+        default_value = "v3",
         help = "Target architecture (v0 or v3)"
     )]
     arch: ArchArg,
@@ -38,8 +38,8 @@ pub struct BuildArgs {
 
 #[derive(Clone, Copy, ValueEnum, Default)]
 pub enum ArchArg {
-    #[default]
     V0,
+    #[default]
     V3,
 }
 
@@ -261,7 +261,14 @@ pub fn build(args: BuildArgs) -> Result<()> {
 
     // Processing directories
     let src_path = Path::new(src);
-    for entry in src_path.read_dir()? {
+    let entries = src_path.read_dir().map_err(|e| {
+        Error::msg(format!(
+            "Failed to read '{}' directory: {}. Run this command from the root of an sbpf project \
+             (the directory containing 'src'), or create one with `sbpf init`.",
+            src, e
+        ))
+    })?;
+    for entry in entries {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir()

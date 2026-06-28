@@ -34,12 +34,6 @@
 
 .equ ACCOUNT_STORAGE_OVERHEAD, 0x80                               # 128
 
-
-# NOTE: We are using a DEFAULT_RENT_EXEMPTION_THRESHOLD value of 2 to avoid floating-point math.
-# Check here for more details: https://github.com/solana-foundation/solana-improvement-documents/pull/194
-.equ DEFAULT_RENT_EXEMPTION_THRESHOLD, 0x2
-
-
 .globl entrypoint
 
 
@@ -162,11 +156,10 @@ initialize:
   # Find the minimum balance for rent exemption
   mov64 r1, r6
   call sol_get_rent_sysvar
-  ldxdw r3, [r1 + 0]                                              # lamports_per_byte_year
+  ldxdw r3, [r1 + 0]                                              # lamports_per_byte
   lddw r4, ACCOUNT_STORAGE_OVERHEAD
   add64 r4, COUNTER_DATA_SIZE
   mul64 r4, r3
-  mul64 r4, DEFAULT_RENT_EXEMPTION_THRESHOLD
 
   mov64 r8, r6
   sub64 r8, 56
