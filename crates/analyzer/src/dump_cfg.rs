@@ -1,14 +1,58 @@
 use {
+    crate::critical_path,
     sbpf_common::instruction::AsmFormat,
-    sbpf_ir::{Cfg, graph_engine::DfsEngine},
-    std::fmt::Write,
+    sbpf_ir::{BlockId, Cfg, graph_engine::DfsEngine},
+    std::{collections::{HashMap, HashSet}, fmt::Write},
 };
 
 pub fn dump_cfg(cfg: &Cfg) -> String {
-    let mut output = String::from("digraph cfg {\n  node [shape=box];\n");
+    dump_cfg_impl(cfg, &HashSet::new(), &HashSet::new(), &HashMap::new())
+}
 
-    // Emit one DOT subgraph cluster per function, with each block declared inside
-    // so Graphviz renders blocks visually grouped by their containing function.
+/// DOT dump highlighting critical-path blocks and edges in red.
+/// Compact block labels; functions with loops stay unhighlighted (DP requires a DAG).
+pub fn dump_cfg_with_critical_path(cfg: &Cfg) -> String {
+    let cp_results = critical_path(cfg);
+
+    let critical_blocks: HashSet<BlockId> = cp_results
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .flat_map(|r| r.path.iter().copied())
+        .collect();
+
+    let critical_edges: HashSet<(BlockId, BlockId)> = cp_results
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .flat_map(|r| r.path.windows(2).map(|w| (w[0], w[1])))
+        .collect();
+
+    // Merge block_cu maps from all functions so every block has a CU count.
+    let block_cu: HashMap<BlockId, u64> = cp_results
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .flat_map(|r| r.block_cu.iter().map(|(&id, &cu)| (id, cu)))
+        .collect();
+
+    dump_cfg_impl(cfg, &critical_blocks, &critical_edges, &block_cu)
+}
+
+fn dump_cfg_impl(
+    cfg: &Cfg,
+    critical_blocks: &HashSet<BlockId>,
+    critical_edges: &HashSet<(BlockId, BlockId)>,
+    block_cu: &HashMap<BlockId, u64>,
+) -> String {
+    let compact = !block_cu.is_empty();
+
+    let mut output = String::from("digraph cfg {\n");
+    if compact {
+        // Keep nodes small and lay them out top-to-bottom.
+        output.push_str("  graph [rankdir=TB];\n");
+        output.push_str("  node [shape=box fontsize=10];\n");
+    } else {
+        output.push_str("  node [shape=box];\n");
+    }
+
     for (function_id, function) in cfg.functions().iter().enumerate() {
         writeln!(output, "  subgraph cluster_function_{function_id} {{")
             .expect("writing to a String cannot fail");
@@ -20,26 +64,37 @@ pub fn dump_cfg(cfg: &Cfg) -> String {
         .expect("writing to a String cannot fail");
 
         for (&block_id, block) in function.block_ids().iter().zip(function.blocks().iter()) {
-            let inst_base = cfg.block_inst_offset(block_id);
-            writeln!(
-                output,
-                "    block_{block_id} [label=\"{}\"];",
-                block_label(block_id, inst_base, block)
-            )
-            .expect("writing to a String cannot fail");
+            let on_path = critical_blocks.contains(&block_id);
+            let attrs = if on_path {
+                r##" fillcolor="#e74c3c" style=filled fontcolor=white"##
+            } else {
+                ""
+            };
+            let label = if compact {
+                compact_block_label(block_id, block, block_cu.get(&block_id).copied())
+            } else {
+                let inst_base = cfg.block_inst_offset(block_id);
+                full_block_label(block_id, inst_base, block)
+            };
+            writeln!(output, "    block_{block_id} [label=\"{label}\"{attrs}];")
+                .expect("writing to a String cannot fail");
         }
 
         output.push_str("  }\n");
     }
 
-    // DFS from every function entry to emit control-flow edges between blocks.
     let entry_blocks = cfg
         .functions()
         .iter()
         .filter_map(|f| f.block_ids().first().copied());
     DfsEngine::new(cfg).visit_many(entry_blocks, &mut |block_id| {
-        for successor in cfg.successors(block_id) {
-            writeln!(output, "  block_{block_id} -> block_{successor};")
+        for &successor in cfg.successors(block_id) {
+            let edge_attrs = if critical_edges.contains(&(block_id, successor)) {
+                r##" [color="#e74c3c" penwidth=2]"##
+            } else {
+                ""
+            };
+            writeln!(output, "  block_{block_id} -> block_{successor}{edge_attrs};")
                 .expect("writing to a String cannot fail");
         }
     });
@@ -48,7 +103,20 @@ pub fn dump_cfg(cfg: &Cfg) -> String {
     output
 }
 
-fn block_label(block_id: usize, inst_base: usize, block: &sbpf_ir::Block) -> String {
+/// Compact label: block ID + first label name + CU count. No instruction text.
+fn compact_block_label(block_id: usize, block: &sbpf_ir::Block, cu: Option<u64>) -> String {
+    let mut label = format!("block {block_id}");
+    if let Some((name, _)) = block.labels().first() {
+        write!(label, "\\n{}", escape_dot_label(name)).expect("writing to a String cannot fail");
+    }
+    if let Some(cu) = cu {
+        write!(label, "\\n{cu} CU").expect("writing to a String cannot fail");
+    }
+    label
+}
+
+/// Full label: block ID + all label names + every instruction.
+fn full_block_label(block_id: usize, inst_base: usize, block: &sbpf_ir::Block) -> String {
     let mut label = format!("block {block_id}\\l");
 
     if !block.labels().is_empty() {

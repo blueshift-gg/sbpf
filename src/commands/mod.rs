@@ -1,3 +1,6 @@
+pub mod analyze;
+pub use analyze::*;
+
 pub mod init;
 pub use init::*;
 

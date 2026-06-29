@@ -365,7 +365,7 @@ fn fmt_imm(imm: &Either<String, Number>) -> String {
         Either::Left(label) => label.clone(),
         Either::Right(Number::Int(v)) | Either::Right(Number::Addr(v)) => {
             if *v < 0 {
-                format!("-0x{:x}", -v)
+                format!("-0x{:x}", v.unsigned_abs())
             } else {
                 format!("0x{:x}", v)
             }

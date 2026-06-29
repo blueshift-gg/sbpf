@@ -3,6 +3,7 @@ use {
     anyhow::Error,
     clap::{Parser, Subcommand},
     commands::{
+        analyze::{AnalyzeArgs, analyze},
         build::{BuildArgs, build},
         clean::clean,
         debug::{DebugArgs, debug},
@@ -23,6 +24,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[command(about = "Analyze critical path (max-CU path) for each function")]
+    Analyze(AnalyzeArgs),
     #[command(about = "Create a new project scaffold")]
     Init(InitArgs),
     #[command(about = "Compile into a Solana program executable")]
@@ -45,6 +48,7 @@ fn main() -> Result<(), Error> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Analyze(args) => analyze(args),
         Commands::Init(args) => init(args),
         Commands::Build(args) => build(args),
         Commands::Deploy(args) => deploy(args),
