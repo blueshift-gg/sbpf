@@ -16,6 +16,10 @@ struct Case {
     hash: String,
     #[serde(default)]
     debug_hash: String,
+    #[serde(default)]
+    hash_v0: String,
+    #[serde(default)]
+    debug_hash_v0: String,
 }
 
 #[derive(Debug)]
@@ -29,6 +33,7 @@ struct Issue {
     kind: IssueKind,
     name: String,
     file: String,
+    arch: sbpf_assembler::SbpfArch,
     expected: Option<String>,
     actual: Option<String>,
     note: Option<String>,
@@ -62,6 +67,20 @@ fn hash_bytes(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
 
+fn expected_hash_mut(case: &mut Case, arch: sbpf_assembler::SbpfArch) -> &mut String {
+    match arch {
+        sbpf_assembler::SbpfArch::V0 => &mut case.hash_v0,
+        sbpf_assembler::SbpfArch::V3 => &mut case.hash,
+    }
+}
+
+fn expected_debug_hash_mut(case: &mut Case, arch: sbpf_assembler::SbpfArch) -> &mut String {
+    match arch {
+        sbpf_assembler::SbpfArch::V0 => &mut case.debug_hash_v0,
+        sbpf_assembler::SbpfArch::V3 => &mut case.debug_hash,
+    }
+}
+
 #[test]
 fn test_regression() {
     let mut manifest = read_manifest();
@@ -80,83 +99,95 @@ fn test_regression() {
 
     let mut updated_entries = 0usize;
     for (name, case) in manifest.cases.iter_mut() {
-        let source = read_source(&case.file);
+        let case_file = case.file.clone();
+        let source = read_source(&case_file);
 
-        // Test assembly
-        let options = sbpf_assembler::AssemblerOption::default();
-        let assembler = sbpf_assembler::Assembler::new(options);
-        let actual = match assembler.assemble(&source) {
-            Ok(bytes) => hash_bytes(&bytes),
-            Err(e) => {
-                any_missing_or_mismatch = true;
-                issues.push(Issue {
-                    kind: IssueKind::AssemblerError,
-                    name: name.clone(),
-                    file: case.file.clone(),
-                    expected: None,
-                    actual: None,
-                    note: Some(format!("assembler failed: {:?}", e)),
-                });
-                continue;
+        for arch in [sbpf_assembler::SbpfArch::V0, sbpf_assembler::SbpfArch::V3] {
+            // Test assembly
+            let assembler = sbpf_assembler::Assembler::new(
+                sbpf_assembler::AssemblerOption::default().with_arch(arch),
+            );
+            let actual = match assembler.assemble(&source) {
+                Ok(bytes) => hash_bytes(&bytes),
+                Err(e) => {
+                    any_missing_or_mismatch = true;
+                    issues.push(Issue {
+                        kind: IssueKind::AssemblerError,
+                        name: name.clone(),
+                        file: case_file.clone(),
+                        arch,
+                        expected: None,
+                        actual: None,
+                        note: Some(format!("assembler failed: {:?}", e)),
+                    });
+                    continue;
+                }
+            };
+
+            let expected = expected_hash_mut(case, arch);
+            if actual != *expected {
+                if update_hashes && expected.is_empty() {
+                    // Only update the hash if it's empty.
+                    *expected = actual.clone();
+                    updated_entries += 1;
+                } else {
+                    any_missing_or_mismatch = true;
+                    issues.push(Issue {
+                        kind: IssueKind::HashMismatch,
+                        name: name.clone(),
+                        file: case_file.clone(),
+                        arch,
+                        expected: Some(expected.clone()),
+                        actual: Some(actual.clone()),
+                        note: None,
+                    });
+                }
             }
-        };
 
-        if actual != case.hash {
-            if update_hashes && case.hash.is_empty() {
-                // Only update the hash if it's empty.
-                case.hash = actual.clone();
-                updated_entries += 1;
-            } else {
-                any_missing_or_mismatch = true;
-                issues.push(Issue {
-                    kind: IssueKind::HashMismatch,
-                    name: name.clone(),
-                    file: case.file.clone(),
-                    expected: Some(case.hash.clone()),
-                    actual: Some(actual.clone()),
-                    note: None,
-                });
-            }
-        }
+            // Test assembly (debug)
+            let debug_assembler = sbpf_assembler::Assembler::new(
+                sbpf_assembler::AssemblerOption::default()
+                    .with_arch(arch)
+                    .with_debug_mode(sbpf_assembler::DebugMode {
+                        filename: case_file.clone(),
+                        directory: "/test".to_string(),
+                    }),
+            );
+            let debug_actual = match debug_assembler.assemble(&source) {
+                Ok(bytes) => hash_bytes(&bytes),
+                Err(e) => {
+                    any_missing_or_mismatch = true;
+                    issues.push(Issue {
+                        kind: IssueKind::AssemblerError,
+                        name: name.clone(),
+                        file: case_file.clone(),
+                        arch,
+                        expected: None,
+                        actual: None,
+                        note: Some(format!("debug assembler failed: {:?}", e)),
+                    });
+                    continue;
+                }
+            };
 
-        // Test assembly (debug)
-        let debug_options =
-            sbpf_assembler::AssemblerOption::default().with_debug_mode(sbpf_assembler::DebugMode {
-                filename: case.file.clone(),
-                directory: "/test".to_string(),
-            });
-        let debug_assembler = sbpf_assembler::Assembler::new(debug_options);
-        let debug_actual = match debug_assembler.assemble(&source) {
-            Ok(bytes) => hash_bytes(&bytes),
-            Err(e) => {
-                any_missing_or_mismatch = true;
-                issues.push(Issue {
-                    kind: IssueKind::AssemblerError,
-                    name: name.clone(),
-                    file: case.file.clone(),
-                    expected: None,
-                    actual: None,
-                    note: Some(format!("debug assembler failed: {:?}", e)),
-                });
-                continue;
-            }
-        };
-
-        if debug_actual != case.debug_hash {
-            if update_hashes && case.debug_hash.is_empty() {
-                // Only update the debug_hash if it's empty.
-                case.debug_hash = debug_actual.clone();
-                updated_entries += 1;
-            } else {
-                any_missing_or_mismatch = true;
-                issues.push(Issue {
-                    kind: IssueKind::DebugHashMismatch,
-                    name: name.clone(),
-                    file: case.file.clone(),
-                    expected: Some(case.debug_hash.clone()),
-                    actual: Some(debug_actual.clone()),
-                    note: None,
-                });
+            let expected_debug = expected_debug_hash_mut(case, arch);
+            if debug_actual != *expected_debug {
+                if update_hashes && expected_debug.is_empty() {
+                    // Only update the debug_hash if it's empty.
+                    *expected_debug = debug_actual.clone();
+                    updated_entries += 1;
+                } else {
+                    any_missing_or_mismatch = true;
+                    issues.push(Issue {
+                        kind: IssueKind::DebugHashMismatch,
+                        name: name.clone(),
+                        file: case_file.clone(),
+                        arch,
+                        expected: Some(expected_debug.clone()),
+                        actual: Some(debug_actual.clone()),
+                        note: None,
+                    });
+                }
             }
         }
     }
@@ -176,7 +207,8 @@ fn test_regression() {
                 IssueKind::HashMismatch => {
                     mismatched += 1;
                     eprintln!(
-                        "[Mismatch] case='{}' file='{}' expected={} actual={}",
+                        "[Mismatch] arch='{:?}' case='{}' file='{}' expected={} actual={}",
+                        issue.arch,
                         issue.name,
                         issue.file,
                         issue.expected.as_deref().unwrap_or("<none>"),
@@ -186,7 +218,8 @@ fn test_regression() {
                 IssueKind::DebugHashMismatch => {
                     debug_mismatched += 1;
                     eprintln!(
-                        "[Debug Mismatch] case='{}' file='{}' expected={} actual={}",
+                        "[Debug Mismatch] arch='{:?}' case='{}' file='{}' expected={} actual={}",
+                        issue.arch,
                         issue.name,
                         issue.file,
                         issue.expected.as_deref().unwrap_or("<none>"),
@@ -196,7 +229,8 @@ fn test_regression() {
                 IssueKind::AssemblerError => {
                     asmerr += 1;
                     eprintln!(
-                        "[Assembler Error] case='{}' file='{}' note={}",
+                        "[Assembler Error] arch='{:?}' case='{}' file='{}' note={}",
+                        issue.arch,
                         issue.name,
                         issue.file,
                         issue.note.as_deref().unwrap_or("")

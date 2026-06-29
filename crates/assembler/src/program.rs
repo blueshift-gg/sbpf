@@ -82,6 +82,7 @@ impl Program {
         sections.push(SectionType::Default(NullSection::new()));
 
         let mut section_names = Vec::new();
+        let has_debug_sections = debug_data.is_some() || !debug_sections.is_empty();
 
         // Add section_names in fixed order for shstrtab
         section_names.push(".text".to_string());
@@ -152,7 +153,7 @@ impl Program {
                 )]);
             }
 
-            if debug_data.is_some() {
+            if has_debug_sections {
                 // If debug info is present, generate debug sections
                 let debug_sections = Self::generate_debug_sections(
                     debug_sections,
@@ -394,7 +395,7 @@ impl Program {
 
         // Update section header offset in ELF header. v3 binaries carry no
         // section header table unless debug info is present.
-        if !arch.is_v3() || debug_data.is_some() {
+        if !arch.is_v3() || has_debug_sections {
             let padding = (8 - (current_offset % 8)) % 8;
             elf_header.e_shoff = current_offset + padding;
             elf_header.e_shnum = sections.len() as u16;

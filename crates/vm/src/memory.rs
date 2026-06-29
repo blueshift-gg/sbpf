@@ -73,15 +73,13 @@ impl Memory {
             } else {
                 Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
-        } else if addr >= Self::RODATA_START {
-            let offset = (addr - Self::RODATA_START) as usize;
+        } else {
+            let offset = addr as usize;
             if offset < self.rodata.len() {
                 Ok((MemoryRegion::Rodata, offset))
             } else {
                 Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
-        } else {
-            Err(SbpfVmError::InvalidMemoryAccess(addr))
         }
     }
 

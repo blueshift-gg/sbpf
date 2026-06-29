@@ -1,12 +1,13 @@
-#[cfg(test)]
+#[cfg(all(test, feature = "example-tests"))]
 mod tests {
-    use mollusk_svm::program;
-    use mollusk_svm::{result::Check, Mollusk};
-    use solana_account::Account;
-    use solana_instruction::{AccountMeta, Instruction};
-    use solana_native_token::LAMPORTS_PER_SOL;
-    use solana_program_error::ProgramError;
-    use solana_address::Address;
+    use {
+        mollusk_svm::{program, result::Check, Mollusk},
+        solana_account::Account,
+        solana_address::Address,
+        solana_instruction::{AccountMeta, Instruction},
+        solana_native_token::LAMPORTS_PER_SOL,
+        solana_program_error::ProgramError,
+    };
 
     const BASE_LAMPORTS: u64 = 10 * LAMPORTS_PER_SOL;
     const DEPOSIT_AMOUNT: u64 = 1;
