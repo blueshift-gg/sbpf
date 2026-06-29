@@ -5,7 +5,7 @@ use {
         input::ParsedInput,
         parser::{LineMap, rodata_from_section},
     },
-    sbpf_assembler::{Assembler, AssemblerOption, DebugMode, SbpfArch},
+    sbpf_assembler::{Assembler, AssemblerOption, DebugMode},
     sbpf_disassembler::program::Program,
     sbpf_runtime::{Runtime, config::RuntimeConfig},
     sbpf_vm::memory::Memory,
@@ -44,13 +44,10 @@ pub fn load_session_from_asm(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
 
-    let options = AssemblerOption {
-        arch: SbpfArch::V0,
-        debug_mode: Some(DebugMode {
-            filename,
-            directory,
-        }),
-    };
+    let options = AssemblerOption::default().with_debug_mode(DebugMode {
+        filename,
+        directory,
+    });
     let assembler = Assembler::new(options);
     let bytecode = assembler
         .assemble(&source_code)

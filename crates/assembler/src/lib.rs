@@ -42,8 +42,8 @@ pub use self::{
 /// sBPF target architecture
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SbpfArch {
-    #[default]
     V0,
+    #[default]
     V3,
 }
 
@@ -76,6 +76,20 @@ pub struct AssemblerOption {
     pub arch: SbpfArch,
     /// Optional debug mode configuration
     pub debug_mode: Option<DebugMode>,
+}
+
+impl AssemblerOption {
+    /// Set the target architecture
+    pub fn with_arch(mut self, arch: SbpfArch) -> Self {
+        self.arch = arch;
+        self
+    }
+
+    /// Enable debug mode with the given config
+    pub fn with_debug_mode(mut self, debug_mode: DebugMode) -> Self {
+        self.debug_mode = Some(debug_mode);
+        self
+    }
 }
 
 /// An error enriched with source location information from preprocessing.
@@ -312,13 +326,10 @@ pub fn assemble_with_debug_data(
     filename: &str,
     directory: &str,
 ) -> Result<Vec<u8>, Vec<CompileError>> {
-    let options = AssemblerOption {
-        arch: SbpfArch::V0,
-        debug_mode: Some(DebugMode {
-            filename: filename.to_string(),
-            directory: directory.to_string(),
-        }),
-    };
+    let options = AssemblerOption::default().with_debug_mode(DebugMode {
+        filename: filename.to_string(),
+        directory: directory.to_string(),
+    });
     let assembler = Assembler::new(options);
     assembler.assemble(source)
 }

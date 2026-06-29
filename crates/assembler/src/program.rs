@@ -93,18 +93,23 @@ impl Program {
             // Data section
             let mut rodata_section = SectionType::Data(data_section);
             rodata_section.set_offset(current_offset);
+            rodata_section.set_vaddr(ProgramHeader::V3_RODATA_VADDR);
             current_offset += rodata_section.size();
             sections.push(rodata_section);
 
             // Code section
             let mut text_section = SectionType::Code(code_section);
             text_section.set_offset(current_offset);
+            text_section.set_vaddr(ProgramHeader::V3_BYTECODE_VADDR);
             current_offset += text_section.size();
             sections.push(text_section);
         } else {
             // Code section
             let mut text_section = SectionType::Code(code_section);
             text_section.set_offset(current_offset);
+            if arch.is_v3() {
+                text_section.set_vaddr(ProgramHeader::V3_BYTECODE_VADDR);
+            }
             current_offset += text_section.size();
             sections.push(text_section);
 
@@ -112,6 +117,9 @@ impl Program {
             if has_rodata {
                 let mut rodata_section = SectionType::Data(data_section);
                 rodata_section.set_offset(current_offset);
+                if arch.is_v3() {
+                    rodata_section.set_vaddr(ProgramHeader::V3_RODATA_VADDR);
+                }
                 current_offset += rodata_section.size();
                 sections.push(rodata_section);
             }
@@ -122,9 +130,10 @@ impl Program {
 
         if arch.is_v3() {
             // v3 programs are loaded entirely through program headers; the
-            // loader never reads the section header table. We therefore omit
-            // section headers along with the .shstrtab and debug sections that
-            // exist only to support them, keeping v3 binaries minimal.
+            // loader never reads the section header table. Unless the program
+            // is built in debug mode, we omit section headers along with the
+            // .shstrtab and debug sections that exist only to support them,
+            // keeping v3 binaries minimal.
             if has_rodata {
                 // 2 headers: rodata (PF_R) then bytecode (PF_X)
                 let rodata_offset = base_offset;
@@ -141,6 +150,33 @@ impl Program {
                     true,
                     arch,
                 )]);
+            }
+
+            if debug_data.is_some() {
+                // If debug info is present, generate debug sections
+                let debug_sections = Self::generate_debug_sections(
+                    debug_sections,
+                    &debug_data,
+                    ProgramHeader::V3_BYTECODE_VADDR,
+                    &mut section_names,
+                    &mut current_offset,
+                );
+
+                for debug_section in debug_sections {
+                    sections.push(debug_section);
+                }
+
+                let mut shstrtab_section = SectionType::ShStrTab(ShStrTabSection::new(
+                    (section_names
+                        .iter()
+                        .map(|name| name.len() + 1)
+                        .sum::<usize>()
+                        + 1) as u32,
+                    section_names,
+                ));
+                shstrtab_section.set_offset(current_offset);
+                current_offset += shstrtab_section.size();
+                sections.push(shstrtab_section);
             }
         } else if !prog_is_static {
             let mut symbol_names = Vec::new();
@@ -357,8 +393,8 @@ impl Program {
         }
 
         // Update section header offset in ELF header. v3 binaries carry no
-        // section header table, so these fields stay zeroed.
-        if !arch.is_v3() {
+        // section header table unless debug info is present.
+        if !arch.is_v3() || debug_data.is_some() {
             let padding = (8 - (current_offset % 8)) % 8;
             elf_header.e_shoff = current_offset + padding;
             elf_header.e_shnum = sections.len() as u16;
@@ -474,37 +510,43 @@ mod tests {
     #[test]
     fn test_program_from_simple_source() {
         let source = "exit";
-        let parse_result = parse(source, SbpfArch::V0).unwrap();
-        let program = Program::from_parse_result(parse_result, None);
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let parse_result = parse(source, arch).unwrap();
+            let program = Program::from_parse_result(parse_result, None);
 
-        // Verify basic structure
-        assert!(!program.sections.is_empty());
-        assert!(program.sections.len() >= 2);
+            // Verify basic structure
+            assert!(!program.sections.is_empty());
+            assert!(program.sections.len() >= 2);
+        }
     }
 
     #[test]
     fn test_program_without_rodata() {
         let source = "exit";
-        let parse_result = parse(source, SbpfArch::V0).unwrap();
-        let program = Program::from_parse_result(parse_result, None);
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let parse_result = parse(source, arch).unwrap();
+            let program = Program::from_parse_result(parse_result, None);
 
-        assert!(!program.has_rodata());
+            assert!(!program.has_rodata());
+        }
     }
 
     #[test]
     fn test_program_emit_bytecode() {
         let source = "exit";
-        let parse_result = parse(source, SbpfArch::V0).unwrap();
-        let program = Program::from_parse_result(parse_result, None);
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let parse_result = parse(source, arch).unwrap();
+            let program = Program::from_parse_result(parse_result, None);
 
-        let bytecode = program.emit_bytecode();
-        assert!(!bytecode.is_empty());
-        // Should start with ELF magic
-        assert_eq!(&bytecode[0..4], b"\x7fELF");
+            let bytecode = program.emit_bytecode();
+            assert!(!bytecode.is_empty());
+            // Should start with ELF magic
+            assert_eq!(&bytecode[0..4], b"\x7fELF");
+        }
     }
 
     #[test]
-    fn test_program_static_no_program_headers() {
+    fn test_v0_program_static_no_program_headers() {
         // Create a static program (no dynamic symbols)
         let source = "exit";
         let mut parse_result = parse(source, SbpfArch::V0).unwrap();
@@ -517,41 +559,45 @@ mod tests {
 
     #[test]
     fn test_program_sections_ordering() {
-        let source = "exit";
-        let parse_result = parse(source, SbpfArch::V0).unwrap();
-        let program = Program::from_parse_result(parse_result, None);
+        let source = r"exit";
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let parse_result = parse(source, arch).unwrap();
+            let program = Program::from_parse_result(parse_result, None);
 
-        // First section should be null
-        assert_eq!(program.sections[0].name(), "");
-        // Second should be .text
-        assert_eq!(program.sections[1].name(), ".text");
+            // First section should be null
+            assert_eq!(program.sections[0].name(), "");
+            // Second should be .text
+            assert_eq!(program.sections[1].name(), ".text");
+        }
     }
 
     #[test]
     fn test_program_sections_debug() {
         let source = "exit";
-        let parse_result = parse(source, SbpfArch::V0).unwrap();
-        let debug_data = Some(DebugData {
-            filename: "test.s".to_string(),
-            directory: "/test".to_string(),
-            lines: vec![],
-            labels: vec![],
-            code_start: 0,
-            code_end: 8,
-        });
-        let program = Program::from_parse_result(parse_result, debug_data);
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let parse_result = parse(source, arch).unwrap();
+            let debug_data = Some(DebugData {
+                filename: "test.s".to_string(),
+                directory: "/test".to_string(),
+                lines: vec![],
+                labels: vec![],
+                code_start: 0,
+                code_end: 8,
+            });
+            let program = Program::from_parse_result(parse_result, debug_data);
 
-        let debug_section_names: Vec<&str> = program
-            .sections
-            .iter()
-            .map(|s| s.name())
-            .filter(|name| name.starts_with(".debug_"))
-            .collect();
+            let debug_section_names: Vec<&str> = program
+                .sections
+                .iter()
+                .map(|s| s.name())
+                .filter(|name| name.starts_with(".debug_"))
+                .collect();
 
-        assert!(debug_section_names.contains(&".debug_abbrev"));
-        assert!(debug_section_names.contains(&".debug_info"));
-        assert!(debug_section_names.contains(&".debug_line"));
-        assert!(debug_section_names.contains(&".debug_line_str"));
+            assert!(debug_section_names.contains(&".debug_abbrev"));
+            assert!(debug_section_names.contains(&".debug_info"));
+            assert!(debug_section_names.contains(&".debug_line"));
+            assert!(debug_section_names.contains(&".debug_line_str"));
+        }
     }
 
     #[test]

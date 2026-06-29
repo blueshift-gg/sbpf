@@ -120,13 +120,11 @@ fn test_regression() {
         }
 
         // Test assembly (debug)
-        let debug_options = sbpf_assembler::AssemblerOption {
-            arch: sbpf_assembler::SbpfArch::V0,
-            debug_mode: Some(sbpf_assembler::DebugMode {
+        let debug_options =
+            sbpf_assembler::AssemblerOption::default().with_debug_mode(sbpf_assembler::DebugMode {
                 filename: case.file.clone(),
                 directory: "/test".to_string(),
-            }),
-        };
+            });
         let debug_assembler = sbpf_assembler::Assembler::new(debug_options);
         let debug_actual = match debug_assembler.assemble(&source) {
             Ok(bytes) => hash_bytes(&bytes),

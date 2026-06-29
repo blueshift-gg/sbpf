@@ -3,6 +3,7 @@ use {
         CompileError, SbpfArch,
         astnode::{ASTNode, ROData},
         dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
+        header::ProgramHeader,
         parser::ParseResult,
         section::{CodeSection, DataSection},
     },
@@ -223,7 +224,14 @@ impl AST {
 
                     if let Some(target_offset) = label_offset_map.get(&label) {
                         let abs_offset = if arch.is_v3() {
-                            (*target_offset - self.text_size) as i64
+                            if *target_offset >= self.text_size {
+                                // rodata label
+                                (ProgramHeader::V3_RODATA_VADDR + *target_offset - self.text_size)
+                                    as i64
+                            } else {
+                                // text label
+                                (ProgramHeader::V3_BYTECODE_VADDR + *target_offset) as i64
+                            }
                         } else {
                             let ph_count = if program_is_static { 1 } else { 3 };
                             let ph_offset = 64 + (ph_count as u64 * 56) as i64;
@@ -382,10 +390,12 @@ mod tests {
         ast.set_text_size(8);
         ast.set_rodata_size(0);
 
-        let result = ast.build_program(SbpfArch::V0);
-        assert!(result.is_ok());
-        let parse_result = result.unwrap();
-        assert!(parse_result.prog_is_static);
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let result = ast.build_program(arch);
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert!(parse_result.prog_is_static);
+        }
     }
 
     #[test]
@@ -407,8 +417,10 @@ mod tests {
         });
         ast.set_text_size(8);
 
-        let result = ast.build_program(SbpfArch::V0);
-        assert!(result.is_err());
+        for arch in [SbpfArch::V0, SbpfArch::V3] {
+            let result = ast.build_program(arch);
+            assert!(result.is_err());
+        }
     }
 
     #[test]

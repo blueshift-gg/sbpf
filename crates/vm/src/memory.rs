@@ -24,7 +24,7 @@ pub struct Memory {
 
 impl Memory {
     // Virtual address memory map
-    pub const RODATA_START: u64 = 0x100000000; // Read-only data (rodata)
+    pub const RODATA_START: u64 = 0x0; // Read-only data (rodata)
     pub const STACK_START: u64 = 0x200000000; // Stack data
     pub const HEAP_START: u64 = 0x300000000; // Heap data
     pub const INPUT_START: u64 = 0x400000000; // Program input parameters

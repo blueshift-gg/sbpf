@@ -38,10 +38,10 @@ fn span_to_line_col(source_code: &str, span: &Range<usize>) -> (usize, usize) {
 #[wasm_bindgen]
 pub fn assemble(source: &str, arch: u32) -> Result<Vec<u8>, JsValue> {
     // TODO: Make this a bit less hacky
-    let arch = if arch == 3 {
-        SbpfArch::V3
-    } else {
+    let arch = if arch == 0 {
         SbpfArch::V0
+    } else {
+        SbpfArch::V3
     };
     let parse_result = match parser::parse(source, arch) {
         Ok(result) => result,
