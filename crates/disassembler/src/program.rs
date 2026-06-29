@@ -46,6 +46,15 @@ impl Program {
         // Parse relocations.
         let relocations = Relocation::from_elf_file(&elf_file)?;
 
+        // v3 binaries omit the section header table; reconstruct the .text and
+        // .rodata section views from the program (segment) headers so the rest
+        // of the disassembler can locate them by name.
+        let (section_headers, section_header_entries) = if section_header_entries.is_empty() {
+            Self::synthesize_sections_from_segments(b, &program_headers)?
+        } else {
+            (section_headers, section_header_entries)
+        };
+
         Ok(Self {
             elf_header,
             program_headers,
@@ -53,6 +62,81 @@ impl Program {
             section_header_entries,
             relocations,
         })
+    }
+
+    /// Reconstruct `.text` and `.rodata` section views from loadable program
+    /// segments. Used for v3 binaries, which carry no section header table:
+    /// the executable segment becomes `.text` and the read-only,
+    /// non-executable segment becomes `.rodata`. The synthesized section
+    /// headers mirror what the assembler used to emit (`sh_addr == sh_offset ==
+    /// file offset`) so downstream offset resolution is unchanged.
+    fn synthesize_sections_from_segments(
+        data: &[u8],
+        program_headers: &[ProgramHeader],
+    ) -> Result<(Vec<SectionHeader>, Vec<SectionHeaderEntry>), DisassemblerError> {
+        use crate::{
+            program_header::{PF_X, ProgramType},
+            section_header::SectionHeaderType,
+        };
+
+        let segment_bytes = |offset: u64, size: u64| -> Vec<u8> {
+            let start = offset as usize;
+            let end = start.saturating_add(size as usize).min(data.len());
+            if start >= data.len() {
+                Vec::new()
+            } else {
+                data[start..end].to_vec()
+            }
+        };
+
+        let make_header = |offset: u64, size: u64, executable: bool| SectionHeader {
+            sh_name: 0,
+            sh_type: SectionHeaderType::SHT_PROGBITS,
+            sh_flags: if executable { 0x6 } else { 0x2 }, // SHF_ALLOC (+ SHF_EXECINSTR)
+            sh_addr: offset,
+            sh_offset: offset,
+            sh_size: size,
+            sh_link: 0,
+            sh_info: 0,
+            sh_addralign: if executable { 8 } else { 1 },
+            sh_entsize: 0,
+        };
+
+        let mut headers = Vec::new();
+        let mut entries = Vec::new();
+
+        let is_load = |ph: &&ProgramHeader| matches!(ph.p_type, ProgramType::PT_LOAD);
+        let is_exec = |ph: &ProgramHeader| ph.p_flags.0 & PF_X as u32 == PF_X as u32;
+
+        // .rodata: read-only, non-executable loadable segment (if present).
+        if let Some(ph) = program_headers
+            .iter()
+            .filter(is_load)
+            .find(|ph| !is_exec(ph))
+        {
+            headers.push(make_header(ph.p_offset, ph.p_filesz, false));
+            entries.push(SectionHeaderEntry::new(
+                ".rodata\0".to_string(),
+                ph.p_offset as usize,
+                segment_bytes(ph.p_offset, ph.p_filesz),
+            )?);
+        }
+
+        // .text: executable loadable segment.
+        if let Some(ph) = program_headers
+            .iter()
+            .filter(is_load)
+            .find(|ph| is_exec(ph))
+        {
+            headers.push(make_header(ph.p_offset, ph.p_filesz, true));
+            entries.push(SectionHeaderEntry::new(
+                ".text\0".to_string(),
+                ph.p_offset as usize,
+                segment_bytes(ph.p_offset, ph.p_filesz),
+            )?);
+        }
+
+        Ok((headers, entries))
     }
 
     pub fn to_ixs(self) -> DisassembleResult {
