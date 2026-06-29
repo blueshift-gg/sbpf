@@ -24,7 +24,7 @@ pub struct Memory {
 
 impl Memory {
     // Virtual address memory map
-    pub const RODATA_START: u64 = 0x100000000; // Read-only data (rodata)
+    pub const RODATA_START: u64 = 0x0; // Read-only data (rodata)
     pub const STACK_START: u64 = 0x200000000; // Stack data
     pub const HEAP_START: u64 = 0x300000000; // Heap data
     pub const INPUT_START: u64 = 0x400000000; // Program input parameters
@@ -73,15 +73,13 @@ impl Memory {
             } else {
                 Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
-        } else if addr >= Self::RODATA_START {
-            let offset = (addr - Self::RODATA_START) as usize;
+        } else {
+            let offset = addr as usize;
             if offset < self.rodata.len() {
                 Ok((MemoryRegion::Rodata, offset))
             } else {
                 Err(SbpfVmError::MemoryOutOfBounds(addr, 0))
             }
-        } else {
-            Err(SbpfVmError::InvalidMemoryAccess(addr))
         }
     }
 

@@ -108,13 +108,12 @@ test_2:              // line 17
 "#;
 
     // Assemble with debug info
-    let options = sbpf_assembler::AssemblerOption {
-        arch: sbpf_assembler::SbpfArch::V0,
-        debug_mode: Some(sbpf_assembler::DebugMode {
+    let options =
+        sbpf_assembler::AssemblerOption::default().with_debug_mode(sbpf_assembler::DebugMode {
             filename: "test.s".to_string(),
             directory: "/test".to_string(),
-        }),
-    };
+        });
+
     let assembler = sbpf_assembler::Assembler::new(options);
     let bytecode = assembler
         .assemble(TEST_SOURCE)

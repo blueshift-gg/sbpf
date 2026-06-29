@@ -13,6 +13,11 @@ use {
     },
 };
 
+const MOLLUSK_SVM_VERSION: &str = env!("MOLLUSK_SVM_VERSION");
+const SOLANA_ACCOUNT_VERSION: &str = env!("SOLANA_ACCOUNT_VERSION");
+const SOLANA_ADDRESS_VERSION: &str = env!("SOLANA_ADDRESS_VERSION");
+const SOLANA_INSTRUCTION_VERSION: &str = env!("SOLANA_INSTRUCTION_VERSION");
+
 #[derive(Args)]
 pub struct InitArgs {
     pub name: Option<String>,
@@ -97,7 +102,12 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
             )?;
             fs::write(
                 project_path.join("Cargo.toml"),
-                CARGO_TOML.replace("default_project_name", &project_name),
+                CARGO_TOML
+                    .replace("default_project_name", &project_name)
+                    .replace("{{MOLLUSK_SVM_VERSION}}", MOLLUSK_SVM_VERSION)
+                    .replace("{{SOLANA_ACCOUNT_VERSION}}", SOLANA_ACCOUNT_VERSION)
+                    .replace("{{SOLANA_ADDRESS_VERSION}}", SOLANA_ADDRESS_VERSION)
+                    .replace("{{SOLANA_INSTRUCTION_VERSION}}", SOLANA_INSTRUCTION_VERSION),
             )?;
         }
 

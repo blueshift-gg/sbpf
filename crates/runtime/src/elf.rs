@@ -32,16 +32,18 @@ fn apply_relocations(instructions: &mut [Instruction], rodata: &mut [u8], sectio
     let elf_base = section.base_address;
     let elf_end = elf_base + section.data.len() as u64;
 
-    // 1. Relocate lddw immediates that reference rodata addresses.
-    for ix in instructions.iter_mut() {
-        if ix.opcode == Opcode::Lddw
-            && let Some(Either::Right(Number::Int(imm))) = &ix.imm
-        {
-            let addr = *imm as u64;
-            if addr >= elf_base && addr < elf_end {
-                ix.imm = Some(Either::Right(Number::Int(
-                    (Memory::RODATA_START + addr - elf_base) as i64,
-                )));
+    // 1. Relocate lddw immediates that reference rodata addresses (for v0 only).
+    if elf_base != Memory::RODATA_START {
+        for ix in instructions.iter_mut() {
+            if ix.opcode == Opcode::Lddw
+                && let Some(Either::Right(Number::Int(imm))) = &ix.imm
+            {
+                let addr = *imm as u64;
+                if addr >= elf_base && addr < elf_end {
+                    ix.imm = Some(Either::Right(Number::Int(
+                        (Memory::RODATA_START + addr - elf_base) as i64,
+                    )));
+                }
             }
         }
     }

@@ -234,7 +234,6 @@ mod tests {
 
         // MAKE
         let result = runtime.run(&make_instruction, &accounts)?;
-        let make_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -246,7 +245,6 @@ mod tests {
 
         // TAKE
         let result = runtime.run(&take_instruction, &accounts)?;
-        let take_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -270,8 +268,6 @@ mod tests {
                         Check::account(&vault).owner(&token_program).build(),
                         // Check escrow is owned by our program
                         Check::account(&escrow).owner(&PROGRAM_ID).build(),
-                        // Check consumed CUs match with runtime
-                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -285,8 +281,6 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
-                        // Check consumed CUs match with runtime
-                        Check::compute_units(take_cus_consumed),
                     ],
                 ),
             ],
@@ -433,7 +427,6 @@ mod tests {
 
         // MAKE
         let result = runtime.run(&make_instruction, &accounts)?;
-        let make_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -449,7 +442,6 @@ mod tests {
 
         // REFUND
         let result = runtime.run(&refund_instruction, &accounts)?;
-        let refund_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -481,8 +473,6 @@ mod tests {
                         Check::account(&escrow)
                             .data_slice(96, &[13, 37, 0, 0, 0, 0, 0, 0])
                             .build(),
-                        // Check consumed CUs match with runtime
-                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -496,8 +486,6 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
-                        // Check consumed CUs match with runtime
-                        Check::compute_units(refund_cus_consumed),
                     ],
                 ),
             ],

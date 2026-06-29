@@ -32,6 +32,7 @@ pub struct CodeSection {
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
+    vaddr: u64,
 }
 
 impl CodeSection {
@@ -41,6 +42,7 @@ impl CodeSection {
             nodes,
             size,
             offset: 0,
+            vaddr: 0,
         }
     }
 
@@ -54,6 +56,11 @@ impl CodeSection {
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
+        self.vaddr = offset;
+    }
+
+    pub fn set_vaddr(&mut self, vaddr: u64) {
+        self.vaddr = vaddr;
     }
 
     pub fn section_header_bytecode(&self) -> Vec<u8> {
@@ -62,7 +69,7 @@ impl CodeSection {
             1,
             SectionHeader::SHT_PROGBITS,
             flags,
-            self.offset,
+            self.vaddr,
             self.offset,
             self.size,
             0,
@@ -101,6 +108,7 @@ pub struct DataSection {
     nodes: Vec<ASTNode>,
     size: u64,
     offset: u64,
+    vaddr: u64,
 }
 
 impl DataSection {
@@ -110,6 +118,7 @@ impl DataSection {
             nodes,
             size,
             offset: 0,
+            vaddr: 0,
         }
     }
 
@@ -123,6 +132,11 @@ impl DataSection {
 
     pub fn set_offset(&mut self, offset: u64) {
         self.offset = offset;
+        self.vaddr = offset;
+    }
+
+    pub fn set_vaddr(&mut self, vaddr: u64) {
+        self.vaddr = vaddr;
     }
 
     pub fn rodata(&self) -> Vec<(String, usize, String)> {
@@ -146,7 +160,7 @@ impl DataSection {
             7,
             SectionHeader::SHT_PROGBITS,
             flags,
-            self.offset,
+            self.vaddr,
             self.offset,
             self.size,
             0,
@@ -830,6 +844,14 @@ impl SectionType {
             SectionType::DebugFrame(ds) => ds.set_offset(offset),
             SectionType::DebugLoc(ds) => ds.set_offset(offset),
             SectionType::DebugRanges(ds) => ds.set_offset(offset),
+        }
+    }
+
+    pub fn set_vaddr(&mut self, vaddr: u64) {
+        match self {
+            SectionType::Code(cs) => cs.set_vaddr(vaddr),
+            SectionType::Data(ds) => ds.set_vaddr(vaddr),
+            _ => (),
         }
     }
 
