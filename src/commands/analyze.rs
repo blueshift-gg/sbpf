@@ -6,7 +6,11 @@ use {
     sbpf_disassembler::program::Program,
     sbpf_ir::{InputNode, control_flow_graph},
     sbpf_transform::{dump_cfg_with_critical_path, dump_critical_path},
-    std::{collections::{HashMap, HashSet}, fs::File, io::Read},
+    std::{
+        collections::{HashMap, HashSet},
+        fs::File,
+        io::Read,
+    },
 };
 
 #[derive(Args)]
@@ -68,10 +72,14 @@ pub fn analyze(args: AnalyzeArgs) -> Result<(), Error> {
     let mut label_at: HashMap<u64, String> = HashMap::new();
     label_at.insert(ep, "entrypoint".to_string());
     for &pos in &fn_targets {
-        label_at.entry(pos).or_insert_with(|| format!("fn_{:04x}", pos));
+        label_at
+            .entry(pos)
+            .or_insert_with(|| format!("fn_{:04x}", pos));
     }
     for &pos in &jmp_targets {
-        label_at.entry(pos).or_insert_with(|| format!("jmp_{:04x}", pos));
+        label_at
+            .entry(pos)
+            .or_insert_with(|| format!("jmp_{:04x}", pos));
     }
     // Ensure position 0 always has a function-entry label so no blocks are
     // orphaned before the first function. In ELFs where the entrypoint is

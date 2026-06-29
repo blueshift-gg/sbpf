@@ -31,8 +31,7 @@ pub fn critical_path(cfg: &Cfg) -> Vec<Result<CriticalPathResult, CriticalPathEr
         .iter()
         .map(|function| {
             let name = function.name().to_owned();
-            let function_blocks: HashSet<BlockId> =
-                function.block_ids().iter().copied().collect();
+            let function_blocks: HashSet<BlockId> = function.block_ids().iter().copied().collect();
 
             // CU per block: 1 CU per instruction (simplified model).
             let block_cu: HashMap<BlockId, u64> = function
@@ -42,7 +41,7 @@ pub fn critical_path(cfg: &Cfg) -> Vec<Result<CriticalPathResult, CriticalPathEr
                 .map(|(&id, block)| (id, block.instructions().len() as u64))
                 .collect();
 
-            // Kahn's topological sort with cycle detection 
+            // Kahn's topological sort with cycle detection
             // Only consider edges that stay within this function.
             let mut in_degree: HashMap<BlockId, usize> =
                 function_blocks.iter().map(|&id| (id, 0)).collect();
@@ -77,13 +76,14 @@ pub fn critical_path(cfg: &Cfg) -> Vec<Result<CriticalPathResult, CriticalPathEr
             }
 
             if topo_order.len() != function_blocks.len() {
-                return Err(CriticalPathError { function_name: name });
+                return Err(CriticalPathError {
+                    function_name: name,
+                });
             }
 
             // dp[b] = maximum CU cost of any path from an entry block to b.
             // parent[b] = predecessor on that best path (None for entry blocks).
-            let mut dp: HashMap<BlockId, u64> =
-                HashMap::with_capacity(function_blocks.len());
+            let mut dp: HashMap<BlockId, u64> = HashMap::with_capacity(function_blocks.len());
             let mut parent: HashMap<BlockId, Option<BlockId>> =
                 HashMap::with_capacity(function_blocks.len());
 
@@ -131,7 +131,12 @@ pub fn critical_path(cfg: &Cfg) -> Vec<Result<CriticalPathResult, CriticalPathEr
             }
             path.reverse();
 
-            Ok(CriticalPathResult { function_name: name, total_cu, path, block_cu })
+            Ok(CriticalPathResult {
+                function_name: name,
+                total_cu,
+                path,
+                block_cu,
+            })
         })
         .collect()
 }
@@ -211,7 +216,14 @@ mod tests {
         off: Option<Either<String, i16>>,
         imm: Option<Either<String, sbpf_common::inst_param::Number>>,
     ) -> Instruction {
-        Instruction { opcode, dst: None, src: None, off, imm, span: 0..0 }
+        Instruction {
+            opcode,
+            dst: None,
+            src: None,
+            off,
+            imm,
+            span: 0..0,
+        }
     }
 
     fn make_cfg(nodes: &[InputNode<'_>], entries: &[&str]) -> Cfg {
@@ -334,14 +346,28 @@ mod tests {
         let results = critical_path(&cfg);
         assert_eq!(results.len(), 2);
 
-        let entry_r = results.iter().find(|r| {
-            r.as_ref().map(|r| r.function_name == "entrypoint").unwrap_or(false)
-        }).unwrap().as_ref().unwrap();
+        let entry_r = results
+            .iter()
+            .find(|r| {
+                r.as_ref()
+                    .map(|r| r.function_name == "entrypoint")
+                    .unwrap_or(false)
+            })
+            .unwrap()
+            .as_ref()
+            .unwrap();
         assert_eq!(entry_r.total_cu, 2);
 
-        let helper_r = results.iter().find(|r| {
-            r.as_ref().map(|r| r.function_name == "helper").unwrap_or(false)
-        }).unwrap().as_ref().unwrap();
+        let helper_r = results
+            .iter()
+            .find(|r| {
+                r.as_ref()
+                    .map(|r| r.function_name == "helper")
+                    .unwrap_or(false)
+            })
+            .unwrap()
+            .as_ref()
+            .unwrap();
         assert_eq!(helper_r.total_cu, 1);
     }
 

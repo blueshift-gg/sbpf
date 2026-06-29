@@ -2,7 +2,10 @@ use {
     crate::critical_path,
     sbpf_common::instruction::AsmFormat,
     sbpf_ir::{BlockId, Cfg, graph_engine::DfsEngine},
-    std::{collections::{HashMap, HashSet}, fmt::Write},
+    std::{
+        collections::{HashMap, HashSet},
+        fmt::Write,
+    },
 };
 
 pub fn dump_cfg(cfg: &Cfg) -> String {
@@ -94,8 +97,11 @@ fn dump_cfg_impl(
             } else {
                 ""
             };
-            writeln!(output, "  block_{block_id} -> block_{successor}{edge_attrs};")
-                .expect("writing to a String cannot fail");
+            writeln!(
+                output,
+                "  block_{block_id} -> block_{successor}{edge_attrs};"
+            )
+            .expect("writing to a String cannot fail");
         }
     });
 
