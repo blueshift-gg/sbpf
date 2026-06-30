@@ -137,14 +137,26 @@ fn eval_operand_expression(
     let mut result = terms[0].clone();
     for (i, op) in ops.iter().enumerate() {
         if i + 1 < terms.len() {
-            let rhs = terms[i + 1].clone();
-            result = match *op {
-                "+" => result + rhs,
-                "-" => result - rhs,
-                "*" => result * rhs,
-                "/" => result / rhs,
-                _ => result,
+            let rhs = &terms[i + 1];
+            let folded = match *op {
+                "+" => result.checked_add(rhs),
+                "-" => result.checked_sub(rhs),
+                "*" => result.checked_mul(rhs),
+                "/" => result.checked_div(rhs),
+                _ => Some(result.clone()),
             };
+            result = folded.ok_or_else(|| {
+                let detail = if *op == "/" && rhs.to_i64() == 0 {
+                    "division by zero in constant expression".to_string()
+                } else {
+                    format!("arithmetic overflow in constant expression ('{op}')")
+                };
+                CompileError::ArithmeticError {
+                    error: detail,
+                    span: span_range.clone(),
+                    custom_label: None,
+                }
+            })?;
         }
     }
 

@@ -409,6 +409,78 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_const_expr_overflow_errors() {
+        for expr in ["BIG + 1", "BIG * 2"] {
+            let source = format!(
+                r#"
+                .globl entrypoint
+                .equ BIG, 0x7FFFFFFFFFFFFFFF
+                entrypoint:
+                    lddw r1, {expr}
+                    exit
+                "#
+            );
+            let result = assemble(&source);
+            assert!(result.is_err(), "expected error for '{expr}'");
+            assert!(matches!(
+                result.unwrap_err().first(),
+                Some(CompileError::ArithmeticError { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn test_assemble_const_expr_div_by_zero_errors() {
+        let source = r#"
+        .globl entrypoint
+        entrypoint:
+            lddw r1, 8 / 0
+            exit
+        "#;
+        let result = assemble(source);
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(matches!(
+            errors.first(),
+            Some(CompileError::ArithmeticError { .. })
+        ));
+        // The diagnostic must point at the offending expression, not 0..len.
+        assert!(errors[0].span().start > 0);
+    }
+
+    #[test]
+    fn test_assemble_const_expr_overflow_in_directive_errors() {
+        // The directive-value evaluator must also be overflow-safe.
+        let source = r#"
+        .globl entrypoint
+        .equ BAD, 0x7FFFFFFFFFFFFFFF + 1
+        entrypoint:
+            lddw r1, BAD
+            exit
+        "#;
+        let result = assemble(source);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().first(),
+            Some(CompileError::ArithmeticError { .. })
+        ));
+    }
+
+    #[test]
+    fn test_assemble_valid_const_expr_still_folds() {
+        // Regression: in-range arithmetic must keep folding correctly.
+        let source = r#"
+        .globl entrypoint
+        .equ A, 0x10
+        .equ B, 0x20
+        entrypoint:
+            lddw r1, A * 4 + B
+            exit
+        "#;
+        assert!(assemble(source).is_ok());
+    }
+
+    #[test]
     fn test_assemble_duplicate_label_error() {
         let source = r#"
         .globl entrypoint
