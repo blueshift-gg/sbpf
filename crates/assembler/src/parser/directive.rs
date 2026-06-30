@@ -241,13 +241,25 @@ fn eval_expression(
         if stack.len() >= 2 {
             let b = stack.pop().unwrap();
             let a = stack.pop().unwrap();
-            let result = match op {
-                "+" => a + b,
-                "-" => a - b,
-                "*" => a * b,
-                "/" => a / b,
-                _ => a,
+            let folded = match op {
+                "+" => a.checked_add(&b),
+                "-" => a.checked_sub(&b),
+                "*" => a.checked_mul(&b),
+                "/" => a.checked_div(&b),
+                _ => Some(a),
             };
+            let result = folded.ok_or_else(|| {
+                let detail = if op == "/" && b.to_i64() == 0 {
+                    "division by zero in constant expression".to_string()
+                } else {
+                    format!("arithmetic overflow in constant expression ('{op}')")
+                };
+                CompileError::ArithmeticError {
+                    error: detail,
+                    span: span_range.clone(),
+                    custom_label: None,
+                }
+            })?;
             stack.push(result);
         }
     }

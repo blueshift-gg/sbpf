@@ -75,6 +75,11 @@ define_compile_errors! {
         label = "Out of range literal",
         fields = { span: Range<usize> }
     },
+    ArithmeticError {
+        error = "{error}",
+        label = "Invalid constant expression",
+        fields = { error: String, span: Range<usize> }
+    },
     InvalidRODataDirective {
         error = "Invalid rodata directive",
         label = "Invalid rodata directive",

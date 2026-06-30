@@ -34,6 +34,29 @@ impl Number {
             Number::Addr(a) => *a,
         }
     }
+
+    fn retag(&self, other: &Number, value: i64) -> Number {
+        match (self, other) {
+            (Number::Int(_), Number::Int(_)) => Number::Int(value),
+            _ => Number::Addr(value),
+        }
+    }
+
+    pub fn checked_add(&self, other: &Number) -> Option<Number> {
+        Some(self.retag(other, self.to_i64().checked_add(other.to_i64())?))
+    }
+
+    pub fn checked_sub(&self, other: &Number) -> Option<Number> {
+        Some(self.retag(other, self.to_i64().checked_sub(other.to_i64())?))
+    }
+
+    pub fn checked_mul(&self, other: &Number) -> Option<Number> {
+        Some(self.retag(other, self.to_i64().checked_mul(other.to_i64())?))
+    }
+
+    pub fn checked_div(&self, other: &Number) -> Option<Number> {
+        Some(self.retag(other, self.to_i64().checked_div(other.to_i64())?))
+    }
 }
 
 impl fmt::Display for Number {
@@ -41,54 +64,6 @@ impl fmt::Display for Number {
         match self {
             Number::Int(i) => write!(f, "{}", i),
             Number::Addr(a) => write!(f, "{}", a),
-        }
-    }
-}
-
-impl std::ops::Add for Number {
-    type Output = Number;
-    fn add(self, other: Self) -> Number {
-        match (self, other) {
-            (Number::Int(a), Number::Int(b)) => Number::Int(a + b),
-            (Number::Addr(a), Number::Addr(b)) => Number::Addr(a + b),
-            (Number::Int(a), Number::Addr(b)) => Number::Addr(a + b),
-            (Number::Addr(a), Number::Int(b)) => Number::Addr(a + b),
-        }
-    }
-}
-
-impl std::ops::Sub for Number {
-    type Output = Number;
-    fn sub(self, other: Self) -> Number {
-        match (self, other) {
-            (Number::Int(a), Number::Int(b)) => Number::Int(a - b),
-            (Number::Addr(a), Number::Addr(b)) => Number::Addr(a - b),
-            (Number::Int(a), Number::Addr(b)) => Number::Addr(a - b),
-            (Number::Addr(a), Number::Int(b)) => Number::Addr(a - b),
-        }
-    }
-}
-
-impl std::ops::Mul for Number {
-    type Output = Number;
-    fn mul(self, other: Self) -> Number {
-        match (self, other) {
-            (Number::Int(a), Number::Int(b)) => Number::Int(a * b),
-            (Number::Addr(a), Number::Addr(b)) => Number::Addr(a * b),
-            (Number::Int(a), Number::Addr(b)) => Number::Addr(a * b),
-            (Number::Addr(a), Number::Int(b)) => Number::Addr(a * b),
-        }
-    }
-}
-
-impl std::ops::Div for Number {
-    type Output = Number;
-    fn div(self, other: Self) -> Number {
-        match (self, other) {
-            (Number::Int(a), Number::Int(b)) => Number::Int(a / b),
-            (Number::Addr(a), Number::Addr(b)) => Number::Addr(a / b),
-            (Number::Int(a), Number::Addr(b)) => Number::Addr(a / b),
-            (Number::Addr(a), Number::Int(b)) => Number::Addr(a / b),
         }
     }
 }
@@ -131,78 +106,77 @@ mod tests {
     }
 
     #[test]
-    fn test_number_add() {
+    fn test_number_checked_add() {
         // Int + Int
-        let result = Number::Int(10) + Number::Int(20);
-        assert_eq!(result, Number::Int(30));
-
+        assert_eq!(
+            Number::Int(10).checked_add(&Number::Int(20)),
+            Some(Number::Int(30))
+        );
         // Addr + Addr
-        let result = Number::Addr(10) + Number::Addr(20);
-        assert_eq!(result, Number::Addr(30));
-
-        // Int + Addr
-        let result = Number::Int(10) + Number::Addr(20);
-        assert_eq!(result, Number::Addr(30));
-
-        // Addr + Int
-        let result = Number::Addr(10) + Number::Int(20);
-        assert_eq!(result, Number::Addr(30));
+        assert_eq!(
+            Number::Addr(10).checked_add(&Number::Addr(20)),
+            Some(Number::Addr(30))
+        );
+        // Int + Addr / Addr + Int both tag the result as Addr
+        assert_eq!(
+            Number::Int(10).checked_add(&Number::Addr(20)),
+            Some(Number::Addr(30))
+        );
+        assert_eq!(
+            Number::Addr(10).checked_add(&Number::Int(20)),
+            Some(Number::Addr(30))
+        );
     }
 
     #[test]
-    fn test_number_sub() {
-        // Int - Int
-        let result = Number::Int(30) - Number::Int(10);
-        assert_eq!(result, Number::Int(20));
-
-        // Addr - Addr
-        let result = Number::Addr(30) - Number::Addr(10);
-        assert_eq!(result, Number::Addr(20));
-
-        // Int - Addr
-        let result = Number::Int(30) - Number::Addr(10);
-        assert_eq!(result, Number::Addr(20));
-
-        // Addr - Int
-        let result = Number::Addr(30) - Number::Int(10);
-        assert_eq!(result, Number::Addr(20));
+    fn test_number_checked_sub() {
+        assert_eq!(
+            Number::Int(30).checked_sub(&Number::Int(10)),
+            Some(Number::Int(20))
+        );
+        assert_eq!(
+            Number::Addr(30).checked_sub(&Number::Int(10)),
+            Some(Number::Addr(20))
+        );
     }
 
     #[test]
-    fn test_number_mul() {
-        // Int * Int
-        let result = Number::Int(5) * Number::Int(4);
-        assert_eq!(result, Number::Int(20));
-
-        // Addr * Addr
-        let result = Number::Addr(5) * Number::Addr(4);
-        assert_eq!(result, Number::Addr(20));
-
-        // Int * Addr
-        let result = Number::Int(5) * Number::Addr(4);
-        assert_eq!(result, Number::Addr(20));
-
-        // Addr * Int
-        let result = Number::Addr(5) * Number::Int(4);
-        assert_eq!(result, Number::Addr(20));
+    fn test_number_checked_mul() {
+        assert_eq!(
+            Number::Int(5).checked_mul(&Number::Int(4)),
+            Some(Number::Int(20))
+        );
+        assert_eq!(
+            Number::Addr(5).checked_mul(&Number::Int(4)),
+            Some(Number::Addr(20))
+        );
     }
 
     #[test]
-    fn test_number_div() {
-        // Int / Int
-        let result = Number::Int(20) / Number::Int(4);
-        assert_eq!(result, Number::Int(5));
+    fn test_number_checked_div() {
+        assert_eq!(
+            Number::Int(20).checked_div(&Number::Int(4)),
+            Some(Number::Int(5))
+        );
+        assert_eq!(
+            Number::Addr(20).checked_div(&Number::Int(4)),
+            Some(Number::Addr(5))
+        );
+    }
 
-        // Addr / Addr
-        let result = Number::Addr(20) / Number::Addr(4);
-        assert_eq!(result, Number::Addr(5));
+    #[test]
+    fn test_number_checked_arithmetic_reports_overflow() {
+        // Overflow returns None instead of panicking / wrapping.
+        assert_eq!(Number::Int(i64::MAX).checked_add(&Number::Int(1)), None);
+        assert_eq!(Number::Int(i64::MIN).checked_sub(&Number::Int(1)), None);
+        assert_eq!(Number::Int(i64::MAX).checked_mul(&Number::Int(2)), None);
+        // i64::MIN / -1 overflows two's-complement division.
+        assert_eq!(Number::Int(i64::MIN).checked_div(&Number::Int(-1)), None);
+    }
 
-        // Int / Addr
-        let result = Number::Int(20) / Number::Addr(4);
-        assert_eq!(result, Number::Addr(5));
-
-        // Addr / Int
-        let result = Number::Addr(20) / Number::Int(4);
-        assert_eq!(result, Number::Addr(5));
+    #[test]
+    fn test_number_checked_div_by_zero() {
+        assert_eq!(Number::Int(8).checked_div(&Number::Int(0)), None);
+        assert_eq!(Number::Addr(8).checked_div(&Number::Int(0)), None);
     }
 }
