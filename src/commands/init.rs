@@ -47,6 +47,13 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
         },
     };
 
+    let project_name = std::path::Path::new(&project_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty() && *s != "." && *s != "..")
+        .ok_or_else(|| anyhow::anyhow!("Invalid project name"))?
+        .to_string();
+
     let current_dir = std::env::current_dir()?;
     let project_path = current_dir.join(&project_name);
 
