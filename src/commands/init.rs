@@ -47,13 +47,12 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
         },
     };
 
-    if project_name == "."
-        || project_name == ".."
-        || project_name.contains('/')
-        || project_name.contains('\\')
+    if std::path::Path::new(&project_name)
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
     {
         anyhow::bail!(
-            "Invalid project name '{}': must be a plain directory name with no path separators",
+            "Invalid project name '{}': must not contain '..' components",
             project_name
         );
     }
