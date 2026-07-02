@@ -47,6 +47,16 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
         },
     };
 
+    if std::path::Path::new(&project_name)
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        anyhow::bail!(
+            "Invalid project path '{}': paths must not traverse parent directories (..)",
+            project_name
+        );
+    }
+
     let current_dir = std::env::current_dir()?;
     let project_path = current_dir.join(&project_name);
 
