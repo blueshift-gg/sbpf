@@ -52,7 +52,7 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
         .any(|c| c == std::path::Component::ParentDir)
     {
         anyhow::bail!(
-            "Invalid project name '{}': must not contain '..' components",
+            "Invalid project path '{}': paths must not traverse parent directories (..)",
             project_name
         );
     }
