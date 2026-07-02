@@ -1,0 +1,105 @@
+name: downstream
+
+# Builds and tests sbpf-linker at its default-branch HEAD against the sbpf
+# crates in this checkout, so API breakage in the crates the linker consumes
+# (sbpf-assembler, sbpf-common and their workspace dependencies) is caught
+# here before a release is published.
+#
+# The version rewrite in the patch step is load-bearing: the linker pins the
+# published crate versions, and a bare [patch.crates-io] whose local version
+# does not satisfy that requirement is silently discarded by cargo — the build
+# would fall back to crates.io and test the wrong code. See the verify step,
+# which fails the job if that ever happens.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "crates/assembler/**"
+      - "crates/common/**"
+      - "crates/analyzer/**"
+      - "crates/sbpf_ir/**"
+      - "crates/sbpf-syscall-map/**"
+      - "Cargo.toml"
+      - ".github/workflows/downstream-sbpf-linker.yml"
+  pull_request:
+    paths:
+      - "crates/assembler/**"
+      - "crates/common/**"
+      - "crates/analyzer/**"
+      - "crates/sbpf_ir/**"
+      - "crates/sbpf-syscall-map/**"
+      - "Cargo.toml"
+      - ".github/workflows/downstream-sbpf-linker.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbpf-linker:
+    name: sbpf-linker (HEAD) against local sbpf crates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout sbpf-linker (default branch HEAD)
+        uses: actions/checkout@v5
+        with:
+          repository: blueshift-gg/sbpf-linker
+          path: sbpf-linker
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sbpf-linker
+          cache-on-failure: true
+
+      - name: Install FileCheck
+        run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
+
+      - name: Patch sbpf crates to this checkout
+        working-directory: sbpf-linker
+        run: |
+          sbpf_ver="$(cargo metadata --manifest-path ../Cargo.toml --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "sbpf-common") | .version')"
+          echo "patching sbpf-assembler and sbpf-common to =${sbpf_ver} (local path)"
+          for crate in sbpf-assembler sbpf-common; do
+            sed -E -i'' \
+              -e "s|^(${crate} = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
+              -e "s|^(${crate} = \{ version = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
+              Cargo.toml
+          done
+          {
+            echo ""
+            echo "[patch.crates-io]"
+            echo "sbpf-assembler = { path = \"../crates/assembler\" }"
+            echo "sbpf-common = { path = \"../crates/common\" }"
+          } >> Cargo.toml
+
+      - name: Verify the patch took effect
+        working-directory: sbpf-linker
+        run: |
+          tree="$(cargo tree --prefix none --edges normal | grep -E '^sbpf-(assembler|common) ' | sort -u)"
+          echo "${tree}"
+          if [ -z "${tree}" ]; then
+            echo "::error::sbpf-assembler/sbpf-common not found in the linker dependency tree"
+            exit 1
+          fi
+          if echo "${tree}" | grep -v "(/"; then
+            echo "::error::sbpf crates still resolve to crates.io — the [patch] was discarded"
+            exit 1
+          fi
+
+      - name: Run sbpf-linker test suite
+        working-directory: sbpf-linker
+        run: cargo test -- --nocapture
