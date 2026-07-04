@@ -313,9 +313,7 @@ mod tests {
         let mut h = handler();
         let mut memory = Memory::new(vec![], vec![], 4096, 4096);
         let compute = ComputeMeter::new(LIMIT);
-        let err = h
-            .handle("abort", [0; 5], &mut memory, compute)
-            .unwrap_err();
+        let err = h.handle("abort", [0; 5], &mut memory, compute).unwrap_err();
         assert!(matches!(err, SbpfVmError::Abort));
     }
 

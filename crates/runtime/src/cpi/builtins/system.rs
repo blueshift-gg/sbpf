@@ -664,8 +664,13 @@ mod tests {
                 owner,
             },
         );
-        let err = process(&mut accounts, &request, &[payer, new_account], COMPUTE_BUDGET)
-            .unwrap_err();
+        let err = process(
+            &mut accounts,
+            &request,
+            &[payer, new_account],
+            COMPUTE_BUDGET,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("account already in use"));
     }
 
@@ -693,7 +698,10 @@ mod tests {
             &SystemInstruction::Assign { owner: new_owner },
         );
         let err = process(&mut accounts, &request, &[], COMPUTE_BUDGET).unwrap_err();
-        assert!(err.to_string().contains("missing required signature for assign"));
+        assert!(
+            err.to_string()
+                .contains("missing required signature for assign")
+        );
     }
 
     #[test]
@@ -705,7 +713,10 @@ mod tests {
             &SystemInstruction::Allocate { space: 64 },
         );
         let err = process(&mut accounts, &request, &[], COMPUTE_BUDGET).unwrap_err();
-        assert!(err.to_string().contains("missing required signature for allocate"));
+        assert!(
+            err.to_string()
+                .contains("missing required signature for allocate")
+        );
     }
 
     #[test]
@@ -729,10 +740,8 @@ mod tests {
         let owner = addr(3);
         let seed = "vault";
         let derived = Address::create_with_seed(&base, seed, &owner).unwrap();
-        let mut accounts = HashMap::from([
-            (payer, make_account(1_000_000)),
-            (derived, make_account(0)),
-        ]);
+        let mut accounts =
+            HashMap::from([(payer, make_account(1_000_000)), (derived, make_account(0))]);
         let request = make_request(
             vec![meta(payer, true, true), meta(derived, false, true)],
             &SystemInstruction::CreateAccountWithSeed {
@@ -756,10 +765,8 @@ mod tests {
         let base = addr(4);
         let owner = addr(3);
         let wrong = addr(9);
-        let mut accounts = HashMap::from([
-            (payer, make_account(1_000_000)),
-            (wrong, make_account(0)),
-        ]);
+        let mut accounts =
+            HashMap::from([(payer, make_account(1_000_000)), (wrong, make_account(0))]);
         let request = make_request(
             vec![meta(payer, true, true), meta(wrong, false, true)],
             &SystemInstruction::CreateAccountWithSeed {
@@ -828,9 +835,10 @@ mod tests {
             },
         );
         let err = process(&mut accounts, &request, &[], COMPUTE_BUDGET).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("missing required signature for transfer_with_seed"));
+        assert!(
+            err.to_string()
+                .contains("missing required signature for transfer_with_seed")
+        );
     }
 
     #[test]

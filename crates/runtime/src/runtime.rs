@@ -480,10 +480,7 @@ impl Runtime {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        std::path::PathBuf,
-    };
+    use {super::*, std::path::PathBuf};
 
     const PROGRAM_ID: Address =
         Address::from_str_const("22222222222222222222222222222222222222222222");
@@ -497,7 +494,12 @@ mod tests {
     }
 
     fn new_runtime() -> Runtime {
-        Runtime::new(PROGRAM_ID, escrow_elf_path().as_str(), RuntimeConfig::default()).unwrap()
+        Runtime::new(
+            PROGRAM_ID,
+            escrow_elf_path().as_str(),
+            RuntimeConfig::default(),
+        )
+        .unwrap()
     }
 
     fn empty_instruction() -> SolanaInstruction {
@@ -522,7 +524,10 @@ mod tests {
 
     #[test]
     fn elf_source_from_vec() {
-        assert!(matches!(ElfSource::from(vec![1u8, 2, 3]), ElfSource::Bytes(_)));
+        assert!(matches!(
+            ElfSource::from(vec![1u8, 2, 3]),
+            ElfSource::Bytes(_)
+        ));
     }
 
     #[test]
@@ -602,7 +607,10 @@ mod tests {
     #[test]
     fn config_and_sysvar_accessors() {
         let mut rt = new_runtime();
-        assert_eq!(rt.config().compute_budget, RuntimeConfig::default().compute_budget);
+        assert_eq!(
+            rt.config().compute_budget,
+            RuntimeConfig::default().compute_budget
+        );
         let slot = rt.sysvars().clock.slot;
         rt.sysvars_mut().clock.slot = slot + 5;
         assert_eq!(rt.sysvars().clock.slot, slot + 5);
