@@ -37,7 +37,7 @@ impl TryFrom<u32> for ProgramType {
             5 => Self::PT_SHLIB,
             6 => Self::PT_PHDR,
             7 => Self::PT_TLS,
-            _ => return Err(DisassemblerError::InvalidProgramType),
+            _ => return Err(DisassemblerError::InvalidProgramType(value)),
         })
     }
 }

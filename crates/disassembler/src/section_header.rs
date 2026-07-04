@@ -54,7 +54,7 @@ impl TryFrom<u32> for SectionHeaderType {
             0x12 => Self::SHT_SYMTAB_SHNDX,
             0x13 => Self::SHT_NUM,
             0x6ffffff6 => Self::SHT_GNU_HASH,
-            _ => return Err(DisassemblerError::InvalidSectionHeaderType),
+            _ => return Err(DisassemblerError::InvalidSectionHeaderType(value)),
         })
     }
 }

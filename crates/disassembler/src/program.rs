@@ -10,7 +10,9 @@ use {
     },
     either::Either,
     object::{Endianness, read::elf::ElfFile64},
-    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
+    sbpf_common::{
+        errors::SBPFError, inst_param::Number, instruction::Instruction, opcode::Opcode,
+    },
     serde::{Deserialize, Serialize},
     std::collections::{BTreeSet, HashMap},
 };
@@ -29,9 +31,11 @@ pub struct Program {
 
 impl Program {
     pub fn from_bytes(b: &[u8]) -> Result<Self, DisassemblerError> {
-        let elf_file = ElfFile64::<Endianness>::parse(b).map_err(|e| {
-            eprintln!("ELF parse error: {}", e);
-            DisassemblerError::NonStandardElfHeader
+        let elf_file = ElfFile64::<Endianness>::parse(b).map_err(|source| {
+            DisassemblerError::InvalidElfFile {
+                first_bytes: b.get(..16).unwrap_or(b).to_vec(),
+                source,
+            }
         })?;
 
         // Parse elf header.
@@ -153,7 +157,13 @@ impl Program {
             .section_header_entries
             .iter()
             .find(|e| e.label.eq(".text\0"))
-            .ok_or(DisassemblerError::MissingTextSection)?;
+            .ok_or_else(|| DisassemblerError::MissingTextSection {
+                sections: self
+                    .section_header_entries
+                    .iter()
+                    .map(|e| e.label.trim_end_matches('\0').to_string())
+                    .collect(),
+            })?;
         let text_section_offset = text_section.offset as u64;
 
         // Build syscall map
@@ -161,7 +171,7 @@ impl Program {
 
         let data = &text_section.data;
         if !data.len().is_multiple_of(8) {
-            return Err(DisassemblerError::InvalidDataLength);
+            return Err(DisassemblerError::InvalidDataLength(data.len()));
         }
 
         let is_sbpf_v2 =
@@ -188,10 +198,18 @@ impl Program {
 
             // ugly v2 shit we need to fix goes here:
             let mut ix = if is_sbpf_v2 {
-                Instruction::from_bytes_sbpf_v2(remaining)?
+                Instruction::from_bytes_sbpf_v2(remaining)
             } else {
-                Instruction::from_bytes(remaining)?
-            };
+                Instruction::from_bytes(remaining)
+            }
+            .map_err(|e| match e {
+                // Decode spans are relative to the instruction slice; rebase
+                // them to the instruction's offset within .text.
+                SBPFError::BytecodeError { error, span, .. } => DisassemblerError::BytecodeError {
+                    error,
+                    span: span.start + pos..span.end + pos,
+                },
+            })?;
 
             // Handle syscall relocation
             if ix.opcode == Opcode::Call
@@ -475,7 +493,7 @@ impl Program {
 mod tests {
     use {
         crate::{
-            elf_header::{E_MACHINE_SBPF, EI_OSABI_LINUX, ELFHeader},
+            elf_header::{E_MACHINE, E_MACHINE_SBPF, EI_OSABI_LINUX, ELFHeader},
             program::Program,
             section_header_entry::SectionHeaderEntry,
         },
@@ -491,6 +509,22 @@ mod tests {
         bytes[7] = EI_OSABI_LINUX;
         let program = Program::from_bytes(&bytes).unwrap();
         assert_eq!(program.elf_header.ei_osabi, EI_OSABI_LINUX);
+
+        // Corrupt e_machine (LE u16 at bytes 18..20): the error should carry
+        // the field name, the accepted values and the value found.
+        bytes[18] = 0x00;
+        match Program::from_bytes(&bytes) {
+            Err(crate::errors::DisassemblerError::NonStandardElfHeader {
+                field,
+                expected,
+                found,
+            }) => {
+                assert_eq!(field, "machine");
+                assert_eq!(expected, vec![E_MACHINE as u64, E_MACHINE_SBPF as u64]);
+                assert_eq!(found, 0);
+            }
+            other => panic!("expected NonStandardElfHeader for machine, got {other:?}"),
+        }
     }
 
     #[test]
@@ -531,7 +565,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            crate::errors::DisassemblerError::InvalidDataLength
+            crate::errors::DisassemblerError::InvalidDataLength(3)
         ));
     }
 

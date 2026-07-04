@@ -23,7 +23,7 @@ impl TryFrom<u32> for RelocationType {
             0x01 => Self::R_BPF_64_64,
             0x08 => Self::R_BPF_64_RELATIVE,
             0x0a => Self::R_BPF_64_32,
-            _ => return Err(DisassemblerError::InvalidDataLength),
+            _ => return Err(DisassemblerError::InvalidRelocationType(value)),
         })
     }
 }
@@ -45,9 +45,13 @@ impl Relocation {
             None => return Ok(Vec::new()),
         };
 
-        let rel_dyn_data = rel_dyn_section
-            .data()
-            .map_err(|_| DisassemblerError::InvalidDataLength)?;
+        let rel_dyn_data =
+            rel_dyn_section
+                .data()
+                .map_err(|source| DisassemblerError::SectionDataError {
+                    section: ".rel.dyn",
+                    source,
+                })?;
 
         // Extract .dynsym and .dynstr data for symbol resolution.
         let dynsym_data = elf_file
@@ -63,8 +67,7 @@ impl Relocation {
         for chunk in rel_dyn_data.chunks_exact(16) {
             let offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
             let rel_type_val = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
-            let rel_type = RelocationType::try_from(rel_type_val)
-                .map_err(|_| DisassemblerError::InvalidDataLength)?;
+            let rel_type = RelocationType::try_from(rel_type_val)?;
             let symbol_index = u32::from_le_bytes(chunk[12..16].try_into().unwrap());
 
             // Resolve symbol name if this is a syscall relocation
@@ -112,7 +115,7 @@ fn resolve_symbol_name(
     // Calculate offset into .dynsym for this symbol.
     let symbol_entry_offset = symbol_index * DYNSYM_ENTRY_SIZE;
     if symbol_entry_offset + 4 > dynsym_data.len() {
-        return Err(DisassemblerError::InvalidDataLength);
+        return Err(DisassemblerError::InvalidDataLength(dynsym_data.len()));
     }
 
     let dynstr_offset = u32::from_le_bytes(
@@ -121,17 +124,23 @@ fn resolve_symbol_name(
             .unwrap(),
     ) as usize;
     if dynstr_offset >= dynstr_data.len() {
-        return Err(DisassemblerError::InvalidDynstrOffset);
+        return Err(DisassemblerError::InvalidDynstrOffset {
+            offset: dynstr_offset,
+            data_len: dynstr_data.len(),
+        });
     }
 
     // Read symbol name from .dynstr data.
     let end = dynstr_data[dynstr_offset..]
         .iter()
         .position(|&b| b == 0)
-        .ok_or(DisassemblerError::InvalidDynstrOffset)?;
+        .ok_or(DisassemblerError::InvalidDynstrOffset {
+            offset: dynstr_offset,
+            data_len: dynstr_data.len(),
+        })?;
 
     String::from_utf8(dynstr_data[dynstr_offset..dynstr_offset + end].to_vec())
-        .map_err(|_| DisassemblerError::InvalidUtf8InDynstr)
+        .map_err(|e| DisassemblerError::InvalidUtf8InDynstr(e))
 }
 
 #[cfg(test)]
@@ -216,5 +225,26 @@ mod tests {
             Relocation::from_elf_file(&elf_file).expect("Failed to parse relocations");
 
         assert!(relocations.is_empty());
+    }
+
+    #[test]
+    fn test_invalid_relocation_type() {
+        // Locate .rel.dyn in the file and corrupt the rel_type field (bytes
+        // 8..12 of the first 16-byte entry).
+        let elf_file = ElfFile64::<Endianness>::parse(TEST_PROGRAM).expect("Failed to parse ELF");
+        let (rel_dyn_offset, _) = elf_file
+            .section_by_name(".rel.dyn")
+            .expect("Failed to find .rel.dyn section")
+            .file_range()
+            .expect("Failed to get .rel.dyn file range");
+
+        let mut bytes = TEST_PROGRAM.to_vec();
+        bytes[rel_dyn_offset as usize + 8] = 0x05;
+
+        let elf_file = ElfFile64::<Endianness>::parse(bytes.as_slice()).expect("Failed to parse");
+        match Relocation::from_elf_file(&elf_file) {
+            Err(DisassemblerError::InvalidRelocationType(rel_type)) => assert_eq!(rel_type, 0x05),
+            other => panic!("expected InvalidRelocationType, got {other:?}"),
+        }
     }
 }
