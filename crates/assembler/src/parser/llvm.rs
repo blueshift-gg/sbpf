@@ -1,6 +1,6 @@
 use {
     super::{BPF_X, Rule, Section, common::*},
-    crate::errors::CompileError,
+    crate::{SbpfArch, errors::CompileError},
     pest::iterators::Pair,
     sbpf_common::{
         inst_param::Number,
@@ -14,6 +14,7 @@ pub(crate) fn process_instruction(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
     label_offset_map: &HashMap<String, (Number, Section)>,
+    arch: SbpfArch,
 ) -> Result<Instruction, CompileError> {
     let outer_span = pair.as_span();
     let outer_span_range = outer_span.start()..outer_span.end();
@@ -43,8 +44,16 @@ pub(crate) fn process_instruction(
             Rule::instr_llvm_jump_uncond => {
                 return process_jump_uncond(inner, const_map, span_range);
             }
-            Rule::instr_llvm_jump_reg => return process_jump_reg(inner, span_range),
+            Rule::instr_llvm_jump_reg => return process_jump_reg(inner, span_range, arch),
             Rule::instr_llvm_jump_imm => {
+                return process_jump_imm(inner, const_map, label_offset_map, span_range);
+            }
+            Rule::instr_llvm_jump32_reg => {
+                check_arch_v3(&inner, arch)?;
+                return process_jump_reg(inner, span_range, arch);
+            }
+            Rule::instr_llvm_jump32_imm => {
+                check_arch_v3(&inner, arch)?;
                 return process_jump_imm(inner, const_map, label_offset_map, span_range);
             }
             Rule::instr_exit => return process_exit(span_range),
@@ -104,6 +113,23 @@ fn resolve_cmp_opcode(op: &str) -> Option<Opcode> {
         "s<" => Some(Opcode::JsltImm),
         "s<=" => Some(Opcode::JsleImm),
         "&" => Some(Opcode::JsetImm),
+        _ => None,
+    }
+}
+
+fn resolve_cmp32_opcode(op: &str) -> Option<Opcode> {
+    match op {
+        "==" => Some(Opcode::Jeq32Imm),
+        "!=" => Some(Opcode::Jne32Imm),
+        ">" => Some(Opcode::Jgt32Imm),
+        ">=" => Some(Opcode::Jge32Imm),
+        "<" => Some(Opcode::Jlt32Imm),
+        "<=" => Some(Opcode::Jle32Imm),
+        "s>" => Some(Opcode::Jsgt32Imm),
+        "s>=" => Some(Opcode::Jsge32Imm),
+        "s<" => Some(Opcode::Jslt32Imm),
+        "s<=" => Some(Opcode::Jsle32Imm),
+        "&" => Some(Opcode::Jset32Imm),
         _ => None,
     }
 }
@@ -347,7 +373,9 @@ fn process_jump_uncond(
 fn process_jump_reg(
     pair: Pair<Rule>,
     span: std::ops::Range<usize>,
+    arch: SbpfArch,
 ) -> Result<Instruction, CompileError> {
+    let is_jump32 = pair.as_rule() == Rule::instr_llvm_jump32_reg;
     let mut dst = None;
     let mut op = None;
     let mut src = None;
@@ -355,7 +383,7 @@ fn process_jump_reg(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::register => {
+            Rule::register | Rule::register_32 => {
                 if dst.is_none() {
                     dst = Some(parse_register(inner)?);
                 } else {
@@ -369,20 +397,28 @@ fn process_jump_reg(
     }
 
     let op_str = op.as_deref().unwrap_or("==");
-    let imm_opcode = resolve_cmp_opcode(op_str).ok_or_else(|| CompileError::ParseError {
+    let imm_opcode = if is_jump32 {
+        resolve_cmp32_opcode(op_str)
+    } else {
+        resolve_cmp_opcode(op_str)
+    }
+    .ok_or_else(|| CompileError::ParseError {
         error: format!("Unknown comparison operator: {}", op_str),
         span: span.clone(),
         custom_label: None,
     })?;
     // Convert Imm variant to Reg variant using BPF_X flag
-    let reg_opcode_byte = Into::<u8>::into(imm_opcode) | BPF_X;
-    let opcode = reg_opcode_byte
-        .try_into()
-        .map_err(|e| CompileError::BytecodeError {
-            error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode_byte, e),
-            span: span.clone(),
-            custom_label: None,
-        })?;
+    let reg_opcode = Into::<u8>::into(imm_opcode) | BPF_X;
+    let opcode = if arch.is_v3() {
+        Opcode::try_from_sbpf_v3(reg_opcode)
+    } else {
+        reg_opcode.try_into()
+    }
+    .map_err(|e| CompileError::BytecodeError {
+        error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode, e),
+        span: span.clone(),
+        custom_label: None,
+    })?;
 
     Ok(Instruction {
         opcode,
@@ -400,6 +436,7 @@ fn process_jump_imm(
     label_offset_map: &HashMap<String, (Number, Section)>,
     span: std::ops::Range<usize>,
 ) -> Result<Instruction, CompileError> {
+    let is_jump32 = pair.as_rule() == Rule::instr_llvm_jump32_imm;
     let mut dst = None;
     let mut op = None;
     let mut imm = None;
@@ -407,7 +444,7 @@ fn process_jump_imm(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::register => dst = Some(parse_register(inner)?),
+            Rule::register | Rule::register_32 => dst = Some(parse_register(inner)?),
             Rule::cmp_op => op = Some(inner.as_str().to_string()),
             Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             Rule::jump_target => off = Some(parse_jump_target(inner, const_map)?),
@@ -416,7 +453,12 @@ fn process_jump_imm(
     }
 
     let op_str = op.as_deref().unwrap_or("==");
-    let opcode = resolve_cmp_opcode(op_str).ok_or_else(|| CompileError::ParseError {
+    let opcode = if is_jump32 {
+        resolve_cmp32_opcode(op_str)
+    } else {
+        resolve_cmp_opcode(op_str)
+    }
+    .ok_or_else(|| CompileError::ParseError {
         error: format!("Unknown comparison operator: {}", op_str),
         span: span.clone(),
         custom_label: None,

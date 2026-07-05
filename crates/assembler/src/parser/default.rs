@@ -1,6 +1,6 @@
 use {
     super::{BPF_X, Rule, Section, common::*},
-    crate::errors::CompileError,
+    crate::{SbpfArch, errors::CompileError},
     pest::iterators::Pair,
     sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
     std::{collections::HashMap, str::FromStr},
@@ -10,6 +10,7 @@ pub(crate) fn process_instruction(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
     label_offset_map: &HashMap<String, (Number, Section)>,
+    arch: SbpfArch,
 ) -> Result<Instruction, CompileError> {
     let outer_span = pair.as_span();
     let outer_span_range = outer_span.start()..outer_span.end();
@@ -41,7 +42,15 @@ pub(crate) fn process_instruction(
             Rule::instr_jump_imm => {
                 return process_jump_imm(inner, const_map, label_offset_map, span_range);
             }
-            Rule::instr_jump_reg => return process_jump_reg(inner, span_range),
+            Rule::instr_jump_reg => return process_jump_reg(inner, span_range, arch),
+            Rule::instr_jump32_imm => {
+                check_arch_v3(&inner, arch)?;
+                return process_jump_imm(inner, const_map, label_offset_map, span_range);
+            }
+            Rule::instr_jump32_reg => {
+                check_arch_v3(&inner, arch)?;
+                return process_jump_reg(inner, span_range, arch);
+            }
             Rule::instr_jump_uncond => return process_jump_uncond(inner, const_map, span_range),
             Rule::instr_endian => return process_endian(inner, span_range),
             _ => {}
@@ -246,7 +255,7 @@ fn process_jump_imm(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::jump_op => opcode = Opcode::from_str(inner.as_str()).ok(),
+            Rule::jump_op | Rule::jump32_op => opcode = Opcode::from_str(inner.as_str()).ok(),
             Rule::register => dst = Some(parse_register(inner)?),
             Rule::operand => imm = Some(parse_operand(inner, const_map, label_offset_map)?),
             Rule::jump_target => off = Some(parse_jump_target(inner, const_map)?),
@@ -267,6 +276,7 @@ fn process_jump_imm(
 fn process_jump_reg(
     pair: Pair<Rule>,
     span: std::ops::Range<usize>,
+    arch: SbpfArch,
 ) -> Result<Instruction, CompileError> {
     let mut opcode = None;
     let mut dst = None;
@@ -275,22 +285,24 @@ fn process_jump_reg(
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
-            Rule::jump_op => {
+            Rule::jump_op | Rule::jump32_op => {
                 let op_str = inner.as_str();
                 let inner_span = inner.as_span();
                 if let Ok(opc) = Opcode::from_str(op_str) {
                     // Convert Imm variant to Reg variant using BPF_X flag
                     let reg_opcode = Into::<u8>::into(opc) | BPF_X;
-                    opcode =
-                        Some(
-                            reg_opcode
-                                .try_into()
-                                .map_err(|e| CompileError::BytecodeError {
-                                    error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode, e),
-                                    span: inner_span.start()..inner_span.end(),
-                                    custom_label: None,
-                                })?,
-                        );
+                    let resolved_opcode = if arch.is_v3() {
+                        Opcode::try_from_sbpf_v3(reg_opcode)
+                    } else {
+                        reg_opcode.try_into()
+                    }
+                    .map_err(|e| CompileError::BytecodeError {
+                        error: format!("Invalid opcode 0x{:02x}: {}", reg_opcode, e),
+                        span: inner_span.start()..inner_span.end(),
+                        custom_label: None,
+                    })?;
+
+                    opcode = Some(resolved_opcode);
                 }
             }
             Rule::register => {

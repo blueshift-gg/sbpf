@@ -152,6 +152,17 @@ pub const JUMP_IMM_OPS: &[Opcode] = &[
     Opcode::JsgeImm,
     Opcode::JsltImm,
     Opcode::JsleImm,
+    Opcode::Jeq32Imm,
+    Opcode::Jgt32Imm,
+    Opcode::Jge32Imm,
+    Opcode::Jlt32Imm,
+    Opcode::Jle32Imm,
+    Opcode::Jset32Imm,
+    Opcode::Jne32Imm,
+    Opcode::Jsgt32Imm,
+    Opcode::Jsge32Imm,
+    Opcode::Jslt32Imm,
+    Opcode::Jsle32Imm,
 ];
 
 pub const JUMP_REG_OPS: &[Opcode] = &[
@@ -166,6 +177,17 @@ pub const JUMP_REG_OPS: &[Opcode] = &[
     Opcode::JsgeReg,
     Opcode::JsltReg,
     Opcode::JsleReg,
+    Opcode::Jeq32Reg,
+    Opcode::Jgt32Reg,
+    Opcode::Jge32Reg,
+    Opcode::Jlt32Reg,
+    Opcode::Jle32Reg,
+    Opcode::Jset32Reg,
+    Opcode::Jne32Reg,
+    Opcode::Jsgt32Reg,
+    Opcode::Jsge32Reg,
+    Opcode::Jslt32Reg,
+    Opcode::Jsle32Reg,
 ];
 
 pub const CALL_IMM_OPS: &[Opcode] = &[Opcode::Call]; // OperationType::CallImmediate
@@ -289,6 +311,28 @@ pub enum Opcode {
     JsltReg,
     JsleImm,
     JsleReg,
+    Jeq32Imm,
+    Jeq32Reg,
+    Jgt32Imm,
+    Jgt32Reg,
+    Jge32Imm,
+    Jge32Reg,
+    Jlt32Imm,
+    Jlt32Reg,
+    Jle32Imm,
+    Jle32Reg,
+    Jset32Imm,
+    Jset32Reg,
+    Jne32Imm,
+    Jne32Reg,
+    Jsgt32Imm,
+    Jsgt32Reg,
+    Jsge32Imm,
+    Jsge32Reg,
+    Jslt32Imm,
+    Jslt32Reg,
+    Jsle32Imm,
+    Jsle32Reg,
     Call,
     Callx,
     Exit,
@@ -365,6 +409,17 @@ impl FromStr for Opcode {
             "jsge" => Ok(Opcode::JsgeImm),
             "jslt" => Ok(Opcode::JsltImm),
             "jsle" => Ok(Opcode::JsleImm),
+            "jeq32" => Ok(Opcode::Jeq32Imm),
+            "jgt32" => Ok(Opcode::Jgt32Imm),
+            "jge32" => Ok(Opcode::Jge32Imm),
+            "jlt32" => Ok(Opcode::Jlt32Imm),
+            "jle32" => Ok(Opcode::Jle32Imm),
+            "jset32" => Ok(Opcode::Jset32Imm),
+            "jne32" => Ok(Opcode::Jne32Imm),
+            "jsgt32" => Ok(Opcode::Jsgt32Imm),
+            "jsge32" => Ok(Opcode::Jsge32Imm),
+            "jslt32" => Ok(Opcode::Jslt32Imm),
+            "jsle32" => Ok(Opcode::Jsle32Imm),
             "call" => Ok(Opcode::Call),
             "callx" => Ok(Opcode::Callx),
             "exit" => Ok(Opcode::Exit),
@@ -625,6 +680,28 @@ impl From<Opcode> for u8 {
             Opcode::JsltReg => 0xcd,
             Opcode::JsleImm => 0xd5,
             Opcode::JsleReg => 0xdd,
+            Opcode::Jeq32Imm => 0x16,
+            Opcode::Jeq32Reg => 0x1e,
+            Opcode::Jgt32Imm => 0x26,
+            Opcode::Jgt32Reg => 0x2e,
+            Opcode::Jge32Imm => 0x36,
+            Opcode::Jge32Reg => 0x3e,
+            Opcode::Jlt32Imm => 0xa6,
+            Opcode::Jlt32Reg => 0xae,
+            Opcode::Jle32Imm => 0xb6,
+            Opcode::Jle32Reg => 0xbe,
+            Opcode::Jset32Imm => 0x46,
+            Opcode::Jset32Reg => 0x4e,
+            Opcode::Jne32Imm => 0x56,
+            Opcode::Jne32Reg => 0x5e,
+            Opcode::Jsgt32Imm => 0x66,
+            Opcode::Jsgt32Reg => 0x6e,
+            Opcode::Jsge32Imm => 0x76,
+            Opcode::Jsge32Reg => 0x7e,
+            Opcode::Jslt32Imm => 0xc6,
+            Opcode::Jslt32Reg => 0xce,
+            Opcode::Jsle32Imm => 0xd6,
+            Opcode::Jsle32Reg => 0xde,
             Opcode::Call => 0x85,
             Opcode::Callx => 0x8d,
             Opcode::Exit => 0x95,
@@ -633,6 +710,35 @@ impl From<Opcode> for u8 {
 }
 
 impl Opcode {
+    /// Decode opcode byte with sBPF v3 semantics.
+    pub fn try_from_sbpf_v3(opcode: u8) -> Result<Self, SBPFError> {
+        match opcode {
+            0x16 => Ok(Opcode::Jeq32Imm),
+            0x1e => Ok(Opcode::Jeq32Reg),
+            0x26 => Ok(Opcode::Jgt32Imm),
+            0x2e => Ok(Opcode::Jgt32Reg),
+            0x36 => Ok(Opcode::Jge32Imm),
+            0x3e => Ok(Opcode::Jge32Reg),
+            0xa6 => Ok(Opcode::Jlt32Imm),
+            0xae => Ok(Opcode::Jlt32Reg),
+            0xb6 => Ok(Opcode::Jle32Imm),
+            0xbe => Ok(Opcode::Jle32Reg),
+            0x46 => Ok(Opcode::Jset32Imm),
+            0x4e => Ok(Opcode::Jset32Reg),
+            0x56 => Ok(Opcode::Jne32Imm),
+            0x5e => Ok(Opcode::Jne32Reg),
+            0x66 => Ok(Opcode::Jsgt32Imm),
+            0x6e => Ok(Opcode::Jsgt32Reg),
+            0x76 => Ok(Opcode::Jsge32Imm),
+            0x7e => Ok(Opcode::Jsge32Reg),
+            0xc6 => Ok(Opcode::Jslt32Imm),
+            0xce => Ok(Opcode::Jslt32Reg),
+            0xd6 => Ok(Opcode::Jsle32Imm),
+            0xde => Ok(Opcode::Jsle32Reg),
+            _ => opcode.try_into(),
+        }
+    }
+
     pub fn to_str(&self) -> &'static str {
         match self {
             Opcode::Lddw => "lddw",
@@ -701,6 +807,17 @@ impl Opcode {
             Opcode::JsgeImm | Opcode::JsgeReg => "jsge",
             Opcode::JsltImm | Opcode::JsltReg => "jslt",
             Opcode::JsleImm | Opcode::JsleReg => "jsle",
+            Opcode::Jeq32Imm | Opcode::Jeq32Reg => "jeq32",
+            Opcode::Jgt32Imm | Opcode::Jgt32Reg => "jgt32",
+            Opcode::Jge32Imm | Opcode::Jge32Reg => "jge32",
+            Opcode::Jlt32Imm | Opcode::Jlt32Reg => "jlt32",
+            Opcode::Jle32Imm | Opcode::Jle32Reg => "jle32",
+            Opcode::Jset32Imm | Opcode::Jset32Reg => "jset32",
+            Opcode::Jne32Imm | Opcode::Jne32Reg => "jne32",
+            Opcode::Jsgt32Imm | Opcode::Jsgt32Reg => "jsgt32",
+            Opcode::Jsge32Imm | Opcode::Jsge32Reg => "jsge32",
+            Opcode::Jslt32Imm | Opcode::Jslt32Reg => "jslt32",
+            Opcode::Jsle32Imm | Opcode::Jsle32Reg => "jsle32",
             Opcode::Call => "call",
             Opcode::Callx => "callx",
             Opcode::Exit => "exit",
@@ -766,6 +883,17 @@ impl Opcode {
             Opcode::JsltImm | Opcode::JsltReg => Some("s<"),
             Opcode::JsleImm | Opcode::JsleReg => Some("s<="),
             Opcode::JsetImm | Opcode::JsetReg => Some("&"),
+            Opcode::Jeq32Imm | Opcode::Jeq32Reg => Some("=="),
+            Opcode::Jne32Imm | Opcode::Jne32Reg => Some("!="),
+            Opcode::Jgt32Imm | Opcode::Jgt32Reg => Some(">"),
+            Opcode::Jge32Imm | Opcode::Jge32Reg => Some(">="),
+            Opcode::Jlt32Imm | Opcode::Jlt32Reg => Some("<"),
+            Opcode::Jle32Imm | Opcode::Jle32Reg => Some("<="),
+            Opcode::Jsgt32Imm | Opcode::Jsgt32Reg => Some("s>"),
+            Opcode::Jsge32Imm | Opcode::Jsge32Reg => Some("s>="),
+            Opcode::Jslt32Imm | Opcode::Jslt32Reg => Some("s<"),
+            Opcode::Jsle32Imm | Opcode::Jsle32Reg => Some("s<="),
+            Opcode::Jset32Imm | Opcode::Jset32Reg => Some("&"),
             _ => None,
         }
     }
@@ -895,6 +1023,17 @@ mod tests {
         assert_eq!(Opcode::from_str("jsge").unwrap(), Opcode::JsgeImm);
         assert_eq!(Opcode::from_str("jslt").unwrap(), Opcode::JsltImm);
         assert_eq!(Opcode::from_str("jsle").unwrap(), Opcode::JsleImm);
+        assert_eq!(Opcode::from_str("jeq32").unwrap(), Opcode::Jeq32Imm);
+        assert_eq!(Opcode::from_str("jgt32").unwrap(), Opcode::Jgt32Imm);
+        assert_eq!(Opcode::from_str("jge32").unwrap(), Opcode::Jge32Imm);
+        assert_eq!(Opcode::from_str("jlt32").unwrap(), Opcode::Jlt32Imm);
+        assert_eq!(Opcode::from_str("jle32").unwrap(), Opcode::Jle32Imm);
+        assert_eq!(Opcode::from_str("jset32").unwrap(), Opcode::Jset32Imm);
+        assert_eq!(Opcode::from_str("jne32").unwrap(), Opcode::Jne32Imm);
+        assert_eq!(Opcode::from_str("jsgt32").unwrap(), Opcode::Jsgt32Imm);
+        assert_eq!(Opcode::from_str("jsge32").unwrap(), Opcode::Jsge32Imm);
+        assert_eq!(Opcode::from_str("jslt32").unwrap(), Opcode::Jslt32Imm);
+        assert_eq!(Opcode::from_str("jsle32").unwrap(), Opcode::Jsle32Imm);
     }
 
     #[test]
@@ -936,7 +1075,7 @@ mod tests {
     fn test_all_jump_imm_ops() {
         for &op in JUMP_IMM_OPS {
             let byte: u8 = op.into();
-            let roundtrip = Opcode::try_from(byte).unwrap();
+            let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
             assert_eq!(roundtrip, op);
         }
     }
@@ -990,7 +1129,7 @@ mod tests {
     fn test_all_jump_reg_ops() {
         for &op in JUMP_REG_OPS {
             let byte: u8 = op.into();
-            let roundtrip = Opcode::try_from(byte).unwrap();
+            let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
             assert_eq!(roundtrip, op);
         }
     }
@@ -1109,6 +1248,28 @@ mod tests {
         assert_eq!(Opcode::JsgeImm.to_str(), "jsge");
         assert_eq!(Opcode::JsltImm.to_str(), "jslt");
         assert_eq!(Opcode::JsleImm.to_str(), "jsle");
+        assert_eq!(Opcode::Jeq32Imm.to_str(), "jeq32");
+        assert_eq!(Opcode::Jeq32Reg.to_str(), "jeq32");
+        assert_eq!(Opcode::Jgt32Imm.to_str(), "jgt32");
+        assert_eq!(Opcode::Jgt32Reg.to_str(), "jgt32");
+        assert_eq!(Opcode::Jge32Imm.to_str(), "jge32");
+        assert_eq!(Opcode::Jge32Reg.to_str(), "jge32");
+        assert_eq!(Opcode::Jlt32Imm.to_str(), "jlt32");
+        assert_eq!(Opcode::Jlt32Reg.to_str(), "jlt32");
+        assert_eq!(Opcode::Jle32Imm.to_str(), "jle32");
+        assert_eq!(Opcode::Jle32Reg.to_str(), "jle32");
+        assert_eq!(Opcode::Jset32Imm.to_str(), "jset32");
+        assert_eq!(Opcode::Jset32Reg.to_str(), "jset32");
+        assert_eq!(Opcode::Jne32Imm.to_str(), "jne32");
+        assert_eq!(Opcode::Jne32Reg.to_str(), "jne32");
+        assert_eq!(Opcode::Jsgt32Imm.to_str(), "jsgt32");
+        assert_eq!(Opcode::Jsgt32Reg.to_str(), "jsgt32");
+        assert_eq!(Opcode::Jsge32Imm.to_str(), "jsge32");
+        assert_eq!(Opcode::Jsge32Reg.to_str(), "jsge32");
+        assert_eq!(Opcode::Jslt32Imm.to_str(), "jslt32");
+        assert_eq!(Opcode::Jslt32Reg.to_str(), "jslt32");
+        assert_eq!(Opcode::Jsle32Imm.to_str(), "jsle32");
+        assert_eq!(Opcode::Jsle32Reg.to_str(), "jsle32");
     }
 
     #[test]

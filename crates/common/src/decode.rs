@@ -352,6 +352,78 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     })
 }
 
+fn parse_jump_fields(bytes: &[u8]) -> Result<(u8, u8, i16, i32), SBPFError> {
+    if bytes.len() < 8 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "instruction too short, expected at least 8 bytes, got {}",
+                bytes.len()
+            ),
+            span: 0..bytes.len(),
+            custom_label: None,
+        });
+    }
+
+    let reg = bytes[1];
+    let dst = reg & 0x0f;
+    let src = reg >> 4;
+    let off = i16::from_le_bytes([bytes[2], bytes[3]]);
+    let imm = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    Ok((dst, src, off, imm))
+}
+
+pub fn decode_jump_immediate_with_opcode(
+    bytes: &[u8],
+    opcode: Opcode,
+) -> Result<Instruction, SBPFError> {
+    let (dst, src, off, imm) = parse_jump_fields(bytes)?;
+    if src != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has src: {} supposed to be zero",
+                opcode, src
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+
+    Ok(Instruction {
+        opcode,
+        dst: Some(Register { n: dst }),
+        src: None,
+        off: Some(Either::Right(off)),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
+        span: 0..8,
+    })
+}
+
+pub fn decode_jump_register_with_opcode(
+    bytes: &[u8],
+    opcode: Opcode,
+) -> Result<Instruction, SBPFError> {
+    let (dst, src, off, imm) = parse_jump_fields(bytes)?;
+    if imm != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has imm: {} supposed to be zero",
+                opcode, imm
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+
+    Ok(Instruction {
+        opcode,
+        dst: Some(Register { n: dst }),
+        src: Some(Register { n: src }),
+        off: Some(Either::Right(off)),
+        imm: None,
+        span: 0..8,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::syscalls::REGISTERED_SYSCALLS, syscall_map::murmur3_32};

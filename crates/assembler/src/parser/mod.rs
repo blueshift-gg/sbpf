@@ -36,6 +36,7 @@ pub(crate) enum Section {
 
 /// Context containing all mutable state during parsing
 pub(crate) struct ParseContext<'a> {
+    pub arch: SbpfArch,
     pub ast: &'a mut AST,
     pub const_map: &'a mut HashMap<String, Number>,
     pub label_spans: &'a mut HashMap<String, std::ops::Range<usize>>,
@@ -142,6 +143,7 @@ pub fn parse_with_optimization(
     // Pass 2: full processing with label_offset_map already populated.
     let (text_offset, rodata_offset, errors) = {
         let mut ctx = ParseContext {
+            arch,
             ast: &mut ast,
             const_map: &mut const_map,
             label_spans: &mut label_spans,
@@ -445,7 +447,13 @@ fn process_statement(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 let span_range = span.start()..span.end();
                 let is_llvm = inner.as_rule() == Rule::instr_llvm;
 
-                match process_instruction(inner, ctx.const_map, ctx.label_offset_map, is_llvm) {
+                match process_instruction(
+                    inner,
+                    ctx.const_map,
+                    ctx.label_offset_map,
+                    ctx.arch,
+                    is_llvm,
+                ) {
                     Ok(instruction) => {
                         if !ctx.rodata_phase {
                             let size = instruction.get_size();
@@ -529,9 +537,13 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
                     Err(e) => ctx.errors.push(e),
                 }
             } else if let Some(inst_pair) = instruction_opt {
-                if let Err(e) =
-                    process_instruction(inst_pair, ctx.const_map, ctx.label_offset_map, is_llvm)
-                {
+                if let Err(e) = process_instruction(
+                    inst_pair,
+                    ctx.const_map,
+                    ctx.label_offset_map,
+                    ctx.arch,
+                    is_llvm,
+                ) {
                     ctx.errors.push(e);
                 }
                 if !ctx.missing_text_directive {
@@ -562,7 +574,13 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
             });
 
             if let Some(inst_pair) = instruction_opt {
-                match process_instruction(inst_pair, ctx.const_map, ctx.label_offset_map, is_llvm) {
+                match process_instruction(
+                    inst_pair,
+                    ctx.const_map,
+                    ctx.label_offset_map,
+                    ctx.arch,
+                    is_llvm,
+                ) {
                     Ok(instruction) => {
                         let size = instruction.get_size();
                         ctx.ast.nodes.push(ASTNode::Instruction {
@@ -582,12 +600,13 @@ fn process_instruction(
     pair: Pair<Rule>,
     const_map: &HashMap<String, Number>,
     label_offset_map: &HashMap<String, (Number, Section)>,
+    arch: SbpfArch,
     is_llvm: bool,
 ) -> Result<Instruction, CompileError> {
     if is_llvm {
-        llvm::process_instruction(pair, const_map, label_offset_map)
+        llvm::process_instruction(pair, const_map, label_offset_map, arch)
     } else {
-        default::process_instruction(pair, const_map, label_offset_map)
+        default::process_instruction(pair, const_map, label_offset_map, arch)
     }
 }
 

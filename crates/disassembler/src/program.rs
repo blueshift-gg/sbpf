@@ -166,6 +166,7 @@ impl Program {
 
         let is_sbpf_v2 =
             self.elf_header.e_flags == 0x02 && self.elf_header.e_machine == E_MACHINE_SBPF;
+        let is_sbpf_v3 = self.elf_header.e_flags == 0x03 && self.elf_header.e_machine == E_MACHINE;
 
         // Get rodata info
         let rodata_info = self.get_rodata_info();
@@ -189,6 +190,8 @@ impl Program {
             // ugly v2 shit we need to fix goes here:
             let mut ix = if is_sbpf_v2 {
                 Instruction::from_bytes_sbpf_v2(remaining)?
+            } else if is_sbpf_v3 {
+                Instruction::from_bytes_sbpf_v3(remaining)?
             } else {
                 Instruction::from_bytes(remaining)?
             };
@@ -475,7 +478,7 @@ impl Program {
 mod tests {
     use {
         crate::{
-            elf_header::{E_MACHINE_SBPF, EI_OSABI_LINUX, ELFHeader},
+            elf_header::{E_MACHINE, E_MACHINE_SBPF, EI_OSABI_LINUX, ELFHeader},
             program::Program,
             section_header_entry::SectionHeaderEntry,
         },
@@ -618,5 +621,45 @@ mod tests {
         let (ixs, _, _) = program.to_ixs().unwrap();
         assert_eq!(ixs.len(), 1);
         assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
+    }
+
+    #[test]
+    fn test_to_ixs_sbpf_v3() {
+        let v3_bytes = vec![0x46, 0x01, 0x00, 0x00, 0x7f, 0x00, 0x00, 0x00];
+
+        let program = Program {
+            elf_header: ELFHeader {
+                ei_magic: [127, 69, 76, 70],
+                ei_class: 2,
+                ei_data: 1,
+                ei_version: 1,
+                ei_osabi: 0,
+                ei_abiversion: 0,
+                ei_pad: [0; 7],
+                e_type: 0,
+                e_machine: E_MACHINE,
+                e_version: 0,
+                e_entry: 0,
+                e_phoff: 0,
+                e_shoff: 0,
+                e_flags: 0x03, // SBPF v3 flag
+                e_ehsize: 0,
+                e_phentsize: 0,
+                e_phnum: 0,
+                e_shentsize: 0,
+                e_shnum: 0,
+                e_shstrndx: 0,
+            },
+            program_headers: vec![],
+            section_headers: vec![],
+            section_header_entries: vec![
+                SectionHeaderEntry::new(".text\0".to_string(), 0, v3_bytes).unwrap(),
+            ],
+            relocations: vec![],
+        };
+
+        let (ixs, _, _) = program.to_ixs().unwrap();
+        assert_eq!(ixs.len(), 1);
+        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Jset32Imm);
     }
 }

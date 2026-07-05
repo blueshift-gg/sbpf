@@ -159,7 +159,7 @@ instr_store_imm = { store_op_imm ~ memory_ref ~ "," ~ operand }
 instr_store_reg = { store_op_reg ~ memory_ref ~ "," ~ register }
 
 // Control Flow Operations (Jumps)
-jump_op           = {
+jump_op = {
     "jeq"
   | "jne"
   | "jgt"
@@ -172,8 +172,25 @@ jump_op           = {
   | "jsle"
   | "jset"
 }
+
+jump32_op = {
+    "jeq32"
+  | "jne32"
+  | "jgt32"
+  | "jge32"
+  | "jlt32"
+  | "jle32"
+  | "jsgt32"
+  | "jsge32"
+  | "jslt32"
+  | "jsle32"
+  | "jset32"
+}
+
 instr_jump_imm    = { jump_op ~ register ~ "," ~ operand ~ "," ~ jump_target }
 instr_jump_reg    = { jump_op ~ register ~ "," ~ register ~ "," ~ jump_target }
+instr_jump32_imm  = { jump32_op ~ register ~ "," ~ operand ~ "," ~ jump_target }
+instr_jump32_reg  = { jump32_op ~ register ~ "," ~ register ~ "," ~ jump_target }
 instr_jump_uncond = { "ja" ~ jump_target }
 
 // Byte Swap Operations
@@ -209,6 +226,8 @@ cmp_op                 = { "s>=" | "s<=" | "s>" | "s<" | "==" | "!=" | ">=" | "<
 instr_llvm_jump_uncond = { "goto" ~ jump_target }
 instr_llvm_jump_reg    = { "if" ~ register ~ cmp_op ~ register ~ "goto" ~ jump_target }
 instr_llvm_jump_imm    = { "if" ~ register ~ cmp_op ~ operand ~ "goto" ~ jump_target }
+instr_llvm_jump32_reg  = { "if" ~ register_32 ~ cmp_op ~ register_32 ~ "goto" ~ jump_target }
+instr_llvm_jump32_imm  = { "if" ~ register_32 ~ cmp_op ~ operand ~ "goto" ~ jump_target }
 
 // ============================
 // SHARED INSTRUCTIONS
@@ -223,14 +242,14 @@ instr_exit  = { "exit" }
 // ============================
 
 instr_default     = {
-    (instr_lddw | instr_callx | instr_call | instr_exit | instr_neg32 | instr_neg64 | instr_alu64_imm | instr_alu64_reg | instr_alu32_imm | instr_alu32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
+    (instr_lddw | instr_callx | instr_call | instr_exit | instr_neg32 | instr_neg64 | instr_alu64_imm | instr_alu64_reg | instr_alu32_imm | instr_alu32_reg | instr_load | instr_store_imm | instr_store_reg | instr_jump_imm | instr_jump_reg | instr_jump32_imm | instr_jump32_reg | instr_jump_uncond | instr_endian) ~ (NEWLINE | &EOI)
 }
 label_default     = { (identifier | numeric_label) ~ ":" ~ ((directive_inner | instr_default) | NEWLINE) }
 statement_default = { NEWLINE | label_default | directive | instr_default }
 program_default   = { SOI ~ statement_default* ~ EOI }
 
 instr_llvm     = {
-    (instr_llvm_lddw | instr_llvm_load | instr_llvm_store_reg | instr_llvm_store_imm | instr_llvm_endian | instr_llvm_neg64 | instr_llvm_neg32 | instr_llvm_alu64 | instr_llvm_alu32 | instr_llvm_jump_uncond | instr_llvm_jump_reg | instr_llvm_jump_imm | instr_callx | instr_call | instr_exit) ~ (NEWLINE | &EOI)
+    (instr_llvm_lddw | instr_llvm_load | instr_llvm_store_reg | instr_llvm_store_imm | instr_llvm_endian | instr_llvm_neg64 | instr_llvm_neg32 | instr_llvm_alu64 | instr_llvm_alu32 | instr_llvm_jump_uncond | instr_llvm_jump_reg | instr_llvm_jump_imm | instr_llvm_jump32_reg | instr_llvm_jump32_imm | instr_callx | instr_call | instr_exit) ~ (NEWLINE | &EOI)
 }
 label_llvm     = { (identifier | numeric_label) ~ ":" ~ ((directive_inner | instr_llvm) | NEWLINE) }
 statement_llvm = { NEWLINE | label_llvm | directive | instr_llvm }
