@@ -140,7 +140,7 @@ fn resolve_symbol_name(
         })?;
 
     String::from_utf8(dynstr_data[dynstr_offset..dynstr_offset + end].to_vec())
-        .map_err(|e| DisassemblerError::InvalidUtf8InDynstr(e))
+        .map_err(DisassemblerError::InvalidUtf8InDynstr)
 }
 
 #[cfg(test)]
