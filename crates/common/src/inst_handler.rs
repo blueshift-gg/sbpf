@@ -2,8 +2,9 @@ use crate::{
     decode::{
         decode_binary_immediate, decode_binary_register, decode_call_immediate,
         decode_call_register, decode_exit, decode_jump, decode_jump_immediate,
-        decode_jump_register, decode_load_immediate, decode_load_memory, decode_store_immediate,
-        decode_store_register, decode_unary,
+        decode_jump_register, decode_jump32_immediate, decode_jump32_register,
+        decode_load_immediate, decode_load_memory, decode_store_immediate, decode_store_register,
+        decode_unary,
     },
     errors::{ExecutionError, SBPFError},
     execute::{
@@ -15,8 +16,8 @@ use crate::{
     instruction::Instruction,
     opcode::{
         BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
-        JUMP_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode, OperationType, STORE_IMM_OPS,
-        STORE_REG_OPS, UNARY_OPS,
+        JUMP_REG_OPS, JUMP32_IMM_OPS, JUMP32_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode,
+        OperationType, STORE_IMM_OPS, STORE_REG_OPS, UNARY_OPS,
     },
     validate::{
         validate_binary_immediate, validate_binary_register, validate_call_immediate,
@@ -127,6 +128,22 @@ pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::
     );
     register_group(
         &mut map,
+        JUMP32_IMM_OPS,
+        decode_jump32_immediate,
+        // validate and execute handlers are shared with JUMP_IMM_OPS
+        validate_jump_immediate,
+        execute_jump_immediate,
+    );
+    register_group(
+        &mut map,
+        JUMP32_REG_OPS,
+        decode_jump32_register,
+        // validate and execute handlers are shared with JUMP_REG_OPS
+        validate_jump_register,
+        execute_jump_register,
+    );
+    register_group(
+        &mut map,
         CALL_IMM_OPS,
         decode_call_immediate,
         validate_call_immediate,
@@ -167,6 +184,8 @@ pub static OPCODE_TO_TYPE: Lazy<HashMap<Opcode, OperationType>> = Lazy::new(|| {
     register_group(&mut map, JUMP_OPS, OperationType::Jump);
     register_group(&mut map, JUMP_IMM_OPS, OperationType::JumpImmediate);
     register_group(&mut map, JUMP_REG_OPS, OperationType::JumpRegister);
+    register_group(&mut map, JUMP32_IMM_OPS, OperationType::Jump32Immediate);
+    register_group(&mut map, JUMP32_REG_OPS, OperationType::Jump32Register);
     register_group(&mut map, CALL_IMM_OPS, OperationType::CallImmediate);
     register_group(&mut map, CALL_REG_OPS, OperationType::CallRegister);
     register_group(&mut map, EXIT_OPS, OperationType::Exit);

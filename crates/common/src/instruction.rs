@@ -1,6 +1,5 @@
 use {
     crate::{
-        decode::{decode_jump_immediate_with_opcode, decode_jump_register_with_opcode},
         errors::SBPFError,
         inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
@@ -44,7 +43,11 @@ impl Instruction {
     pub fn is_jump(&self) -> bool {
         matches!(
             self.get_opcode_type(),
-            OperationType::Jump | OperationType::JumpImmediate | OperationType::JumpRegister
+            OperationType::Jump
+                | OperationType::JumpImmediate
+                | OperationType::JumpRegister
+                | OperationType::Jump32Immediate
+                | OperationType::Jump32Register
         )
     }
 
@@ -135,12 +138,14 @@ impl Instruction {
 
     pub fn from_bytes_sbpf_v3(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
-
-        match OPCODE_TO_TYPE.get(&opcode).copied() {
-            Some(OperationType::JumpImmediate) => decode_jump_immediate_with_opcode(bytes, opcode),
-            Some(OperationType::JumpRegister) => decode_jump_register_with_opcode(bytes, opcode),
-            _ => Self::from_bytes(bytes),
-        }
+        OPCODE_TO_HANDLER
+            .get(&opcode)
+            .ok_or_else(|| SBPFError::BytecodeError {
+                error: format!("no decode handler for opcode {}", opcode),
+                span: 0..1,
+                custom_label: Some("Invalid opcode".to_string()),
+            })
+            .and_then(|handler| (handler.decode)(bytes))
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
@@ -342,7 +347,7 @@ impl Instruction {
                 let off = fmt_off(self.off.as_ref().unwrap());
                 Ok(format!("goto {}", off))
             }
-            OperationType::JumpImmediate => {
+            OperationType::JumpImmediate | OperationType::Jump32Immediate => {
                 let dst = self.dst.as_ref().unwrap().n;
                 let op = self.opcode.to_operator().unwrap();
                 let imm = fmt_imm(self.imm.as_ref().unwrap());
@@ -354,7 +359,7 @@ impl Instruction {
                 };
                 Ok(format!("if {}{} {} {} goto {}", prefix, dst, op, imm, off))
             }
-            OperationType::JumpRegister => {
+            OperationType::JumpRegister | OperationType::Jump32Register => {
                 let dst = self.dst.as_ref().unwrap().n;
                 let op = self.opcode.to_operator().unwrap();
                 let src = self.src.as_ref().unwrap().n;
@@ -730,6 +735,12 @@ mod test {
 
         let jeq_reg = Instruction::from_bytes(&hex!("1d12000000000000")).unwrap();
         assert!(jeq_reg.is_jump());
+
+        let jset32_imm = Instruction::from_bytes_sbpf_v3(&hex!("46030a0010000000")).unwrap();
+        assert!(jset32_imm.is_jump());
+
+        let jset32_reg = Instruction::from_bytes_sbpf_v3(&hex!("4e230a0000000000")).unwrap();
+        assert!(jset32_reg.is_jump());
 
         let exit = Instruction::from_bytes(&hex!("9500000000000000")).unwrap();
         assert!(!exit.is_jump());

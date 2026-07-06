@@ -24,6 +24,8 @@ pub enum OperationType {
     Jump,
     JumpImmediate,
     JumpRegister,
+    Jump32Immediate,
+    Jump32Register,
     CallImmediate,
     CallRegister,
     Exit,
@@ -152,17 +154,6 @@ pub const JUMP_IMM_OPS: &[Opcode] = &[
     Opcode::JsgeImm,
     Opcode::JsltImm,
     Opcode::JsleImm,
-    Opcode::Jeq32Imm,
-    Opcode::Jgt32Imm,
-    Opcode::Jge32Imm,
-    Opcode::Jlt32Imm,
-    Opcode::Jle32Imm,
-    Opcode::Jset32Imm,
-    Opcode::Jne32Imm,
-    Opcode::Jsgt32Imm,
-    Opcode::Jsge32Imm,
-    Opcode::Jslt32Imm,
-    Opcode::Jsle32Imm,
 ];
 
 pub const JUMP_REG_OPS: &[Opcode] = &[
@@ -177,7 +168,24 @@ pub const JUMP_REG_OPS: &[Opcode] = &[
     Opcode::JsgeReg,
     Opcode::JsltReg,
     Opcode::JsleReg,
-    Opcode::Jeq32Reg,
+];
+
+pub const JUMP32_IMM_OPS: &[Opcode] = &[
+    Opcode::Jeq32Imm, // OperationType::Jump32Immediate
+    Opcode::Jgt32Imm,
+    Opcode::Jge32Imm,
+    Opcode::Jlt32Imm,
+    Opcode::Jle32Imm,
+    Opcode::Jset32Imm,
+    Opcode::Jne32Imm,
+    Opcode::Jsgt32Imm,
+    Opcode::Jsge32Imm,
+    Opcode::Jslt32Imm,
+    Opcode::Jsle32Imm,
+];
+
+pub const JUMP32_REG_OPS: &[Opcode] = &[
+    Opcode::Jeq32Reg, // OperationType::Jump32Register
     Opcode::Jgt32Reg,
     Opcode::Jge32Reg,
     Opcode::Jlt32Reg,
@@ -1075,7 +1083,7 @@ mod tests {
     fn test_all_jump_imm_ops() {
         for &op in JUMP_IMM_OPS {
             let byte: u8 = op.into();
-            let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
+            let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
         }
     }
@@ -1128,6 +1136,24 @@ mod tests {
     #[test]
     fn test_all_jump_reg_ops() {
         for &op in JUMP_REG_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_jump32_imm_ops() {
+        for &op in JUMP32_IMM_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_jump32_reg_ops() {
+        for &op in JUMP32_REG_OPS {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
             assert_eq!(roundtrip, op);

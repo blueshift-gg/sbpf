@@ -22,6 +22,17 @@ fn parse_bytes(bytes: &[u8]) -> Result<(Opcode, u8, u8, i16, i32), SBPFError> {
     Ok((opcode, dst, src, off, imm))
 }
 
+#[inline]
+fn parse_bytes_v3(bytes: &[u8]) -> Result<(Opcode, u8, u8, i16, i32), SBPFError> {
+    let opcode: Opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
+    let reg = bytes[1];
+    let dst = reg & 0x0f;
+    let src = reg >> 4;
+    let off = i16::from_le_bytes([bytes[2], bytes[3]]);
+    let imm = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    Ok((opcode, dst, src, off, imm))
+}
+
 pub fn decode_load_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 16);
     let (opcode, dst, src, off, imm_low) = parse_bytes(bytes)?;
@@ -352,31 +363,9 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     })
 }
 
-fn parse_jump_fields(bytes: &[u8]) -> Result<(u8, u8, i16, i32), SBPFError> {
-    if bytes.len() < 8 {
-        return Err(SBPFError::BytecodeError {
-            error: format!(
-                "instruction too short, expected at least 8 bytes, got {}",
-                bytes.len()
-            ),
-            span: 0..bytes.len(),
-            custom_label: None,
-        });
-    }
-
-    let reg = bytes[1];
-    let dst = reg & 0x0f;
-    let src = reg >> 4;
-    let off = i16::from_le_bytes([bytes[2], bytes[3]]);
-    let imm = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-    Ok((dst, src, off, imm))
-}
-
-pub fn decode_jump_immediate_with_opcode(
-    bytes: &[u8],
-    opcode: Opcode,
-) -> Result<Instruction, SBPFError> {
-    let (dst, src, off, imm) = parse_jump_fields(bytes)?;
+pub fn decode_jump32_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
+    assert!(bytes.len() >= 8);
+    let (opcode, dst, src, off, imm) = parse_bytes_v3(bytes)?;
     if src != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
@@ -387,7 +376,6 @@ pub fn decode_jump_immediate_with_opcode(
             custom_label: None,
         });
     }
-
     Ok(Instruction {
         opcode,
         dst: Some(Register { n: dst }),
@@ -398,11 +386,9 @@ pub fn decode_jump_immediate_with_opcode(
     })
 }
 
-pub fn decode_jump_register_with_opcode(
-    bytes: &[u8],
-    opcode: Opcode,
-) -> Result<Instruction, SBPFError> {
-    let (dst, src, off, imm) = parse_jump_fields(bytes)?;
+pub fn decode_jump32_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
+    assert!(bytes.len() >= 8);
+    let (opcode, dst, src, off, imm) = parse_bytes_v3(bytes)?;
     if imm != 0 {
         return Err(SBPFError::BytecodeError {
             error: format!(
@@ -413,7 +399,6 @@ pub fn decode_jump_register_with_opcode(
             custom_label: None,
         });
     }
-
     Ok(Instruction {
         opcode,
         dst: Some(Register { n: dst }),
