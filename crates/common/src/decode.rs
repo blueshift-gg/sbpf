@@ -22,6 +22,17 @@ fn parse_bytes(bytes: &[u8]) -> Result<(Opcode, u8, u8, i16, i32), SBPFError> {
     Ok((opcode, dst, src, off, imm))
 }
 
+#[inline]
+fn parse_bytes_v3(bytes: &[u8]) -> Result<(Opcode, u8, u8, i16, i32), SBPFError> {
+    let opcode: Opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
+    let reg = bytes[1];
+    let dst = reg & 0x0f;
+    let src = reg >> 4;
+    let off = i16::from_le_bytes([bytes[2], bytes[3]]);
+    let imm = i32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+    Ok((opcode, dst, src, off, imm))
+}
+
 pub fn decode_load_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 16);
     let (opcode, dst, src, off, imm_low) = parse_bytes(bytes)?;
@@ -347,6 +358,52 @@ pub fn decode_exit(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         dst: None,
         src: None,
         off: None,
+        imm: None,
+        span: 0..8,
+    })
+}
+
+pub fn decode_jump32_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
+    assert!(bytes.len() >= 8);
+    let (opcode, dst, src, off, imm) = parse_bytes_v3(bytes)?;
+    if src != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has src: {} supposed to be zero",
+                opcode, src
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+    Ok(Instruction {
+        opcode,
+        dst: Some(Register { n: dst }),
+        src: None,
+        off: Some(Either::Right(off)),
+        imm: Some(Either::Right(Number::Int(imm.into()))),
+        span: 0..8,
+    })
+}
+
+pub fn decode_jump32_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
+    assert!(bytes.len() >= 8);
+    let (opcode, dst, src, off, imm) = parse_bytes_v3(bytes)?;
+    if imm != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has imm: {} supposed to be zero",
+                opcode, imm
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+    Ok(Instruction {
+        opcode,
+        dst: Some(Register { n: dst }),
+        src: Some(Register { n: src }),
+        off: Some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })

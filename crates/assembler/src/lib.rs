@@ -580,6 +580,62 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_jump32_v3() {
+        let source = r#"
+        .globl entrypoint
+        entrypoint:
+            jeq32 r1, 0, +1
+            jset32 r1, r2, +1
+            exit
+        "#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble(source);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_assemble_jump32_v0() {
+        let source = r#"
+        .globl entrypoint
+        entrypoint:
+            jeq32 r1, 0, +1
+            exit
+        "#;
+        let assembler = Assembler::new(AssemblerOption::default().with_arch(SbpfArch::V0));
+        let result = assembler.assemble(source);
+        // jmp32 operations should not work in v0
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_assemble_llvm_jump32_v3() {
+        let source = r#"
+        .globl entrypoint
+        entrypoint:
+            if w1 == 0 goto +1
+            if w1 & w2 goto +1
+            exit
+        "#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble(source);
+        assert!(result.is_ok(),);
+    }
+
+    #[test]
+    fn test_assemble_llvm_jump32_v0() {
+        let source = r#"
+        .globl entrypoint
+        entrypoint:
+            if w1 == 0 goto +1
+            exit
+        "#;
+        let assembler = Assembler::new(AssemblerOption::default().with_arch(SbpfArch::V0));
+        let result = assembler.assemble(source);
+        // jmp32 operations should not work in v0
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_assemble_offset_expression() {
         let source = r#"
         .globl entrypoint

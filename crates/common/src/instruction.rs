@@ -43,7 +43,11 @@ impl Instruction {
     pub fn is_jump(&self) -> bool {
         matches!(
             self.get_opcode_type(),
-            OperationType::Jump | OperationType::JumpImmediate | OperationType::JumpRegister
+            OperationType::Jump
+                | OperationType::JumpImmediate
+                | OperationType::JumpRegister
+                | OperationType::Jump32Immediate
+                | OperationType::Jump32Register
         )
     }
 
@@ -130,6 +134,18 @@ impl Instruction {
         }
 
         Self::from_bytes(&processed_bytes)
+    }
+
+    pub fn from_bytes_sbpf_v3(bytes: &[u8]) -> Result<Self, SBPFError> {
+        let opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
+        OPCODE_TO_HANDLER
+            .get(&opcode)
+            .ok_or_else(|| SBPFError::BytecodeError {
+                error: format!("no decode handler for opcode {}", opcode),
+                span: 0..1,
+                custom_label: Some("Invalid opcode".to_string()),
+            })
+            .and_then(|handler| (handler.decode)(bytes))
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
@@ -331,19 +347,32 @@ impl Instruction {
                 let off = fmt_off(self.off.as_ref().unwrap());
                 Ok(format!("goto {}", off))
             }
-            OperationType::JumpImmediate => {
+            OperationType::JumpImmediate | OperationType::Jump32Immediate => {
                 let dst = self.dst.as_ref().unwrap().n;
                 let op = self.opcode.to_operator().unwrap();
                 let imm = fmt_imm(self.imm.as_ref().unwrap());
                 let off = fmt_off(self.off.as_ref().unwrap());
-                Ok(format!("if r{} {} {} goto {}", dst, op, imm, off))
+                let prefix = if is_jump32_opcode(self.opcode) {
+                    "w"
+                } else {
+                    "r"
+                };
+                Ok(format!("if {}{} {} {} goto {}", prefix, dst, op, imm, off))
             }
-            OperationType::JumpRegister => {
+            OperationType::JumpRegister | OperationType::Jump32Register => {
                 let dst = self.dst.as_ref().unwrap().n;
                 let op = self.opcode.to_operator().unwrap();
                 let src = self.src.as_ref().unwrap().n;
                 let off = fmt_off(self.off.as_ref().unwrap());
-                Ok(format!("if r{} {} r{} goto {}", dst, op, src, off))
+                let prefix = if is_jump32_opcode(self.opcode) {
+                    "w"
+                } else {
+                    "r"
+                };
+                Ok(format!(
+                    "if {}{} {} {}{} goto {}",
+                    prefix, dst, op, prefix, src, off
+                ))
             }
             OperationType::CallImmediate | OperationType::CallRegister | OperationType::Exit => {
                 self.to_default_asm()
@@ -371,6 +400,34 @@ fn fmt_imm(imm: &Either<String, Number>) -> String {
             }
         }
     }
+}
+
+fn is_jump32_opcode(opcode: Opcode) -> bool {
+    matches!(
+        opcode,
+        Opcode::Jeq32Imm
+            | Opcode::Jeq32Reg
+            | Opcode::Jgt32Imm
+            | Opcode::Jgt32Reg
+            | Opcode::Jge32Imm
+            | Opcode::Jge32Reg
+            | Opcode::Jlt32Imm
+            | Opcode::Jlt32Reg
+            | Opcode::Jle32Imm
+            | Opcode::Jle32Reg
+            | Opcode::Jset32Imm
+            | Opcode::Jset32Reg
+            | Opcode::Jne32Imm
+            | Opcode::Jne32Reg
+            | Opcode::Jsgt32Imm
+            | Opcode::Jsgt32Reg
+            | Opcode::Jsge32Imm
+            | Opcode::Jsge32Reg
+            | Opcode::Jslt32Imm
+            | Opcode::Jslt32Reg
+            | Opcode::Jsle32Imm
+            | Opcode::Jsle32Reg
+    )
 }
 
 #[cfg(test)]
@@ -623,6 +680,25 @@ mod test {
     }
 
     #[test]
+    fn serialize_e2e_jset32_imm() {
+        let b = hex!("46030a0010000000");
+        let i = Instruction::from_bytes_sbpf_v3(&b).unwrap();
+        assert_eq!(
+            i.to_asm(AsmFormat::Default).unwrap(),
+            "jset32 r3, 0x10, +0xa"
+        );
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "if w3 & 0x10 goto +0xa");
+    }
+
+    #[test]
+    fn serialize_e2e_jset32_reg() {
+        let b = hex!("4e230a0000000000");
+        let i = Instruction::from_bytes_sbpf_v3(&b).unwrap();
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "jset32 r3, r2, +0xa");
+        assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "if w3 & w2 goto +0xa");
+    }
+
+    #[test]
     fn serialize_e2e_sub32_imm() {
         let b = hex!("1401000042000000");
         let i = Instruction::from_bytes(&b).unwrap();
@@ -659,6 +735,12 @@ mod test {
 
         let jeq_reg = Instruction::from_bytes(&hex!("1d12000000000000")).unwrap();
         assert!(jeq_reg.is_jump());
+
+        let jset32_imm = Instruction::from_bytes_sbpf_v3(&hex!("46030a0010000000")).unwrap();
+        assert!(jset32_imm.is_jump());
+
+        let jset32_reg = Instruction::from_bytes_sbpf_v3(&hex!("4e230a0000000000")).unwrap();
+        assert!(jset32_reg.is_jump());
 
         let exit = Instruction::from_bytes(&hex!("9500000000000000")).unwrap();
         assert!(!exit.is_jump());

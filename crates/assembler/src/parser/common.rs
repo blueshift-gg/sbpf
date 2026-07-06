@@ -1,6 +1,6 @@
 use {
     super::{Rule, Section},
-    crate::errors::CompileError,
+    crate::{SbpfArch, errors::CompileError},
     either::Either,
     pest::iterators::Pair,
     sbpf_common::{
@@ -473,4 +473,21 @@ pub fn process_callx(
         imm: None,
         span,
     })
+}
+
+pub(crate) fn check_arch_v3(pair: &Pair<Rule>, arch: SbpfArch) -> Result<(), CompileError> {
+    if arch.is_v3() {
+        return Ok(());
+    }
+
+    if let Some(inner) = pair.clone().into_inner().next() {
+        let span = inner.as_span();
+        return Err(CompileError::ParseError {
+            error: format!("instruction '{}' requires arch v3", inner.as_str()),
+            span: span.start()..span.end(),
+            custom_label: None,
+        });
+    }
+
+    Ok(())
 }

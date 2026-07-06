@@ -236,7 +236,18 @@ impl<H: SyscallHandler> SbpfVm<H> {
             | Opcode::JsgtImm
             | Opcode::JsgeImm
             | Opcode::JsltImm
-            | Opcode::JsleImm => execute::execute_jump_immediate(self, inst)?,
+            | Opcode::JsleImm
+            | Opcode::Jeq32Imm
+            | Opcode::Jgt32Imm
+            | Opcode::Jge32Imm
+            | Opcode::Jlt32Imm
+            | Opcode::Jle32Imm
+            | Opcode::Jset32Imm
+            | Opcode::Jne32Imm
+            | Opcode::Jsgt32Imm
+            | Opcode::Jsge32Imm
+            | Opcode::Jslt32Imm
+            | Opcode::Jsle32Imm => execute::execute_jump_immediate(self, inst)?,
             Opcode::JeqReg
             | Opcode::JgtReg
             | Opcode::JgeReg
@@ -247,7 +258,18 @@ impl<H: SyscallHandler> SbpfVm<H> {
             | Opcode::JsgtReg
             | Opcode::JsgeReg
             | Opcode::JsltReg
-            | Opcode::JsleReg => execute::execute_jump_register(self, inst)?,
+            | Opcode::JsleReg
+            | Opcode::Jeq32Reg
+            | Opcode::Jgt32Reg
+            | Opcode::Jge32Reg
+            | Opcode::Jlt32Reg
+            | Opcode::Jle32Reg
+            | Opcode::Jset32Reg
+            | Opcode::Jne32Reg
+            | Opcode::Jsgt32Reg
+            | Opcode::Jsge32Reg
+            | Opcode::Jslt32Reg
+            | Opcode::Jsle32Reg => execute::execute_jump_register(self, inst)?,
 
             // Call instructions
             Opcode::Call => execute::execute_call_immediate(self, inst)?,
@@ -862,5 +884,109 @@ mod tests {
         assert!(vm.halted);
         assert_eq!(vm.registers[1], 0x1);
         assert_eq!(vm.registers[2], 0x2);
+    }
+
+    #[test]
+    fn test_vm_jmp32_imm() {
+        // lddw r1, 0x00000001_00000005
+        // jeq32 r1, 5, +2
+        // mov64 r2, 1
+        // exit
+        // mov64 r2, 2
+        // exit
+        let program = vec![
+            make_test_instruction(
+                Opcode::Lddw,
+                Some(Register { n: 1 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(0x0000_0001_0000_0005))),
+            ),
+            make_test_instruction(
+                Opcode::Jeq32Imm,
+                Some(Register { n: 1 }),
+                None,
+                Some(Either::Right(2)),
+                Some(Either::Right(Number::Int(5))),
+            ),
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 2 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(1))),
+            ),
+            make_test_instruction(Opcode::Exit, None, None, None, None),
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 2 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(2))),
+            ),
+            make_test_instruction(Opcode::Exit, None, None, None, None),
+        ];
+
+        let mut vm = SbpfVm::new(program, vec![], vec![], MockSyscallHandler::default());
+        vm.run().unwrap();
+
+        assert!(vm.halted);
+        assert_eq!(vm.registers[2], 2);
+    }
+
+    #[test]
+    fn test_vm_jmp32_reg() {
+        // mov64 r1, -1
+        // mov64 r2, 0
+        // jslt32 r1, r2, +2
+        // mov64 r3, 1
+        // exit
+        // mov64 r3, 2
+        // exit
+        let program = vec![
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 1 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(-1))),
+            ),
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 2 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(0))),
+            ),
+            make_test_instruction(
+                Opcode::Jslt32Reg,
+                Some(Register { n: 1 }),
+                Some(Register { n: 2 }),
+                Some(Either::Right(2)),
+                None,
+            ),
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 3 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(1))),
+            ),
+            make_test_instruction(Opcode::Exit, None, None, None, None),
+            make_test_instruction(
+                Opcode::Mov64Imm,
+                Some(Register { n: 3 }),
+                None,
+                None,
+                Some(Either::Right(Number::Int(2))),
+            ),
+            make_test_instruction(Opcode::Exit, None, None, None, None),
+        ];
+
+        let mut vm = SbpfVm::new(program, vec![], vec![], MockSyscallHandler::default());
+        vm.run().unwrap();
+
+        assert!(vm.halted);
+        assert_eq!(vm.registers[3], 2);
     }
 }

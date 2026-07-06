@@ -30,6 +30,17 @@ pub fn execute_jump_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionR
         Opcode::JsleImm => {
             execute_jump_immediate_conditional(vm, inst, |a, b| (a as i64) <= (b as i64))
         }
+        Opcode::Jeq32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a == b),
+        Opcode::Jgt32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a > b),
+        Opcode::Jge32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a >= b),
+        Opcode::Jlt32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a < b),
+        Opcode::Jle32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a <= b),
+        Opcode::Jset32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| (a & b) != 0),
+        Opcode::Jne32Imm => execute_jump_immediate_conditional_u32(vm, inst, |a, b| a != b),
+        Opcode::Jsgt32Imm => execute_jump_immediate_conditional_i32(vm, inst, |a, b| a > b),
+        Opcode::Jsge32Imm => execute_jump_immediate_conditional_i32(vm, inst, |a, b| a >= b),
+        Opcode::Jslt32Imm => execute_jump_immediate_conditional_i32(vm, inst, |a, b| a < b),
+        Opcode::Jsle32Imm => execute_jump_immediate_conditional_i32(vm, inst, |a, b| a <= b),
         _ => Err(ExecutionError::InvalidInstruction),
     }
 }
@@ -55,6 +66,17 @@ pub fn execute_jump_register(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionRe
         Opcode::JsleReg => {
             execute_jump_register_conditional(vm, inst, |a, b| (a as i64) <= (b as i64))
         }
+        Opcode::Jeq32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a == b),
+        Opcode::Jgt32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a > b),
+        Opcode::Jge32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a >= b),
+        Opcode::Jlt32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a < b),
+        Opcode::Jle32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a <= b),
+        Opcode::Jset32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| (a & b) != 0),
+        Opcode::Jne32Reg => execute_jump_register_conditional_u32(vm, inst, |a, b| a != b),
+        Opcode::Jsgt32Reg => execute_jump_register_conditional_i32(vm, inst, |a, b| a > b),
+        Opcode::Jsge32Reg => execute_jump_register_conditional_i32(vm, inst, |a, b| a >= b),
+        Opcode::Jslt32Reg => execute_jump_register_conditional_i32(vm, inst, |a, b| a < b),
+        Opcode::Jsle32Reg => execute_jump_register_conditional_i32(vm, inst, |a, b| a <= b),
         _ => Err(ExecutionError::InvalidInstruction),
     }
 }
@@ -86,6 +108,80 @@ fn execute_jump_register_conditional(
     let off = get_offset(inst)?;
 
     if condition(vm.get_register(dst), vm.get_register(src)) {
+        vm.set_pc(((vm.get_pc() as i64) + 1 + (off as i64)) as usize);
+    } else {
+        vm.advance_pc();
+    }
+    Ok(())
+}
+
+fn execute_jump_immediate_conditional_u32(
+    vm: &mut dyn Vm,
+    inst: &Instruction,
+    condition: fn(u32, u32) -> bool,
+) -> ExecutionResult<()> {
+    let dst = get_dst(inst)?;
+    let off = get_offset(inst)?;
+    let lhs = vm.get_register(dst) as u32;
+    let rhs = get_imm_i64(inst)? as u32;
+
+    if condition(lhs, rhs) {
+        vm.set_pc(((vm.get_pc() as i64) + 1 + (off as i64)) as usize);
+    } else {
+        vm.advance_pc();
+    }
+    Ok(())
+}
+
+fn execute_jump_immediate_conditional_i32(
+    vm: &mut dyn Vm,
+    inst: &Instruction,
+    condition: fn(i32, i32) -> bool,
+) -> ExecutionResult<()> {
+    let dst = get_dst(inst)?;
+    let off = get_offset(inst)?;
+    let lhs = vm.get_register(dst) as i32;
+    let rhs = get_imm_i64(inst)? as i32;
+
+    if condition(lhs, rhs) {
+        vm.set_pc(((vm.get_pc() as i64) + 1 + (off as i64)) as usize);
+    } else {
+        vm.advance_pc();
+    }
+    Ok(())
+}
+
+fn execute_jump_register_conditional_u32(
+    vm: &mut dyn Vm,
+    inst: &Instruction,
+    condition: fn(u32, u32) -> bool,
+) -> ExecutionResult<()> {
+    let dst = get_dst(inst)?;
+    let src = get_src(inst)?;
+    let off = get_offset(inst)?;
+    let lhs = vm.get_register(dst) as u32;
+    let rhs = vm.get_register(src) as u32;
+
+    if condition(lhs, rhs) {
+        vm.set_pc(((vm.get_pc() as i64) + 1 + (off as i64)) as usize);
+    } else {
+        vm.advance_pc();
+    }
+    Ok(())
+}
+
+fn execute_jump_register_conditional_i32(
+    vm: &mut dyn Vm,
+    inst: &Instruction,
+    condition: fn(i32, i32) -> bool,
+) -> ExecutionResult<()> {
+    let dst = get_dst(inst)?;
+    let src = get_src(inst)?;
+    let off = get_offset(inst)?;
+    let lhs = vm.get_register(dst) as i32;
+    let rhs = vm.get_register(src) as i32;
+
+    if condition(lhs, rhs) {
         vm.set_pc(((vm.get_pc() as i64) + 1 + (off as i64)) as usize);
     } else {
         vm.advance_pc();
@@ -527,6 +623,413 @@ mod tests {
         );
         let mut vm = MockVm::new();
         vm.registers[1] = (-10i64) as u64;
+        vm.registers[2] = 5;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jeq32_imm() {
+        // jeq32 r1, 5, +2
+        let inst = make_test_instruction(
+            Opcode::Jeq32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(2)),
+            Some(Either::Right(Number::Int(5))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0001_0000_0005;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jgt32_imm() {
+        // jgt32 r1, -1, +3
+        let inst = make_test_instruction(
+            Opcode::Jgt32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(3)),
+            Some(Either::Right(Number::Int(-1))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0xffff_fffe;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 1);
+    }
+
+    #[test]
+    fn test_jge32_imm() {
+        // jge32 r1, 10, +2
+        let inst = make_test_instruction(
+            Opcode::Jge32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(2)),
+            Some(Either::Right(Number::Int(10))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0002_0000_000a;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jlt32_imm() {
+        // jlt32 r1, 10, +3
+        let inst = make_test_instruction(
+            Opcode::Jlt32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(3)),
+            Some(Either::Right(Number::Int(10))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 5;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 4);
+    }
+
+    #[test]
+    fn test_jle32_imm() {
+        // jle32 r1, 10, +4
+        let inst = make_test_instruction(
+            Opcode::Jle32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(4)),
+            Some(Either::Right(Number::Int(10))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 10;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 5);
+    }
+
+    #[test]
+    fn test_jset32_imm() {
+        // jset32 r1, 0x0f, +2
+        let inst = make_test_instruction(
+            Opcode::Jset32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(2)),
+            Some(Either::Right(Number::Int(0x0f))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0001_0000_000f;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jne32_imm() {
+        // jne32 r1, 10, +1
+        let inst = make_test_instruction(
+            Opcode::Jne32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(1)),
+            Some(Either::Right(Number::Int(10))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 9;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 2);
+    }
+
+    #[test]
+    fn test_jsgt32_imm() {
+        // jsgt32 r1, -1, +1
+        let inst = make_test_instruction(
+            Opcode::Jsgt32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(1)),
+            Some(Either::Right(Number::Int(-1))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 1;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 2);
+    }
+
+    #[test]
+    fn test_jsge32_imm() {
+        // jsge32 r1, -1, +2
+        let inst = make_test_instruction(
+            Opcode::Jsge32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(2)),
+            Some(Either::Right(Number::Int(-1))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 1;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jslt32_imm() {
+        // jslt32 r1, 1, +3
+        let inst = make_test_instruction(
+            Opcode::Jslt32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(3)),
+            Some(Either::Right(Number::Int(1))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0xffff_ffff;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 4);
+    }
+
+    #[test]
+    fn test_jsle32_imm() {
+        // jsle32 r1, 5, +2
+        let inst = make_test_instruction(
+            Opcode::Jsle32Imm,
+            Some(Register { n: 1 }),
+            None,
+            Some(Either::Right(2)),
+            Some(Either::Right(Number::Int(5))),
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0xffff_fff6;
+
+        execute_jump_immediate(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jeq32_reg() {
+        // jeq32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jeq32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0001_0000_0005;
+        vm.registers[2] = 0x0000_0002_0000_0005;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jgt32_reg() {
+        // jgt32 r1, r2, +3
+        let inst = make_test_instruction(
+            Opcode::Jgt32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(3)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 11;
+        vm.registers[2] = 10;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 4);
+    }
+
+    #[test]
+    fn test_jge32_reg() {
+        // jge32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jge32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 10;
+        vm.registers[2] = 10;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jlt32_reg() {
+        // jlt32 r1, r2, +3
+        let inst = make_test_instruction(
+            Opcode::Jlt32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(3)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 5;
+        vm.registers[2] = 10;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 4);
+    }
+
+    #[test]
+    fn test_jle32_reg() {
+        // jle32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jle32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 5;
+        vm.registers[2] = 5;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jset32_reg() {
+        // jset32 r1, r2, +4
+        let inst = make_test_instruction(
+            Opcode::Jset32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(4)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0001_0000_0000;
+        vm.registers[2] = 0x0000_0002_0000_0000;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 1);
+    }
+
+    #[test]
+    fn test_jne32_reg() {
+        // jne32 r1, r2, +1
+        let inst = make_test_instruction(
+            Opcode::Jne32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(1)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 9;
+        vm.registers[2] = 10;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 2);
+    }
+
+    #[test]
+    fn test_jsgt32_reg() {
+        // jsgt32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jsgt32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 1;
+        vm.registers[2] = 0xffff_ffff;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jsge32_reg() {
+        // jsge32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jsge32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 1;
+        vm.registers[2] = 0xffff_ffff;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jslt32_reg() {
+        // jslt32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jslt32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0x0000_0000_8000_0000;
+        vm.registers[2] = 0x0000_0000_7fff_ffff;
+
+        execute_jump_register(&mut vm, &inst).unwrap();
+
+        assert_eq!(vm.pc, 3);
+    }
+
+    #[test]
+    fn test_jsle32_reg() {
+        // jsle32 r1, r2, +2
+        let inst = make_test_instruction(
+            Opcode::Jsle32Reg,
+            Some(Register { n: 1 }),
+            Some(Register { n: 2 }),
+            Some(Either::Right(2)),
+            None,
+        );
+        let mut vm = MockVm::new();
+        vm.registers[1] = 0xffff_fff6;
         vm.registers[2] = 5;
 
         execute_jump_register(&mut vm, &inst).unwrap();

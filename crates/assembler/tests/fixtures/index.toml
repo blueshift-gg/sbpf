@@ -68,6 +68,34 @@ debug_hash = "6edb4bc89e653b23cb2d48bf8d4bd0645c0ee3c72919198252b999787b96c822"
 hash_v0 = "b8c4d7aeb8eca8b20cc5387207629ba10c0a819fe441a0f0784108803e89faad"
 debug_hash_v0 = "f04a28379ef03504557c302ae3271e7cd6d6e720d29dc162e3521373b45c579e"
 
+[cases.jump32_imm]
+file = "jump32_imm.s"
+hash = "39c8cdefdd1483ac820806dacc4e39003328878fbd39cde795f372aeaaad7e77"
+debug_hash = "d48c28777964a23c87a42050445de7db54f2f7295f209e8355b8582cf476ea1b"
+hash_v0 = ""
+debug_hash_v0 = ""
+
+[cases.jump32_imm_llvm]
+file = "jump32_imm_llvm.s"
+hash = "39c8cdefdd1483ac820806dacc4e39003328878fbd39cde795f372aeaaad7e77"
+debug_hash = "c834df6916e9cac2a3bf5a222092fb985e9062c48858dfd6263e2b9b4cbf3e4d"
+hash_v0 = ""
+debug_hash_v0 = ""
+
+[cases.jump32_reg]
+file = "jump32_reg.s"
+hash = "1b7255e3d4073ca8a1a51f59e7a2f2e25c7e6a272bec6f7f61ebac274ff8c8f6"
+debug_hash = "2a82cadee6a4f5aff8b965e47eb19d57adc01f15efd06c3eb282293f3754db55"
+hash_v0 = ""
+debug_hash_v0 = ""
+
+[cases.jump32_reg_llvm]
+file = "jump32_reg_llvm.s"
+hash = "1b7255e3d4073ca8a1a51f59e7a2f2e25c7e6a272bec6f7f61ebac274ff8c8f6"
+debug_hash = "7e3a429efaced9db7fbe3ba0cdc537f46eed70e4495a89ed9bb6d472025f6bbb"
+hash_v0 = ""
+debug_hash_v0 = ""
+
 [cases.jumps_imm]
 file = "jumps_imm.s"
 hash = "4b9dafbc47de88fc159e42a713a728d93d9ee9ccc1ffbf32099acfdfbb5cdac3"
