@@ -72,18 +72,80 @@ impl ELFHeader {
         let e_shnum = elf_header.e_shnum.get(endian);
         let e_shstrndx = elf_header.e_shstrndx.get(endian);
 
-        // Validate ELF header fields.
-        if e_ident.magic.ne(&EI_MAGIC)
-            || e_ident.class.ne(&EI_CLASS)
-            || e_ident.data.ne(&EI_DATA)
-            || e_ident.version.ne(&EI_VERSION)
-            || !matches!(e_ident.os_abi, EI_OSABI | EI_OSABI_LINUX)
-            || e_ident.abi_version.ne(&EI_ABIVERSION)
-            || e_ident.padding.ne(&EI_PAD)
-            || (e_machine.ne(&E_MACHINE) && e_machine.ne(&E_MACHINE_SBPF))
-            || e_version.ne(&E_VERSION)
-        {
-            return Err(DisassemblerError::NonStandardElfHeader);
+        if e_ident.magic != EI_MAGIC {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "magic",
+                expected: vec![u32::from_be_bytes(EI_MAGIC) as u64],
+                found: u32::from_be_bytes(e_ident.magic) as u64,
+            });
+        }
+
+        if e_ident.class != EI_CLASS {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "class",
+                expected: vec![EI_CLASS as u64],
+                found: e_ident.class as u64,
+            });
+        }
+
+        if e_ident.data != EI_DATA {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "data",
+                expected: vec![EI_DATA as u64],
+                found: e_ident.data as u64,
+            });
+        }
+
+        if e_ident.version != EI_VERSION {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "ident version",
+                expected: vec![EI_VERSION as u64],
+                found: e_ident.version as u64,
+            });
+        }
+
+        if !matches!(e_ident.os_abi, EI_OSABI | EI_OSABI_LINUX) {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "os abi",
+                expected: vec![EI_OSABI as u64, EI_OSABI_LINUX as u64],
+                found: e_ident.os_abi as u64,
+            });
+        }
+
+        if e_ident.abi_version != EI_ABIVERSION {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "abi version",
+                expected: vec![EI_ABIVERSION as u64],
+                found: e_ident.abi_version as u64,
+            });
+        }
+
+        if e_ident.padding != EI_PAD {
+            // Pack the 7 padding bytes into a u64 (big-endian, so byte order
+            // is preserved when displayed as hex).
+            let mut found = [0u8; 8];
+            found[1..].copy_from_slice(&e_ident.padding);
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "padding",
+                expected: vec![0],
+                found: u64::from_be_bytes(found),
+            });
+        }
+
+        if e_machine != E_MACHINE && e_machine != E_MACHINE_SBPF {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "machine",
+                expected: vec![E_MACHINE as u64, E_MACHINE_SBPF as u64],
+                found: e_machine as u64,
+            });
+        }
+
+        if e_version != E_VERSION {
+            return Err(DisassemblerError::NonStandardElfHeader {
+                field: "version",
+                expected: vec![E_VERSION as u64],
+                found: e_version as u64,
+            });
         }
 
         Ok(ELFHeader {
@@ -146,6 +208,7 @@ mod tests {
                 E_MACHINE, E_MACHINE_SBPF, E_TYPE, E_VERSION, EI_ABIVERSION, EI_CLASS, EI_DATA,
                 EI_MAGIC, EI_OSABI, EI_PAD, EI_VERSION,
             },
+            errors::DisassemblerError,
             program::Program,
         },
         hex_literal::hex,
@@ -215,21 +278,37 @@ mod tests {
         let invalid_magic = hex!(
             "00454C460201010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
         );
-        let result = Program::from_bytes(&invalid_magic);
-        assert!(result.is_err());
+        let err = Program::from_bytes(&invalid_magic).unwrap_err();
+        assert!(
+            matches!(err, DisassemblerError::InvalidElfFile { .. }),
+            "expected InvalidElfFile, got {err:?}"
+        );
 
         // Invalid class (not 64-bit).
         let invalid_class = hex!(
             "7F454C460101010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
         );
-        let result = Program::from_bytes(&invalid_class);
-        assert!(result.is_err());
+        let err = Program::from_bytes(&invalid_class).unwrap_err();
+        assert!(
+            matches!(err, DisassemblerError::InvalidElfFile { .. }),
+            "expected InvalidElfFile, got {err:?}"
+        );
 
         // Invalid endianness (big endian instead of little).
         let invalid_endian = hex!(
             "7F454C460202010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
         );
-        let result = Program::from_bytes(&invalid_endian);
-        assert!(result.is_err());
+        match Program::from_bytes(&invalid_endian) {
+            Err(DisassemblerError::NonStandardElfHeader {
+                field,
+                expected,
+                found,
+            }) => {
+                assert_eq!(field, "data");
+                assert_eq!(expected, vec![EI_DATA as u64]);
+                assert_eq!(found, 0x02);
+            }
+            other => panic!("expected NonStandardElfHeader for data, got {other:?}"),
+        }
     }
 }
