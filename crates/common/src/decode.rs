@@ -150,6 +150,29 @@ pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     })
 }
 
+pub fn decode_endian(bytes: &[u8]) -> Result<Instruction, SBPFError> {
+    assert!(bytes.len() >= 8);
+    let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
+    if src != 0 || off != 0 {
+        return Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction has src: {}, off: {} supposed to be zeros",
+                opcode, src, off
+            ),
+            span: 0..8,
+            custom_label: None,
+        });
+    }
+    Ok(Instruction {
+        opcode,
+        dst: Some(Register { n: dst }),
+        src: None,
+        off: None,
+        imm: Some(Either::Right(Number::Int(imm.into()))),
+        span: 0..8,
+    })
+}
+
 pub fn decode_binary_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
@@ -599,6 +622,35 @@ mod tests {
         let bytes = vec![0x87, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
 
         let result = decode_unary(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_endian_valid() {
+        // le16 r1
+        let bytes = vec![0xd4, 0x01, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00];
+
+        let result = decode_endian(&bytes).unwrap();
+        assert_eq!(result.opcode, Opcode::Le);
+        assert_eq!(result.dst.unwrap().n, 1);
+        assert!(result.src.is_none());
+        assert!(result.off.is_none());
+        assert_eq!(result.span, 0..8);
+    }
+
+    #[test]
+    fn test_decode_endian_error_nonzero_src() {
+        let bytes = vec![0xd4, 0x11, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00];
+
+        let result = decode_endian(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_endian_error_nonzero_off() {
+        let bytes = vec![0xdc, 0x01, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00];
+
+        let result = decode_endian(&bytes);
         assert!(result.is_err());
     }
 

@@ -1,4 +1,4 @@
-use crate::{errors::SBPFError, instruction::Instruction};
+use crate::{errors::SBPFError, inst_param::Number, instruction::Instruction};
 
 pub fn validate_load_immediate(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
@@ -62,6 +62,38 @@ pub fn validate_unary(inst: &Instruction) -> Result<(), SBPFError> {
         _ => Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction requires destination register only",
+                inst.opcode
+            ),
+            span: inst.span.clone(),
+            custom_label: None,
+        }),
+    }
+}
+
+pub fn validate_endian(inst: &Instruction) -> Result<(), SBPFError> {
+    match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
+        (Some(_dst), None, None, Some(imm)) => {
+            let valid_bits = matches!(
+                imm,
+                either::Either::Right(Number::Int(bits)) if *bits == 16 || *bits == 32 || *bits == 64
+            );
+
+            if valid_bits {
+                Ok(())
+            } else {
+                Err(SBPFError::BytecodeError {
+                    error: format!(
+                        "{} instruction requires immediate value of 16, 32, or 64",
+                        inst.opcode
+                    ),
+                    span: inst.span.clone(),
+                    custom_label: None,
+                })
+            }
+        }
+        _ => Err(SBPFError::BytecodeError {
+            error: format!(
+                "{} instruction requires destination register and immediate value",
                 inst.opcode
             ),
             span: inst.span.clone(),
@@ -599,29 +631,52 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_binary_immediate_valid() {
+    fn test_validate_endian_valid() {
         let valid_inst = Instruction {
             opcode: Opcode::Le,
             dst: Some(Register { n: 0 }),
             src: None,
             off: None,
-            imm: Some(Either::Right(Number::Int(16))),
+            imm: Some(Either::Right(Number::Int(32))),
             span: 0..8,
         };
-        assert!(validate_binary_immediate(&valid_inst).is_ok());
+        assert!(validate_endian(&valid_inst).is_ok());
     }
 
     #[test]
-    fn test_validate_binary_immediate_missing_dst() {
+    fn test_validate_endian_invalid_width() {
         let inst = Instruction {
-            opcode: Opcode::Le,
-            dst: None,
+            opcode: Opcode::Be,
+            dst: Some(Register { n: 0 }),
             src: None,
             off: None,
-            imm: Some(Either::Right(Number::Int(16))),
+            imm: Some(Either::Right(Number::Int(8))),
             span: 0..8,
         };
-        let result = validate_binary_immediate(&inst);
+        let result = validate_endian(&inst);
+        assert!(result.is_err());
+        if let Err(SBPFError::BytecodeError { error, .. }) = result {
+            assert_eq!(
+                error,
+                format!(
+                    "{} instruction requires immediate value of 16, 32, or 64",
+                    Opcode::Be
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_endian_missing_imm() {
+        let inst = Instruction {
+            opcode: Opcode::Le,
+            dst: Some(Register { n: 0 }),
+            src: None,
+            off: None,
+            imm: None,
+            span: 0..8,
+        };
+        let result = validate_endian(&inst);
         assert!(result.is_err());
         if let Err(SBPFError::BytecodeError { error, .. }) = result {
             assert_eq!(
@@ -635,9 +690,91 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_binary_immediate_missing_imm() {
+    fn test_validate_endian_has_src() {
         let inst = Instruction {
             opcode: Opcode::Le,
+            dst: Some(Register { n: 0 }),
+            src: Some(Register { n: 1 }),
+            off: None,
+            imm: Some(Either::Right(Number::Int(16))),
+            span: 0..8,
+        };
+        let result = validate_endian(&inst);
+        assert!(result.is_err());
+        if let Err(SBPFError::BytecodeError { error, .. }) = result {
+            assert_eq!(
+                error,
+                format!(
+                    "{} instruction requires destination register and immediate value",
+                    Opcode::Le
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_endian_has_offset() {
+        let inst = Instruction {
+            opcode: Opcode::Be,
+            dst: Some(Register { n: 0 }),
+            src: None,
+            off: Some(Either::Right(10)),
+            imm: Some(Either::Right(Number::Int(64))),
+            span: 0..8,
+        };
+        let result = validate_endian(&inst);
+        assert!(result.is_err());
+        if let Err(SBPFError::BytecodeError { error, .. }) = result {
+            assert_eq!(
+                error,
+                format!(
+                    "{} instruction requires destination register and immediate value",
+                    Opcode::Be
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_binary_immediate_valid() {
+        let valid_inst = Instruction {
+            opcode: Opcode::Add64Imm,
+            dst: Some(Register { n: 0 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(42))),
+            span: 0..8,
+        };
+        assert!(validate_binary_immediate(&valid_inst).is_ok());
+    }
+
+    #[test]
+    fn test_validate_binary_immediate_missing_dst() {
+        let inst = Instruction {
+            opcode: Opcode::Add64Imm,
+            dst: None,
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(42))),
+            span: 0..8,
+        };
+        let result = validate_binary_immediate(&inst);
+        assert!(result.is_err());
+        if let Err(SBPFError::BytecodeError { error, .. }) = result {
+            assert_eq!(
+                error,
+                format!(
+                    "{} instruction requires destination register and immediate value",
+                    Opcode::Add64Imm
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_binary_immediate_missing_imm() {
+        let inst = Instruction {
+            opcode: Opcode::Add64Imm,
             dst: Some(Register { n: 0 }),
             src: None,
             off: None,
@@ -651,7 +788,7 @@ mod tests {
                 error,
                 format!(
                     "{} instruction requires destination register and immediate value",
-                    Opcode::Le
+                    Opcode::Add64Imm
                 )
             );
         }
@@ -660,11 +797,11 @@ mod tests {
     #[test]
     fn test_validate_binary_immediate_has_src() {
         let inst = Instruction {
-            opcode: Opcode::Le,
+            opcode: Opcode::Add64Imm,
             dst: Some(Register { n: 0 }),
             src: Some(Register { n: 1 }),
             off: None,
-            imm: Some(Either::Right(Number::Int(16))),
+            imm: Some(Either::Right(Number::Int(42))),
             span: 0..8,
         };
         let result = validate_binary_immediate(&inst);
@@ -674,7 +811,7 @@ mod tests {
                 error,
                 format!(
                     "{} instruction requires destination register and immediate value",
-                    Opcode::Le
+                    Opcode::Add64Imm
                 )
             );
         }
@@ -683,7 +820,7 @@ mod tests {
     #[test]
     fn test_validate_binary_immediate_has_offset() {
         let inst = Instruction {
-            opcode: Opcode::Le,
+            opcode: Opcode::Add64Imm,
             dst: Some(Register { n: 0 }),
             src: None,
             off: Some(Either::Right(10)),
@@ -697,7 +834,7 @@ mod tests {
                 error,
                 format!(
                     "{} instruction requires destination register and immediate value",
-                    Opcode::Le
+                    Opcode::Add64Imm
                 )
             );
         }

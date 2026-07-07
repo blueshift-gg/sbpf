@@ -270,11 +270,6 @@ impl Instruction {
 
         match op_type {
             OperationType::BinaryImmediate | OperationType::BinaryRegister => {
-                if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
-                    let bits = self.op_imm_bits()?;
-                    let dst = self.dst.as_ref().unwrap().n;
-                    return Ok(format!("r{} = {} r{}", dst, bits, dst));
-                }
                 let op = self
                     .opcode
                     .to_operator()
@@ -291,6 +286,11 @@ impl Instruction {
                     fmt_imm(self.imm.as_ref().unwrap())
                 };
                 Ok(format!("{}{} {} {}", prefix, dst, op, rhs))
+            }
+            OperationType::Endian => {
+                let bits = self.op_imm_bits()?;
+                let dst = self.dst.as_ref().unwrap().n;
+                Ok(format!("r{} = {} r{}", dst, bits, dst))
             }
             OperationType::Unary => {
                 let prefix = if self.opcode == Opcode::Neg32 {

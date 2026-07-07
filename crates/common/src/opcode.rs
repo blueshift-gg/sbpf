@@ -21,6 +21,7 @@ pub enum OperationType {
     BinaryImmediate,
     BinaryRegister,
     Unary,
+    Endian,
     Jump,
     JumpImmediate,
     JumpRegister,
@@ -72,8 +73,6 @@ pub const BIN_IMM_OPS: &[Opcode] = &[
     Opcode::Urem32Imm,
     Opcode::Sdiv32Imm,
     Opcode::Srem32Imm,
-    Opcode::Le,
-    Opcode::Be,
     Opcode::Add64Imm,
     Opcode::Sub64Imm,
     Opcode::Mul64Imm,
@@ -94,6 +93,11 @@ pub const BIN_IMM_OPS: &[Opcode] = &[
     Opcode::Shmul64Imm,
     Opcode::Sdiv64Imm,
     Opcode::Srem64Imm,
+];
+
+pub const ENDIAN_OPS: &[Opcode] = &[
+    Opcode::Le, // OperationType::Endian
+    Opcode::Be,
 ];
 
 pub const BIN_REG_OPS: &[Opcode] = &[
@@ -1118,6 +1122,15 @@ mod tests {
     #[test]
     fn test_all_unary_ops() {
         for &op in UNARY_OPS {
+            let byte: u8 = op.into();
+            let roundtrip = Opcode::try_from(byte).unwrap();
+            assert_eq!(roundtrip, op);
+        }
+    }
+
+    #[test]
+    fn test_all_endian_ops() {
+        for &op in ENDIAN_OPS {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
