@@ -15,7 +15,6 @@ use {
     crate::{errors::ExecutionError, instruction::Instruction, opcode::Opcode},
     alu32::{execute_alu32_imm, execute_alu32_reg, execute_neg32},
     alu64::{execute_alu64_imm, execute_alu64_reg, execute_neg64},
-    endian::execute_endian,
     load::{execute_lddw, execute_ldxb, execute_ldxdw, execute_ldxh, execute_ldxw},
     store::{
         execute_stb, execute_stdw, execute_sth, execute_stw, execute_stxb, execute_stxdw,
@@ -24,6 +23,7 @@ use {
 };
 pub use {
     call::{execute_call_immediate, execute_call_register, execute_exit},
+    endian::execute_endian,
     jump::{execute_jump, execute_jump_immediate, execute_jump_register},
 };
 
@@ -130,7 +130,6 @@ pub fn execute_unary(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()>
     match inst.opcode {
         Opcode::Neg64 => execute_neg64(vm, inst),
         Opcode::Neg32 => execute_neg32(vm, inst),
-        Opcode::Le | Opcode::Be => execute_endian(vm, inst),
         _ => Err(ExecutionError::InvalidInstruction),
     }
 }

@@ -6,10 +6,8 @@ use {
         syscalls::SyscallHandler,
     },
     sbpf_common::{
-        errors::ExecutionError,
-        execute::{self, Vm},
+        errors::ExecutionError, execute::Vm, inst_handler::OPCODE_TO_HANDLER,
         instruction::Instruction,
-        opcode::Opcode,
     },
     serde::{Deserialize, Serialize},
 };
@@ -150,137 +148,12 @@ impl<H: SyscallHandler> SbpfVm<H> {
     }
 
     fn execute_instruction(&mut self, inst: &Instruction) -> SbpfVmResult<()> {
-        match inst.opcode {
-            // ALU 64-bit instructions
-            Opcode::Add64Imm
-            | Opcode::Sub64Imm
-            | Opcode::Mul64Imm
-            | Opcode::Div64Imm
-            | Opcode::Or64Imm
-            | Opcode::And64Imm
-            | Opcode::Lsh64Imm
-            | Opcode::Rsh64Imm
-            | Opcode::Mod64Imm
-            | Opcode::Xor64Imm
-            | Opcode::Mov64Imm
-            | Opcode::Arsh64Imm => execute::execute_binary_immediate(self, inst)?,
-            Opcode::Add64Reg
-            | Opcode::Sub64Reg
-            | Opcode::Mul64Reg
-            | Opcode::Div64Reg
-            | Opcode::Or64Reg
-            | Opcode::And64Reg
-            | Opcode::Lsh64Reg
-            | Opcode::Rsh64Reg
-            | Opcode::Mod64Reg
-            | Opcode::Xor64Reg
-            | Opcode::Mov64Reg
-            | Opcode::Arsh64Reg => execute::execute_binary_register(self, inst)?,
-
-            // ALU 32-bit instructions
-            Opcode::Add32Imm
-            | Opcode::Sub32Imm
-            | Opcode::Mul32Imm
-            | Opcode::Div32Imm
-            | Opcode::Or32Imm
-            | Opcode::And32Imm
-            | Opcode::Lsh32Imm
-            | Opcode::Rsh32Imm
-            | Opcode::Mod32Imm
-            | Opcode::Xor32Imm
-            | Opcode::Mov32Imm
-            | Opcode::Arsh32Imm => execute::execute_binary_immediate(self, inst)?,
-            Opcode::Add32Reg
-            | Opcode::Sub32Reg
-            | Opcode::Mul32Reg
-            | Opcode::Div32Reg
-            | Opcode::Or32Reg
-            | Opcode::And32Reg
-            | Opcode::Lsh32Reg
-            | Opcode::Rsh32Reg
-            | Opcode::Mod32Reg
-            | Opcode::Xor32Reg
-            | Opcode::Mov32Reg
-            | Opcode::Arsh32Reg => execute::execute_binary_register(self, inst)?,
-
-            // Unary and endian instructions
-            Opcode::Neg64 | Opcode::Neg32 | Opcode::Le | Opcode::Be => {
-                execute::execute_unary(self, inst)?
-            }
-
-            // Load instructions
-            Opcode::Lddw => execute::execute_load_immediate(self, inst)?,
-            Opcode::Ldxb | Opcode::Ldxh | Opcode::Ldxw | Opcode::Ldxdw => {
-                execute::execute_load_memory(self, inst)?
-            }
-
-            // Store immediate instructions
-            Opcode::Stb | Opcode::Sth | Opcode::Stw | Opcode::Stdw => {
-                execute::execute_store_immediate(self, inst)?
-            }
-
-            // Store register instructions
-            Opcode::Stxb | Opcode::Stxh | Opcode::Stxw | Opcode::Stxdw => {
-                execute::execute_store_register(self, inst)?
-            }
-
-            // Jump instructions
-            Opcode::Ja => execute::execute_jump(self, inst)?,
-            Opcode::JeqImm
-            | Opcode::JgtImm
-            | Opcode::JgeImm
-            | Opcode::JltImm
-            | Opcode::JleImm
-            | Opcode::JsetImm
-            | Opcode::JneImm
-            | Opcode::JsgtImm
-            | Opcode::JsgeImm
-            | Opcode::JsltImm
-            | Opcode::JsleImm
-            | Opcode::Jeq32Imm
-            | Opcode::Jgt32Imm
-            | Opcode::Jge32Imm
-            | Opcode::Jlt32Imm
-            | Opcode::Jle32Imm
-            | Opcode::Jset32Imm
-            | Opcode::Jne32Imm
-            | Opcode::Jsgt32Imm
-            | Opcode::Jsge32Imm
-            | Opcode::Jslt32Imm
-            | Opcode::Jsle32Imm => execute::execute_jump_immediate(self, inst)?,
-            Opcode::JeqReg
-            | Opcode::JgtReg
-            | Opcode::JgeReg
-            | Opcode::JltReg
-            | Opcode::JleReg
-            | Opcode::JsetReg
-            | Opcode::JneReg
-            | Opcode::JsgtReg
-            | Opcode::JsgeReg
-            | Opcode::JsltReg
-            | Opcode::JsleReg
-            | Opcode::Jeq32Reg
-            | Opcode::Jgt32Reg
-            | Opcode::Jge32Reg
-            | Opcode::Jlt32Reg
-            | Opcode::Jle32Reg
-            | Opcode::Jset32Reg
-            | Opcode::Jne32Reg
-            | Opcode::Jsgt32Reg
-            | Opcode::Jsge32Reg
-            | Opcode::Jslt32Reg
-            | Opcode::Jsle32Reg => execute::execute_jump_register(self, inst)?,
-
-            // Call instructions
-            Opcode::Call => execute::execute_call_immediate(self, inst)?,
-            Opcode::Callx => execute::execute_call_register(self, inst)?,
-
-            // Exit instruction
-            Opcode::Exit => execute::execute_exit(self, inst)?,
-
-            _ => return Err(SbpfVmError::InvalidInstruction),
+        if let Some(handler) = OPCODE_TO_HANDLER.get(&inst.opcode) {
+            (handler.execute)(self, inst)?;
+            Ok(())
+        } else {
+            Err(SbpfVmError::InvalidInstruction)
         }
-        Ok(())
     }
 
     pub fn run(&mut self) -> SbpfVmResult<()> {

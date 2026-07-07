@@ -1,7 +1,7 @@
 use crate::{
     decode::{
         decode_binary_immediate, decode_binary_register, decode_call_immediate,
-        decode_call_register, decode_exit, decode_jump, decode_jump_immediate,
+        decode_call_register, decode_endian, decode_exit, decode_jump, decode_jump_immediate,
         decode_jump_register, decode_jump32_immediate, decode_jump32_register,
         decode_load_immediate, decode_load_memory, decode_store_immediate, decode_store_register,
         decode_unary,
@@ -9,21 +9,21 @@ use crate::{
     errors::{ExecutionError, SBPFError},
     execute::{
         Vm, execute_binary_immediate, execute_binary_register, execute_call_immediate,
-        execute_call_register, execute_exit, execute_jump, execute_jump_immediate,
+        execute_call_register, execute_endian, execute_exit, execute_jump, execute_jump_immediate,
         execute_jump_register, execute_load_immediate, execute_load_memory,
         execute_store_immediate, execute_store_register, execute_unary,
     },
     instruction::Instruction,
     opcode::{
-        BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, EXIT_OPS, JUMP_IMM_OPS, JUMP_OPS,
-        JUMP_REG_OPS, JUMP32_IMM_OPS, JUMP32_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS, Opcode,
-        OperationType, STORE_IMM_OPS, STORE_REG_OPS, UNARY_OPS,
+        BIN_IMM_OPS, BIN_REG_OPS, CALL_IMM_OPS, CALL_REG_OPS, ENDIAN_OPS, EXIT_OPS, JUMP_IMM_OPS,
+        JUMP_OPS, JUMP_REG_OPS, JUMP32_IMM_OPS, JUMP32_REG_OPS, LOAD_IMM_OPS, LOAD_MEMORY_OPS,
+        Opcode, OperationType, STORE_IMM_OPS, STORE_REG_OPS, UNARY_OPS,
     },
     validate::{
         validate_binary_immediate, validate_binary_register, validate_call_immediate,
-        validate_call_register, validate_exit, validate_jump, validate_jump_immediate,
-        validate_jump_register, validate_load_immediate, validate_load_memory,
-        validate_store_immediate, validate_store_register, validate_unary,
+        validate_call_register, validate_endian, validate_exit, validate_jump,
+        validate_jump_immediate, validate_jump_register, validate_load_immediate,
+        validate_load_memory, validate_store_immediate, validate_store_register, validate_unary,
     },
 };
 
@@ -111,6 +111,13 @@ pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::
         validate_unary,
         execute_unary,
     );
+    register_group(
+        &mut map,
+        ENDIAN_OPS,
+        decode_endian,
+        validate_endian,
+        execute_endian,
+    );
     register_group(&mut map, JUMP_OPS, decode_jump, validate_jump, execute_jump);
     register_group(
         &mut map,
@@ -181,6 +188,7 @@ pub static OPCODE_TO_TYPE: Lazy<HashMap<Opcode, OperationType>> = Lazy::new(|| {
     register_group(&mut map, BIN_IMM_OPS, OperationType::BinaryImmediate);
     register_group(&mut map, BIN_REG_OPS, OperationType::BinaryRegister);
     register_group(&mut map, UNARY_OPS, OperationType::Unary);
+    register_group(&mut map, ENDIAN_OPS, OperationType::Endian);
     register_group(&mut map, JUMP_OPS, OperationType::Jump);
     register_group(&mut map, JUMP_IMM_OPS, OperationType::JumpImmediate);
     register_group(&mut map, JUMP_REG_OPS, OperationType::JumpRegister);
