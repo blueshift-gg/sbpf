@@ -82,21 +82,12 @@ pub fn sol_get_last_restart_slot_sysvar(
 mod tests {
     use {
         super::*,
-        crate::config::{ExecutionCost, SysvarContext},
-        sbpf_vm::{compute::ComputeMeter, errors::SbpfVmError, memory::Memory},
+        crate::{
+            config::SysvarContext,
+            syscalls::tests::test_helpers::{costs, make_memory, meter},
+        },
+        sbpf_vm::{errors::SbpfVmError, memory::Memory},
     };
-
-    fn make_memory() -> Memory {
-        Memory::new(vec![], vec![], 4096, 4096)
-    }
-
-    fn costs() -> ExecutionCost {
-        ExecutionCost::default()
-    }
-
-    fn meter(limit: u64) -> ComputeMeter {
-        ComputeMeter::new(limit)
-    }
 
     fn raw_bytes<T>(val: &T) -> Vec<u8> {
         unsafe { std::slice::from_raw_parts(val as *const T as *const u8, size_of::<T>()).to_vec() }

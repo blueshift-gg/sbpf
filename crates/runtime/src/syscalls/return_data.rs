@@ -76,22 +76,10 @@ pub fn sol_get_return_data(
 mod tests {
     use {
         super::*,
-        crate::config::ExecutionCost,
-        sbpf_vm::{compute::ComputeMeter, errors::SbpfVmError, memory::Memory},
+        crate::syscalls::tests::test_helpers::{costs, make_memory, meter},
+        sbpf_vm::{errors::SbpfVmError, memory::Memory},
         solana_address::Address,
     };
-
-    fn make_memory() -> Memory {
-        Memory::new(vec![], vec![], 4096, 4096)
-    }
-
-    fn costs() -> ExecutionCost {
-        ExecutionCost::default()
-    }
-
-    fn meter(limit: u64) -> ComputeMeter {
-        ComputeMeter::new(limit)
-    }
 
     fn test_program_id() -> Address {
         Address::from([7u8; 32])

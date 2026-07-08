@@ -20,11 +20,7 @@ pub fn sol_panic(registers: [u64; 5], memory: &mut Memory) -> SbpfVmResult<u64> 
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sbpf_vm::memory::Memory};
-
-    fn make_memory() -> Memory {
-        Memory::new(vec![], vec![], 4096, 4096)
-    }
+    use {super::*, crate::syscalls::tests::test_helpers::make_memory, sbpf_vm::memory::Memory};
 
     #[test]
     fn test_abort_returns_abort_error() {

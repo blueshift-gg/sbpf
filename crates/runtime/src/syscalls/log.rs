@@ -79,22 +79,13 @@ pub fn sol_remaining_compute_units(
 mod tests {
     use {
         super::*,
-        crate::{config::ExecutionCost, runtime::LogCollector},
-        sbpf_vm::{compute::ComputeMeter, errors::SbpfVmError, memory::Memory},
+        crate::{
+            runtime::LogCollector,
+            syscalls::tests::test_helpers::{costs, make_memory, meter},
+        },
+        sbpf_vm::{errors::SbpfVmError, memory::Memory},
         std::{cell::RefCell, rc::Rc},
     };
-
-    fn make_memory() -> Memory {
-        Memory::new(vec![], vec![], 4096, 4096)
-    }
-
-    fn costs() -> ExecutionCost {
-        ExecutionCost::default()
-    }
-
-    fn meter(limit: u64) -> ComputeMeter {
-        ComputeMeter::new(limit)
-    }
 
     fn new_log() -> LogCollector {
         Rc::new(RefCell::new(Vec::new()))

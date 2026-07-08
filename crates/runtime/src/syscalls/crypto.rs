@@ -144,20 +144,9 @@ pub fn sol_blake3(
 mod tests {
     use {
         super::*,
-        sbpf_vm::{compute::ComputeMeter, errors::SbpfVmError, memory::Memory},
+        crate::syscalls::tests::test_helpers::{costs, make_memory, meter},
+        sbpf_vm::{errors::SbpfVmError, memory::Memory},
     };
-
-    fn make_memory() -> Memory {
-        Memory::new(vec![], vec![], 4096, 64 * 1024)
-    }
-
-    fn costs() -> ExecutionCost {
-        ExecutionCost::default()
-    }
-
-    fn meter(limit: u64) -> ComputeMeter {
-        ComputeMeter::new(limit)
-    }
 
     fn setup_single_slice(memory: &mut Memory, data: &[u8]) -> (u64, u64) {
         let data_addr = Memory::HEAP_START;
