@@ -44,7 +44,7 @@ members = [
     "crates/disassembler",
     "crates/debugger",
     "crates/runtime",
-    "crates/sbpf_ir",
+    "crates/sbpf-ir",
     "crates/sbpf-syscall-map",
     "crates/vm",
     "examples/*",
@@ -100,7 +100,7 @@ sbpf-assembler = { path = "crates/assembler", version = "0.2.2" }
 sbpf-disassembler = { path = "crates/disassembler", version = "0.2.2" }
 sbpf-debugger = { path = "crates/debugger", version = "0.2.2" }
 sbpf-common = { path = "crates/common", version = "0.2.2" }
-sbpf-ir = { path = "crates/sbpf_ir", version = "0.2.2" }
+sbpf-ir = { path = "crates/sbpf-ir", version = "0.2.2" }
 sbpf-runtime = { path = "crates/runtime", version = "0.2.2" }
 sbpf-syscall-map = { path = "crates/sbpf-syscall-map", version = "0.2.2" }
 sbpf-transform = { path = "crates/analyzer", version = "0.2.2" }
