@@ -10,7 +10,6 @@ pub const EI_CLASS: u8 = 0x02; // 64-bit
 pub const EI_DATA: u8 = 0x01; // Little endian
 pub const EI_VERSION: u8 = 0x01; // Version 1
 pub const EI_OSABI: u8 = 0x00; // System V
-pub const EI_OSABI_LINUX: u8 = 0x03; // Linux/GNU
 pub const EI_ABIVERSION: u8 = 0x00; // No ABI version
 pub const EI_PAD: [u8; 7] = [0u8; 7]; // Padding
 pub const E_TYPE: u16 = 0x03; // ET_DYN - shared object
@@ -77,7 +76,7 @@ impl ELFHeader {
             || e_ident.class.ne(&EI_CLASS)
             || e_ident.data.ne(&EI_DATA)
             || e_ident.version.ne(&EI_VERSION)
-            || !matches!(e_ident.os_abi, EI_OSABI | EI_OSABI_LINUX)
+            || e_ident.os_abi.ne(&EI_OSABI)
             || e_ident.abi_version.ne(&EI_ABIVERSION)
             || e_ident.padding.ne(&EI_PAD)
             || (e_machine.ne(&E_MACHINE) && e_machine.ne(&E_MACHINE_SBPF))
