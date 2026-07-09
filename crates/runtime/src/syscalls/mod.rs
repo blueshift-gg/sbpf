@@ -201,3 +201,166 @@ impl SyscallHandler for RuntimeSyscallHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        self::test_helpers::{make_memory, meter},
+        super::*,
+        crate::cpi::request::{CallerAccountInfo, CpiAccountMeta},
+        sbpf_vm::errors::SbpfVmError,
+        std::{cell::RefCell, rc::Rc},
+    };
+
+    pub(crate) mod test_helpers {
+        use {
+            crate::config::ExecutionCost,
+            sbpf_vm::{compute::ComputeMeter, memory::Memory},
+        };
+
+        pub fn make_memory() -> Memory {
+            Memory::new(vec![], vec![], 4096, 64 * 1024)
+        }
+
+        pub fn costs() -> ExecutionCost {
+            ExecutionCost::default()
+        }
+
+        pub fn meter(limit: u64) -> ComputeMeter {
+            ComputeMeter::new(limit)
+        }
+    }
+
+    const LIMIT: u64 = 1_000_000;
+
+    fn addr(seed: u8) -> Address {
+        Address::new_from_array([seed; 32])
+    }
+
+    fn meta(pubkey: Address) -> CpiAccountMeta {
+        CpiAccountMeta {
+            pubkey,
+            is_signer: false,
+            is_writable: true,
+        }
+    }
+
+    fn caller(pubkey: Address, data_len: u64) -> CallerAccountInfo {
+        CallerAccountInfo {
+            pubkey,
+            lamports_addr: 0,
+            data_addr: 0,
+            data_len,
+            owner_addr: 0,
+            vm_data_len_addr: 0,
+            is_writable: true,
+        }
+    }
+
+    fn handler() -> RuntimeSyscallHandler {
+        RuntimeSyscallHandler::new(
+            ExecutionCost::default(),
+            addr(7),
+            SysvarContext::default(),
+            Rc::new(RefCell::new(Vec::new())),
+        )
+    }
+
+    #[test]
+    fn consume_cpi_compute_units_dedups_and_charges_data() {
+        let costs = ExecutionCost::default();
+        let a = addr(1);
+        let b = addr(2);
+        let c = addr(3);
+        // `a` is duplicated (should be charged once); `c` has no caller entry.
+        let request = CpiRequest {
+            program_id: addr(9),
+            accounts: vec![meta(a), meta(b), meta(c), meta(a)],
+            data: vec![0u8; 800],
+            caller_accounts: vec![caller(a, 1000), caller(b, 500)],
+            signers: Vec::new(),
+        };
+        let compute = meter(LIMIT);
+        consume_cpi_compute_units(&request, &compute, &costs).unwrap();
+
+        let expected = costs.invoke_units + 3 + 4 + 2;
+        assert_eq!(compute.get_consumed(), expected);
+    }
+
+    #[test]
+    fn consume_cpi_compute_units_no_caller_accounts() {
+        let costs = ExecutionCost::default();
+        let request = CpiRequest {
+            program_id: addr(9),
+            accounts: vec![meta(addr(1)), meta(addr(2))],
+            data: Vec::new(),
+            caller_accounts: Vec::new(),
+            signers: Vec::new(),
+        };
+        let compute = meter(LIMIT);
+        consume_cpi_compute_units(&request, &compute, &costs).unwrap();
+        assert_eq!(compute.get_consumed(), costs.invoke_units);
+    }
+
+    #[test]
+    fn consume_cpi_compute_units_out_of_budget() {
+        let costs = ExecutionCost::default();
+        let request = CpiRequest {
+            program_id: addr(9),
+            accounts: vec![meta(addr(1))],
+            data: Vec::new(),
+            caller_accounts: Vec::new(),
+            signers: Vec::new(),
+        };
+        let compute = ComputeMeter::new(10); // less than invoke_units
+        assert!(consume_cpi_compute_units(&request, &compute, &costs).is_err());
+    }
+
+    #[test]
+    fn handle_unknown_syscall_charges_base_and_returns_zero() {
+        let mut h = handler();
+        let mut memory = make_memory();
+        let compute = meter(LIMIT);
+        let out = h
+            .handle("sol_does_not_exist", [0; 5], &mut memory, compute.clone())
+            .unwrap();
+        assert_eq!(out, 0);
+        assert_eq!(compute.get_consumed(), h.costs.syscall_base_cost);
+    }
+
+    #[test]
+    fn handle_abort_returns_abort_error() {
+        let mut h = handler();
+        let mut memory = make_memory();
+        let compute = meter(LIMIT);
+        let err = h.handle("abort", [0; 5], &mut memory, compute).unwrap_err();
+        assert!(matches!(err, SbpfVmError::Abort));
+    }
+
+    #[test]
+    fn handle_log_64_writes_log() {
+        let mut h = handler();
+        let mut memory = make_memory();
+        let compute = meter(LIMIT);
+        h.handle("sol_log_64_", [1, 2, 3, 4, 5], &mut memory, compute)
+            .unwrap();
+        assert!(!h.log_collector.borrow().is_empty());
+    }
+
+    #[test]
+    fn handle_remaining_compute_units_reports_remaining() {
+        let mut h = handler();
+        let mut memory = make_memory();
+        let compute = meter(LIMIT);
+        let out = h
+            .handle(
+                "sol_remaining_compute_units",
+                [0; 5],
+                &mut memory,
+                compute.clone(),
+            )
+            .unwrap();
+        // Reports the remaining budget after charging its own cost.
+        assert_eq!(out, compute.get_remaining());
+    }
+}

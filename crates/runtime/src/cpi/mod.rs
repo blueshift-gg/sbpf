@@ -251,3 +251,164 @@ fn execute_elf_cpi(ctx: &mut CpiContext) -> CpiExecResult {
         compute_consumed: consumed,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::cpi::request::CpiAccountMeta,
+        solana_system_interface::{instruction::SystemInstruction, program as system_program},
+        std::{cell::RefCell, rc::Rc},
+    };
+
+    fn addr(seed: u8) -> Address {
+        Address::new_from_array([seed; 32])
+    }
+
+    fn log_collector() -> LogCollector {
+        Rc::new(RefCell::new(Vec::new()))
+    }
+
+    fn system_account(lamports: u64) -> Account {
+        Account {
+            lamports,
+            data: vec![],
+            owner: system_program::ID,
+            executable: false,
+            rent_epoch: 0,
+        }
+    }
+
+    #[test]
+    fn execute_cpi_program_not_found() {
+        let config = RuntimeConfig::default();
+        let sysvars = SysvarContext::default();
+        let programs: HashMap<Address, Vec<u8>> = HashMap::new();
+        let mut accounts: HashMap<Address, Account> = HashMap::new();
+        let logs = log_collector();
+
+        // Non-builtin program that was never registered via add_program.
+        let request = CpiRequest {
+            program_id: addr(9),
+            accounts: Vec::new(),
+            data: Vec::new(),
+            caller_accounts: Vec::new(),
+            signers: Vec::new(),
+        };
+        let mut ctx = CpiContext {
+            request,
+            programs: &programs,
+            accounts: &mut accounts,
+            config: &config,
+            sysvars: &sysvars,
+            compute_remaining: 200_000,
+            cpi_depth: 0,
+            caller_account_metas: &[],
+            log_collector: &logs,
+        };
+
+        match execute_cpi(&mut ctx) {
+            Err(RuntimeError::ProgramNotFound(_)) => {}
+            Err(other) => panic!("expected ProgramNotFound, got {other:?}"),
+            Ok(_) => panic!("expected ProgramNotFound error"),
+        }
+    }
+
+    #[test]
+    fn execute_cpi_depth_exceeded() {
+        let config = RuntimeConfig::default();
+        let sysvars = SysvarContext::default();
+        let programs: HashMap<Address, Vec<u8>> = HashMap::new();
+        let mut accounts: HashMap<Address, Account> = HashMap::new();
+        let logs = log_collector();
+
+        let request = CpiRequest {
+            program_id: addr(9),
+            accounts: Vec::new(),
+            data: Vec::new(),
+            caller_accounts: Vec::new(),
+            signers: Vec::new(),
+        };
+        let mut ctx = CpiContext {
+            request,
+            programs: &programs,
+            accounts: &mut accounts,
+            config: &config,
+            sysvars: &sysvars,
+            compute_remaining: 200_000,
+            cpi_depth: config.max_cpi_depth, // already at the limit
+            caller_account_metas: &[],
+            log_collector: &logs,
+        };
+
+        match execute_cpi(&mut ctx) {
+            Err(RuntimeError::CpiDepthExceeded(_)) => {}
+            Err(other) => panic!("expected CpiDepthExceeded, got {other:?}"),
+            Ok(_) => panic!("expected CpiDepthExceeded error"),
+        }
+    }
+
+    #[test]
+    fn execute_cpi_dispatches_system_transfer_builtin() {
+        let config = RuntimeConfig::default();
+        let sysvars = SysvarContext::default();
+        let programs: HashMap<Address, Vec<u8>> = HashMap::new();
+        let logs = log_collector();
+
+        let from = addr(1);
+        let to = addr(2);
+        let mut accounts =
+            HashMap::from([(from, system_account(1_000_000)), (to, system_account(0))]);
+
+        let request = CpiRequest {
+            program_id: system_program::ID,
+            accounts: vec![
+                CpiAccountMeta {
+                    pubkey: from,
+                    is_signer: true,
+                    is_writable: true,
+                },
+                CpiAccountMeta {
+                    pubkey: to,
+                    is_signer: false,
+                    is_writable: true,
+                },
+            ],
+            data: bincode::serialize(&SystemInstruction::Transfer { lamports: 400_000 }).unwrap(),
+            caller_accounts: Vec::new(),
+            signers: Vec::new(),
+        };
+
+        let caller_metas = vec![
+            AccountMeta {
+                pubkey: from,
+                is_signer: true,
+                is_writable: true,
+            },
+            AccountMeta {
+                pubkey: to,
+                is_signer: false,
+                is_writable: true,
+            },
+        ];
+
+        let mut ctx = CpiContext {
+            request,
+            programs: &programs,
+            accounts: &mut accounts,
+            config: &config,
+            sysvars: &sysvars,
+            compute_remaining: 200_000,
+            cpi_depth: 0,
+            caller_account_metas: &caller_metas,
+            log_collector: &logs,
+        };
+
+        let output = execute_cpi(&mut ctx).unwrap();
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(accounts[&from].lamports, 600_000);
+        assert_eq!(accounts[&to].lamports, 400_000);
+        assert!(logs.borrow().iter().any(|l| l.contains("invoke [1]")));
+        assert!(logs.borrow().iter().any(|l| l.contains("success")));
+    }
+}

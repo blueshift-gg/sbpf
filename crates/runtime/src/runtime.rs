@@ -477,3 +477,200 @@ impl Runtime {
         self.log_collector.borrow_mut().drain(..).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::path::PathBuf};
+
+    const PROGRAM_ID: Address =
+        Address::from_str_const("22222222222222222222222222222222222222222222");
+
+    fn escrow_elf_path() -> String {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/libupstream_pinocchio_escrow.so")
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn new_runtime() -> Runtime {
+        Runtime::new(
+            PROGRAM_ID,
+            escrow_elf_path().as_str(),
+            RuntimeConfig::default(),
+        )
+        .unwrap()
+    }
+
+    fn empty_instruction() -> SolanaInstruction {
+        SolanaInstruction {
+            program_id: PROGRAM_ID,
+            accounts: Vec::new(),
+            data: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn elf_source_from_str() {
+        let path = escrow_elf_path();
+        assert!(matches!(ElfSource::from(path.as_str()), ElfSource::Path(_)));
+    }
+
+    #[test]
+    fn elf_source_from_bytes_slice() {
+        let bytes: &[u8] = &[1, 2, 3];
+        assert!(matches!(ElfSource::from(bytes), ElfSource::Bytes(_)));
+    }
+
+    #[test]
+    fn elf_source_from_vec() {
+        assert!(matches!(
+            ElfSource::from(vec![1u8, 2, 3]),
+            ElfSource::Bytes(_)
+        ));
+    }
+
+    #[test]
+    fn new_from_path() {
+        let rt = new_runtime();
+        assert_eq!(*rt.current_program_id(), PROGRAM_ID);
+        assert!(!rt.get_program().is_empty());
+    }
+
+    #[test]
+    fn new_from_bytes() {
+        let bytes = std::fs::read(escrow_elf_path()).unwrap();
+        let rt = Runtime::new(PROGRAM_ID, bytes, RuntimeConfig::default()).unwrap();
+        assert!(!rt.get_program().is_empty());
+    }
+
+    #[test]
+    fn new_bad_path_errors() {
+        match Runtime::new(
+            PROGRAM_ID,
+            "/nonexistent/path/to/program.so",
+            RuntimeConfig::default(),
+        ) {
+            Err(RuntimeError::ElfReadError(_)) => {}
+            other => panic!("expected ElfReadError, got {:?}", other.map(|_| ())),
+        }
+    }
+
+    #[test]
+    fn new_invalid_elf_errors() {
+        match Runtime::new(PROGRAM_ID, vec![0u8; 8], RuntimeConfig::default()) {
+            Err(RuntimeError::ElfReadError(_)) => panic!("expected parse error, got io error"),
+            Err(_) => {}
+            Ok(_) => panic!("expected error for invalid ELF"),
+        }
+    }
+
+    #[test]
+    fn add_program_accepts_path_and_bytes() {
+        let mut rt = new_runtime();
+        rt.add_program(&Address::new_unique(), escrow_elf_path().as_str());
+        let bytes = std::fs::read(escrow_elf_path()).unwrap();
+        rt.add_program(&Address::new_unique(), bytes);
+    }
+
+    #[test]
+    fn getters_before_prepare_are_defaults() {
+        let rt = new_runtime();
+        assert_eq!(rt.get_pc(), 0);
+        assert!(rt.get_registers().is_none());
+        assert!(rt.get_register(2).is_none());
+        assert!(rt.read_memory(Memory::INPUT_START, 8).is_none());
+        assert!(rt.get_instruction().is_none());
+        assert!(rt.get_call_stack().is_none());
+        assert!(!rt.is_halted());
+        assert!(rt.exit_code().is_none());
+        assert_eq!(rt.compute_units_consumed(), 0);
+        assert!(rt.get_account(&PROGRAM_ID).is_none());
+        assert!(rt.get_accounts().is_empty());
+        assert!(rt.drain_logs().is_empty());
+    }
+
+    #[test]
+    fn set_register_before_prepare_errors() {
+        let mut rt = new_runtime();
+        let err = rt.set_register(0, 42).unwrap_err();
+        assert!(matches!(err, RuntimeError::VmNotPrepared));
+    }
+
+    #[test]
+    fn step_before_prepare_errors() {
+        let mut rt = new_runtime();
+        let err = rt.step().unwrap_err();
+        assert!(matches!(err, RuntimeError::VmNotPrepared));
+    }
+
+    #[test]
+    fn config_and_sysvar_accessors() {
+        let mut rt = new_runtime();
+        assert_eq!(
+            rt.config().compute_budget,
+            RuntimeConfig::default().compute_budget
+        );
+        let slot = rt.sysvars().clock.slot;
+        rt.sysvars_mut().clock.slot = slot + 5;
+        assert_eq!(rt.sysvars().clock.slot, slot + 5);
+        assert!(rt.log_collector().borrow().is_empty());
+    }
+
+    #[test]
+    fn prepare_initializes_vm_state() {
+        let mut rt = new_runtime();
+        rt.prepare(&empty_instruction(), &[]).unwrap();
+
+        // After prepare the VM exists: getters now return Some / live values.
+        assert!(rt.get_registers().is_some());
+        assert!(rt.get_call_stack().is_some());
+        assert!(rt.get_instruction().is_some());
+        let r2 = rt.get_register(2).unwrap();
+        assert!(r2 >= Memory::INPUT_START);
+        assert!(rt.read_memory(Memory::INPUT_START, 8).is_some());
+        let logs = rt.log_collector().borrow().clone();
+        assert!(logs.iter().any(|l| l.contains("invoke [1]")));
+    }
+
+    #[test]
+    fn set_register_after_prepare_and_out_of_range() {
+        let mut rt = new_runtime();
+        rt.prepare(&empty_instruction(), &[]).unwrap();
+
+        rt.set_register(3, 0xdead_beef).unwrap();
+        assert_eq!(rt.get_register(3), Some(0xdead_beef));
+
+        let err = rt.set_register(99, 1).unwrap_err();
+        assert!(matches!(err, RuntimeError::RegisterOutOfRange(99)));
+    }
+
+    #[test]
+    fn step_drives_program_to_clean_halt() {
+        let mut rt = new_runtime();
+        rt.prepare(&empty_instruction(), &[]).unwrap();
+
+        let mut steps = 0;
+        while !rt.is_halted() {
+            rt.step().expect("step should not trap on this program");
+            steps += 1;
+            assert!(steps <= 100_000, "program did not terminate");
+        }
+        assert!(steps > 0);
+        assert!(rt.is_halted());
+        assert!(rt.exit_code().is_some());
+    }
+
+    #[test]
+    fn run_returns_ok_with_nonzero_exit_and_logs() {
+        let mut rt = new_runtime();
+        let exec = rt.run(&empty_instruction(), &[]).unwrap();
+
+        assert!(matches!(exec.exit_code, Some(code) if code != 0));
+        assert!(exec.compute_units_consumed > 0);
+
+        assert!(exec.logs.iter().any(|l| l.contains("invoke [1]")));
+        assert!(exec.logs.iter().any(|l| l.contains("consumed")));
+        assert!(exec.logs.iter().any(|l| l.contains("failed: exit code")));
+    }
+}
