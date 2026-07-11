@@ -3,7 +3,10 @@ use {
     clap::Args,
     either::Either,
     sbpf_common::{inst_param::Number, instruction::AsmFormat, opcode::Opcode},
-    sbpf_disassembler::program::Program,
+    sbpf_disassembler::{
+        errors::DisassemblerError,
+        program::{Disassembly, Program},
+    },
     std::{collections::HashSet, fs::File, io::Read},
 };
 
@@ -32,37 +35,69 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
     let mut file = File::open(&args.filename)?;
     let mut b = vec![];
     file.read_to_end(&mut b)?;
-    let program = Program::from_bytes(b.as_ref())?;
+
+    let parsed = match Program::from_bytes(b.as_ref()) {
+        Ok(parsed) => parsed,
+        Err(errors) => {
+            report(&errors);
+            anyhow::bail!("failed to parse ELF file");
+        }
+    };
+
+    // Errors that don't prevent disassembly are reported and the output is
+    // still produced.
+    report(&parsed.errors);
+
+    let program = parsed.value;
 
     let format = match args.format.as_str() {
         "default" => AsmFormat::Default,
         "llvm" => AsmFormat::Llvm,
         other => anyhow::bail!("unknown format '{}', expected 'default' or 'llvm'", other),
     };
-    let output = disassemble_program(program, args.debug, format, args.raw)?;
-    print!("{}", output);
+
+    if args.debug {
+        print!("{}", serde_json::to_string_pretty(&program)?);
+        return Ok(());
+    }
+
+    let entrypoint_offset = program.get_entrypoint_offset();
+    let disassembled = match if args.raw {
+        program.to_ixs_raw()
+    } else {
+        program.to_ixs()
+    } {
+        Ok(disassembled) => disassembled,
+        Err(errors) => {
+            report(&errors);
+            anyhow::bail!("failed to disassemble");
+        }
+    };
+
+    report(&disassembled.errors);
+
+    print!(
+        "{}",
+        render_asm(disassembled.value, entrypoint_offset, format, args.raw)?
+    );
     Ok(())
 }
 
-fn disassemble_program(
-    program: Program,
-    debug: bool,
+fn render_asm(
+    disassembly: Disassembly,
+    entrypoint_offset: Option<u64>,
     format: AsmFormat,
     raw: bool,
 ) -> Result<String, Error> {
     let mut output = String::new();
 
-    if debug {
-        output = serde_json::to_string_pretty(&program)?;
-    } else if raw {
-        let (ixs, _, _) = program.to_ixs_raw()?;
-        for ix in &ixs {
+    if raw {
+        for ix in &disassembly.instructions {
             output.push_str(&format!("{}\n", ix.to_asm(format)?));
         }
     } else {
-        let entrypoint_offset = program.get_entrypoint_offset();
-
-        let (mut ixs, rodata, _) = program.to_ixs()?;
+        let mut ixs = disassembly.instructions;
+        let rodata = disassembly.rodata;
 
         // Build position map
         let positions: Vec<u64> = ixs
@@ -166,9 +201,64 @@ fn disassemble_program(
     Ok(output)
 }
 
+fn report(errors: &[DisassemblerError]) {
+    for e in errors {
+        eprintln!("error: {e}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, hex_literal::hex};
+
+    /// Chain to_ixs + render_asm like the CLI does, asserting no errors
+    /// were found while decoding.
+    fn disassemble_program(program: Program, format: AsmFormat, raw: bool) -> String {
+        let entrypoint_offset = program.get_entrypoint_offset();
+        let disassembled = if raw {
+            program.to_ixs_raw()
+        } else {
+            program.to_ixs()
+        }
+        .unwrap();
+        assert!(disassembled.errors.is_empty());
+        render_asm(disassembled.value, entrypoint_offset, format, raw).unwrap()
+    }
+
+    #[test]
+    fn test_disassemble_with_invalid_header_field() {
+        // Same fixture as test_disassemble_v3 with a corrupted e_version
+        // (LE u32 at bytes 20..24). The error is reported as a header error
+        // and the disassembly is unaffected.
+        let mut elf_bytes = hex!(
+            "7f454c460201010000000000000000000300f7000100000000000000010000004000000000000000"
+            "a8000000000000000300000040003800010040000300020001000000010000007800000000000000"
+            "00000000010000000000000001000000200000000000000020000000000000000000000000000000"
+            "180100000100000000000000000000008500000078312a5c9500000000000000002e74657874002e"
+            "73000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000100000001000000"
+            "06000000000000007800000000000000780000000000000020000000000000000000000000000000"
+            "04000000000000000000000000000000060000000300000000000000000000000000000000000000"
+            "98000000000000000a00000000000000000000000000000001000000000000000000000000000000"
+        )
+        .to_vec();
+        elf_bytes[20] = 0x02;
+
+        let parsed = Program::from_bytes(&elf_bytes).unwrap();
+        assert_eq!(parsed.errors.len(), 1);
+        assert!(parsed.errors[0].is_header_error());
+
+        assert_eq!(
+            disassemble_program(parsed.value, AsmFormat::Default, false),
+            r#".globl entrypoint
+
+entrypoint:
+  lddw r1, 0x1
+  call sol_log_64_
+  exit
+"#
+        );
+    }
 
     #[test]
     fn test_disassemble_with_labels() {
@@ -237,12 +327,10 @@ mod tests {
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -276,12 +364,10 @@ fn_0088:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -360,12 +446,10 @@ fn_0088:
         // Both fn and jmp labels should be present
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -382,12 +466,10 @@ jmp_0010:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -466,12 +548,10 @@ jmp_0010:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -496,12 +576,10 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -548,12 +626,10 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -565,12 +641,10 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -612,12 +686,10 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -633,12 +705,10 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 false,
-            )
-            .unwrap(),
+            ),
             r#".globl entrypoint
 
 entrypoint:
@@ -692,12 +762,10 @@ entrypoint:
         // Disassembled program should have no labels.
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Default,
                 true,
-            )
-            .unwrap(),
+            ),
             r#"call 0xc
 ja +0x5
 lddw r1, 0x1
@@ -721,12 +789,10 @@ exit
         // Disassembled program should have no labels.
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap(),
-                false,
+                Program::from_bytes(&elf_bytes).unwrap().value,
                 AsmFormat::Llvm,
                 true,
-            )
-            .unwrap(),
+            ),
             r#"call 0xc
 goto +0x5
 r1 = 0x1 ll

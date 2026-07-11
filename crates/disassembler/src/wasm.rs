@@ -16,8 +16,9 @@ impl Program {
     #[wasm_bindgen]
     pub fn from_bytes(b: &[u8]) -> Result<Program, JsValue> {
         EBPFProgram::from_bytes(b)
+            .and_then(crate::program::Parsed::into_strict)
             .map(|program| Program { inner: program })
-            .map_err(|e| JsValue::from_str(&format!("{:?}", e)))
+            .map_err(|errors| JsValue::from_str(&format!("{:?}", errors)))
     }
 
     #[wasm_bindgen]

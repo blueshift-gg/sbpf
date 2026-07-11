@@ -52,7 +52,13 @@ pub struct ELFHeader {
 }
 
 impl ELFHeader {
-    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Self, DisassemblerError> {
+    /// Parse the ELF header, recording every invalid field in `errors`
+    /// instead of failing: none of them prevents disassembly from carrying
+    /// on.
+    pub fn from_elf_file(
+        elf_file: &ElfFile64<Endianness>,
+        errors: &mut Vec<DisassemblerError>,
+    ) -> Self {
         let endian = elf_file.endian();
         let elf_header = elf_file.elf_header();
 
@@ -73,7 +79,7 @@ impl ELFHeader {
         let e_shstrndx = elf_header.e_shstrndx.get(endian);
 
         if e_ident.magic != EI_MAGIC {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "magic",
                 expected: vec![u32::from_be_bytes(EI_MAGIC) as u64],
                 found: u32::from_be_bytes(e_ident.magic) as u64,
@@ -81,7 +87,7 @@ impl ELFHeader {
         }
 
         if e_ident.class != EI_CLASS {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "class",
                 expected: vec![EI_CLASS as u64],
                 found: e_ident.class as u64,
@@ -89,7 +95,7 @@ impl ELFHeader {
         }
 
         if e_ident.data != EI_DATA {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "data",
                 expected: vec![EI_DATA as u64],
                 found: e_ident.data as u64,
@@ -97,7 +103,7 @@ impl ELFHeader {
         }
 
         if e_ident.version != EI_VERSION {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "ident version",
                 expected: vec![EI_VERSION as u64],
                 found: e_ident.version as u64,
@@ -105,7 +111,7 @@ impl ELFHeader {
         }
 
         if !matches!(e_ident.os_abi, EI_OSABI | EI_OSABI_LINUX) {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "os abi",
                 expected: vec![EI_OSABI as u64, EI_OSABI_LINUX as u64],
                 found: e_ident.os_abi as u64,
@@ -113,7 +119,7 @@ impl ELFHeader {
         }
 
         if e_ident.abi_version != EI_ABIVERSION {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "abi version",
                 expected: vec![EI_ABIVERSION as u64],
                 found: e_ident.abi_version as u64,
@@ -125,7 +131,7 @@ impl ELFHeader {
             // is preserved when displayed as hex).
             let mut found = [0u8; 8];
             found[1..].copy_from_slice(&e_ident.padding);
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "padding",
                 expected: vec![0],
                 found: u64::from_be_bytes(found),
@@ -133,7 +139,7 @@ impl ELFHeader {
         }
 
         if e_machine != E_MACHINE && e_machine != E_MACHINE_SBPF {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "machine",
                 expected: vec![E_MACHINE as u64, E_MACHINE_SBPF as u64],
                 found: e_machine as u64,
@@ -141,14 +147,14 @@ impl ELFHeader {
         }
 
         if e_version != E_VERSION {
-            return Err(DisassemblerError::NonStandardElfHeader {
+            errors.push(DisassemblerError::NonStandardElfHeader {
                 field: "version",
                 expected: vec![E_VERSION as u64],
                 found: e_version as u64,
             });
         }
 
-        Ok(ELFHeader {
+        ELFHeader {
             ei_magic: e_ident.magic,
             ei_class: e_ident.class,
             ei_data: e_ident.data,
@@ -169,7 +175,7 @@ impl ELFHeader {
             e_shentsize,
             e_shnum,
             e_shstrndx,
-        })
+        }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -216,7 +222,9 @@ mod tests {
 
     #[test]
     fn test_elf_header() {
-        let program = Program::from_bytes(&hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000")).unwrap();
+        let parsed = Program::from_bytes(&hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000")).unwrap();
+        let (program, errors) = (parsed.value, parsed.errors);
+        assert!(errors.is_empty());
 
         // Verify ELF header fields match expected constants.
         assert_eq!(program.elf_header.ei_magic, EI_MAGIC);
@@ -280,7 +288,7 @@ mod tests {
         );
         let err = Program::from_bytes(&invalid_magic).unwrap_err();
         assert!(
-            matches!(err, DisassemblerError::InvalidElfFile { .. }),
+            matches!(err.as_slice(), [DisassemblerError::InvalidElfFile { .. }]),
             "expected InvalidElfFile, got {err:?}"
         );
 
@@ -290,7 +298,7 @@ mod tests {
         );
         let err = Program::from_bytes(&invalid_class).unwrap_err();
         assert!(
-            matches!(err, DisassemblerError::InvalidElfFile { .. }),
+            matches!(err.as_slice(), [DisassemblerError::InvalidElfFile { .. }]),
             "expected InvalidElfFile, got {err:?}"
         );
 
@@ -298,15 +306,16 @@ mod tests {
         let invalid_endian = hex!(
             "7F454C460202010000000000000000000300F700010000000000000000000000400000000000000000000000000000000000000040003800000000000000000000"
         );
-        match Program::from_bytes(&invalid_endian) {
-            Err(DisassemblerError::NonStandardElfHeader {
+        let errors = Program::from_bytes(&invalid_endian).unwrap().errors;
+        match errors.first() {
+            Some(DisassemblerError::NonStandardElfHeader {
                 field,
                 expected,
                 found,
             }) => {
-                assert_eq!(field, "data");
-                assert_eq!(expected, vec![EI_DATA as u64]);
-                assert_eq!(found, 0x02);
+                assert_eq!(*field, "data");
+                assert_eq!(*expected, vec![EI_DATA as u64]);
+                assert_eq!(*found, 0x02);
             }
             other => panic!("expected NonStandardElfHeader for data, got {other:?}"),
         }

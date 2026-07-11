@@ -82,8 +82,11 @@ fn load_session_from_bytes(
         debugger.set_dwarf_line_map(line_map);
     }
 
-    if let Ok(program) = Program::from_bytes(&elf_bytes)
-        && let Ok((_, Some(ref section), _)) = program.to_ixs()
+    // Best effort rodata symbol extraction: disassembly errors are ignored
+    // here since the runtime already validated the program.
+    if let Ok(parsed) = Program::from_bytes(&elf_bytes)
+        && let Ok(disassembled) = parsed.value.to_ixs()
+        && let Some(ref section) = disassembled.value.rodata
     {
         let mut rodata_symbols = rodata_from_section(section);
         // Replace generated labels with actual labels from DWARF info (if available).

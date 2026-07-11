@@ -106,16 +106,27 @@ pub struct SectionHeader {
 }
 
 impl SectionHeader {
+    /// Parse the section headers and their data, recording recoverable
+    /// problems (unknown `sh_type`, out-of-range string table index, name or
+    /// data offsets) in `errors`. A header with an unknown type is kept with
+    /// a `SHT_NULL` placeholder so header indices stay aligned with the
+    /// file; when the string table itself is unusable, no entries are
+    /// returned and the caller reconstructs section views from the program
+    /// headers.
     pub fn from_elf_file(
         elf_file: &ElfFile64<Endianness>,
-    ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
+        errors: &mut Vec<DisassemblerError>,
+    ) -> (Vec<Self>, Vec<SectionHeaderEntry>) {
         let endian = elf_file.endian();
         let section_headers_data: Vec<_> = elf_file.elf_section_table().iter().collect();
 
         let mut section_headers = Vec::new();
         for sh in section_headers_data.iter() {
             let sh_name = sh.sh_name.get(endian);
-            let sh_type = SectionHeaderType::try_from(sh.sh_type.get(endian))?;
+            let sh_type = SectionHeaderType::try_from(sh.sh_type.get(endian)).unwrap_or_else(|e| {
+                errors.push(e);
+                SectionHeaderType::SHT_NULL
+            });
             let sh_flags = sh.sh_flags.get(endian);
             let sh_addr = sh.sh_addr.get(endian);
             let sh_offset = sh.sh_offset.get(endian);
@@ -143,45 +154,82 @@ impl SectionHeader {
         // headers there are no names to resolve, so return empty here; the
         // caller reconstructs .text/.rodata views from the program headers.
         if section_headers.is_empty() {
-            return Ok((Vec::new(), Vec::new()));
+            return (Vec::new(), Vec::new());
         }
 
+        let data = elf_file.data();
         let elf_header = elf_file.elf_header();
         let e_shstrndx = elf_header.e_shstrndx.get(endian);
-        let shstrndx = &section_headers[e_shstrndx as usize];
-        let shstrndx_value = elf_file.data()
-            [shstrndx.sh_offset as usize..shstrndx.sh_offset as usize + shstrndx.sh_size as usize]
-            .to_vec();
+        let Some(shstrndx) = section_headers.get(e_shstrndx as usize) else {
+            errors.push(DisassemblerError::InvalidShstrndx {
+                shstrndx: e_shstrndx,
+                shnum: section_headers.len(),
+            });
+            return (section_headers, Vec::new());
+        };
+        let strtab_start = shstrndx.sh_offset as usize;
+        let strtab_end = strtab_start.saturating_add(shstrndx.sh_size as usize);
+        let Some(shstrndx_value) = data.get(strtab_start..strtab_end) else {
+            errors.push(DisassemblerError::SectionDataOutOfBounds {
+                section: ".shstrtab".to_string(),
+                offset: shstrndx.sh_offset,
+                size: shstrndx.sh_size,
+                file_len: data.len(),
+            });
+            return (section_headers, Vec::new());
+        };
+        let shstrndx_value = shstrndx_value.to_vec();
 
-        let mut indices: Vec<u32> = section_headers.iter().map(|h| h.sh_name).collect();
-        indices.push(shstrndx.sh_size as u32);
-        indices.sort_unstable();
+        let mut section_header_entries = Vec::with_capacity(section_headers.len());
+        for s in &section_headers {
+            let current_offset = s.sh_name as usize;
 
-        let section_header_entries = section_headers
-            .iter()
-            .map(|s| {
-                let current_offset = s.sh_name as usize;
+            // Find the null terminator for this string.
+            let label = match shstrndx_value.get(current_offset..) {
+                Some(label_bytes) if !label_bytes.is_empty() => {
+                    let null_pos = label_bytes
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(label_bytes.len());
+                    String::from_utf8(
+                        label_bytes[..=null_pos.min(label_bytes.len().saturating_sub(1))].to_vec(),
+                    )
+                    .unwrap_or("default".to_string())
+                }
+                _ => {
+                    errors.push(DisassemblerError::InvalidSectionName {
+                        sh_name: s.sh_name,
+                        strtab_len: shstrndx_value.len(),
+                    });
+                    "default".to_string()
+                }
+            };
 
-                // Find the null terminator for this string.
-                let label_bytes = &shstrndx_value[current_offset..];
-                let null_pos = label_bytes
-                    .iter()
-                    .position(|&b| b == 0)
-                    .unwrap_or(label_bytes.len());
-                let label = String::from_utf8(
-                    label_bytes[..=null_pos.min(label_bytes.len().saturating_sub(1))].to_vec(),
-                )
-                .unwrap_or("default".to_string());
+            let data_start = s.sh_offset as usize;
+            let data_end = data_start.saturating_add(s.sh_size as usize);
+            let section_data = match data.get(data_start..data_end) {
+                Some(d) => d.to_vec(),
+                None => {
+                    errors.push(DisassemblerError::SectionDataOutOfBounds {
+                        section: label.trim_end_matches('\0').to_string(),
+                        offset: s.sh_offset,
+                        size: s.sh_size,
+                        file_len: data.len(),
+                    });
+                    // Best effort: keep whatever bytes exist at the offset.
+                    data.get(data_start..)
+                        .map(<[u8]>::to_vec)
+                        .unwrap_or_default()
+                }
+            };
 
-                let data = elf_file.data()
-                    [s.sh_offset as usize..s.sh_offset as usize + s.sh_size as usize]
-                    .to_vec();
+            match SectionHeaderEntry::new(label, s.sh_offset as usize, section_data) {
+                Ok(entry) => section_header_entries.push(entry),
+                Err(e) => errors.push(e),
+            }
+        }
 
-                SectionHeaderEntry::new(label, s.sh_offset as usize, data)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((section_headers, section_header_entries))
+        (section_headers, section_header_entries)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -205,7 +253,9 @@ mod tests {
 
     #[test]
     fn test_section_headers() {
-        let program = Program::from_bytes(&hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000")).unwrap();
+        let parsed = Program::from_bytes(&hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000")).unwrap();
+        let (program, errors) = (parsed.value, parsed.errors);
+        assert!(errors.is_empty());
 
         // Verify we have the expected number of section headers.
         assert_eq!(program.section_headers.len(), 6);

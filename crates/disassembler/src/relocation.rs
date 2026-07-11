@@ -37,21 +37,29 @@ pub struct Relocation {
 }
 
 impl Relocation {
-    /// Parse relocation entries from the provided ELF file
-    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Vec<Self>, DisassemblerError> {
+    /// Parse relocation entries from the provided ELF file, recording
+    /// recoverable problems in `errors`. Entries with an unknown relocation
+    /// type are unusable and get skipped.
+    pub fn from_elf_file(
+        elf_file: &ElfFile64<Endianness>,
+        errors: &mut Vec<DisassemblerError>,
+    ) -> Vec<Self> {
         // Find .rel.dyn section
         let rel_dyn_section = match elf_file.section_by_name(".rel.dyn") {
             Some(s) => s,
-            None => return Ok(Vec::new()),
+            None => return Vec::new(),
         };
 
-        let rel_dyn_data =
-            rel_dyn_section
-                .data()
-                .map_err(|source| DisassemblerError::SectionDataError {
+        let rel_dyn_data = match rel_dyn_section.data() {
+            Ok(d) => d,
+            Err(source) => {
+                errors.push(DisassemblerError::SectionDataError {
                     section: ".rel.dyn",
                     source,
-                })?;
+                });
+                return Vec::new();
+            }
+        };
 
         // Extract .dynsym and .dynstr data for symbol resolution.
         let dynsym_data = elf_file
@@ -67,7 +75,13 @@ impl Relocation {
         for chunk in rel_dyn_data.chunks_exact(16) {
             let offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
             let rel_type_val = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
-            let rel_type = RelocationType::try_from(rel_type_val)?;
+            let rel_type = match RelocationType::try_from(rel_type_val) {
+                Ok(t) => t,
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                }
+            };
             let symbol_index = u32::from_le_bytes(chunk[12..16].try_into().unwrap());
 
             // Resolve symbol name if this is a syscall relocation
@@ -90,7 +104,7 @@ impl Relocation {
             });
         }
 
-        Ok(relocations)
+        relocations
     }
 
     /// Return this relocation's offset relative to the provided base offset
@@ -162,8 +176,9 @@ mod tests {
     #[test]
     fn test_relocation_parsing() {
         let elf_file = ElfFile64::<Endianness>::parse(TEST_PROGRAM).expect("Failed to parse ELF");
-        let relocations =
-            Relocation::from_elf_file(&elf_file).expect("Failed to parse relocations");
+        let mut errors = Vec::new();
+        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
+        assert!(errors.is_empty());
 
         // Should have 2 relocations.
         assert_eq!(relocations.len(), 2, "Expected 2 relocations");
@@ -191,8 +206,9 @@ mod tests {
     #[test]
     fn test_relocation_relative_offset() {
         let elf_file = ElfFile64::<Endianness>::parse(TEST_PROGRAM).expect("Failed to parse ELF");
-        let relocations =
-            Relocation::from_elf_file(&elf_file).expect("Failed to parse relocations");
+        let mut errors = Vec::new();
+        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
+        assert!(errors.is_empty());
 
         // Get .text section base address from the ELF.
         let text_section = elf_file
@@ -221,8 +237,9 @@ mod tests {
         );
 
         let elf_file = ElfFile64::<Endianness>::parse(test_program).expect("Failed to parse ELF");
-        let relocations =
-            Relocation::from_elf_file(&elf_file).expect("Failed to parse relocations");
+        let mut errors = Vec::new();
+        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
+        assert!(errors.is_empty());
 
         assert!(relocations.is_empty());
     }
@@ -242,8 +259,13 @@ mod tests {
         bytes[rel_dyn_offset as usize + 8] = 0x05;
 
         let elf_file = ElfFile64::<Endianness>::parse(bytes.as_slice()).expect("Failed to parse");
-        match Relocation::from_elf_file(&elf_file) {
-            Err(DisassemblerError::InvalidRelocationType(rel_type)) => assert_eq!(rel_type, 0x05),
+        let mut errors = Vec::new();
+        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
+        // The corrupted entry is skipped and reported; the other entry
+        // still parses.
+        assert_eq!(relocations.len(), 1);
+        match errors.as_slice() {
+            [DisassemblerError::InvalidRelocationType(rel_type)] => assert_eq!(*rel_type, 0x05),
             other => panic!("expected InvalidRelocationType, got {other:?}"),
         }
     }
