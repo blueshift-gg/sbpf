@@ -37,17 +37,14 @@ pub struct Relocation {
 }
 
 impl Relocation {
-    /// Parse relocation entries from the provided ELF file, recording
-    /// recoverable problems in `errors`. Entries with an unknown relocation
-    /// type are unusable and get skipped.
     pub fn from_elf_file(
         elf_file: &ElfFile64<Endianness>,
-        errors: &mut Vec<DisassemblerError>,
-    ) -> Vec<Self> {
+    ) -> Result<Vec<Self>, Vec<DisassemblerError>> {
+        let mut errors = Vec::new();
         // Find .rel.dyn section
         let rel_dyn_section = match elf_file.section_by_name(".rel.dyn") {
             Some(s) => s,
-            None => return Vec::new(),
+            None => return Ok(Vec::new()),
         };
 
         let rel_dyn_data = match rel_dyn_section.data() {
@@ -57,7 +54,7 @@ impl Relocation {
                     section: ".rel.dyn",
                     source,
                 });
-                return Vec::new();
+                return Err(errors);
             }
         };
 
@@ -104,7 +101,11 @@ impl Relocation {
             });
         }
 
-        relocations
+        if errors.is_empty() {
+            Ok(relocations)
+        } else {
+            Err(errors)
+        }
     }
 
     /// Return this relocation's offset relative to the provided base offset
@@ -176,9 +177,7 @@ mod tests {
     #[test]
     fn test_relocation_parsing() {
         let elf_file = ElfFile64::<Endianness>::parse(TEST_PROGRAM).expect("Failed to parse ELF");
-        let mut errors = Vec::new();
-        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
-        assert!(errors.is_empty());
+        let relocations = Relocation::from_elf_file(&elf_file).unwrap();
 
         // Should have 2 relocations.
         assert_eq!(relocations.len(), 2, "Expected 2 relocations");
@@ -206,9 +205,7 @@ mod tests {
     #[test]
     fn test_relocation_relative_offset() {
         let elf_file = ElfFile64::<Endianness>::parse(TEST_PROGRAM).expect("Failed to parse ELF");
-        let mut errors = Vec::new();
-        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
-        assert!(errors.is_empty());
+        let relocations = Relocation::from_elf_file(&elf_file).unwrap();
 
         // Get .text section base address from the ELF.
         let text_section = elf_file
@@ -237,9 +234,7 @@ mod tests {
         );
 
         let elf_file = ElfFile64::<Endianness>::parse(test_program).expect("Failed to parse ELF");
-        let mut errors = Vec::new();
-        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
-        assert!(errors.is_empty());
+        let relocations = Relocation::from_elf_file(&elf_file).unwrap();
 
         assert!(relocations.is_empty());
     }
@@ -259,11 +254,7 @@ mod tests {
         bytes[rel_dyn_offset as usize + 8] = 0x05;
 
         let elf_file = ElfFile64::<Endianness>::parse(bytes.as_slice()).expect("Failed to parse");
-        let mut errors = Vec::new();
-        let relocations = Relocation::from_elf_file(&elf_file, &mut errors);
-        // The corrupted entry is skipped and reported; the other entry
-        // still parses.
-        assert_eq!(relocations.len(), 1);
+        let errors = Relocation::from_elf_file(&elf_file).unwrap_err();
         match errors.as_slice() {
             [DisassemblerError::InvalidRelocationType(rel_type)] => assert_eq!(*rel_type, 0x05),
             other => panic!("expected InvalidRelocationType, got {other:?}"),

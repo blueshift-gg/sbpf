@@ -10,22 +10,19 @@ use {
 };
 
 /// Parse an ELF binary and return instructions, rodata, and entrypoint.
-///
-/// The disassembler tolerates errors to support inspection of invalid binaries,
-/// but executing one would be meaningless since it would faile at runtime.
 pub fn load_elf(elf_bytes: &[u8]) -> RuntimeResult<(Vec<Instruction>, Vec<u8>, usize)> {
     let program = Program::from_bytes(elf_bytes)
-        .and_then(Parsed::into_strict)
         .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-    let disassembly = program
-        .to_ixs()
-        .and_then(Parsed::into_strict)
-        .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
+
+    // The disassembler tolerates decode errors to support inspection of invalid binares
     let Disassembly {
         mut instructions,
         rodata: rodata_section,
         entrypoint: entrypoint_idx,
-    } = disassembly;
+    } = program
+        .to_ixs()
+        .and_then(Parsed::into_strict)
+        .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
     let entrypoint = entrypoint_idx.unwrap_or(0);
 
     let mut rodata = rodata_section

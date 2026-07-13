@@ -68,24 +68,6 @@ pub enum DisassemblerError {
     },
 }
 
-impl DisassemblerError {
-    /// True for errors caused by an invalid field in the ELF, program or
-    /// section headers, as opposed to errors in the section contents
-    /// (bytecode, relocation entries). None of them prevents disassembly
-    /// from carrying on.
-    pub fn is_header_error(&self) -> bool {
-        matches!(
-            self,
-            DisassemblerError::NonStandardElfHeader { .. }
-                | DisassemblerError::InvalidProgramType(_)
-                | DisassemblerError::InvalidSectionHeaderType(_)
-                | DisassemblerError::InvalidShstrndx { .. }
-                | DisassemblerError::InvalidSectionName { .. }
-                | DisassemblerError::SectionDataOutOfBounds { .. }
-        )
-    }
-}
-
 impl From<SBPFError> for DisassemblerError {
     fn from(err: SBPFError) -> Self {
         match err {
@@ -216,59 +198,6 @@ mod tests {
             }
             .to_string(),
             "Section .text data out of bounds: offset 0x1000 + size 0x20 exceeds file length 0x800"
-        );
-    }
-
-    #[test]
-    fn test_is_header_error() {
-        assert!(
-            DisassemblerError::NonStandardElfHeader {
-                field: "machine",
-                expected: vec![0xf7],
-                found: 0,
-            }
-            .is_header_error()
-        );
-        assert!(DisassemblerError::InvalidProgramType(0x99).is_header_error());
-        assert!(DisassemblerError::InvalidSectionHeaderType(0xff).is_header_error());
-        assert!(
-            DisassemblerError::InvalidShstrndx {
-                shstrndx: 9,
-                shnum: 6,
-            }
-            .is_header_error()
-        );
-        assert!(
-            DisassemblerError::InvalidSectionName {
-                sh_name: 0x40,
-                strtab_len: 0x2a,
-            }
-            .is_header_error()
-        );
-        assert!(
-            DisassemblerError::SectionDataOutOfBounds {
-                section: ".text".to_string(),
-                offset: 0x1000,
-                size: 0x20,
-                file_len: 0x800,
-            }
-            .is_header_error()
-        );
-
-        assert!(!DisassemblerError::InvalidRelocationType(0x2a).is_header_error());
-        assert!(!DisassemblerError::InvalidDataLength(13).is_header_error());
-        assert!(
-            !DisassemblerError::BytecodeError {
-                error: "bad opcode".to_string(),
-                span: 8..16,
-            }
-            .is_header_error()
-        );
-        assert!(
-            !DisassemblerError::MissingTextSection {
-                sections: vec![".rodata".to_string()],
-            }
-            .is_header_error()
         );
     }
 }

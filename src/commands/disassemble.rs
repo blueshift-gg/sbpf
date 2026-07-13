@@ -36,19 +36,13 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
     let mut b = vec![];
     file.read_to_end(&mut b)?;
 
-    let parsed = match Program::from_bytes(b.as_ref()) {
-        Ok(parsed) => parsed,
+    let program = match Program::from_bytes(b.as_ref()) {
+        Ok(program) => program,
         Err(errors) => {
             report(&errors);
             anyhow::bail!("failed to parse ELF file");
         }
     };
-
-    // Errors that don't prevent disassembly are reported and the output is
-    // still produced.
-    report(&parsed.errors);
-
-    let program = parsed.value;
 
     let format = match args.format.as_str() {
         "default" => AsmFormat::Default,
@@ -62,6 +56,13 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
     }
 
     let entrypoint_offset = program.get_entrypoint_offset();
+    // Keep the raw .text bytes to show the words that fail to decode.
+    let text = program
+        .section_header_entries
+        .iter()
+        .find(|e| e.label.eq(".text\0"))
+        .map(|e| e.data.clone())
+        .unwrap_or_default();
     let disassembled = match if args.raw {
         program.to_ixs_raw()
     } else {
@@ -78,7 +79,14 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
 
     print!(
         "{}",
-        render_asm(disassembled.value, entrypoint_offset, format, args.raw)?
+        render_asm(
+            disassembled.value,
+            entrypoint_offset,
+            &disassembled.errors,
+            &text,
+            format,
+            args.raw
+        )?
     );
     Ok(())
 }
@@ -86,14 +94,43 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
 fn render_asm(
     disassembly: Disassembly,
     entrypoint_offset: Option<u64>,
+    errors: &[DisassemblerError],
+    text: &[u8],
     format: AsmFormat,
     raw: bool,
 ) -> Result<String, Error> {
     let mut output = String::new();
 
+    // Words that failed to decode are not printed in the in the instruction stream;
+    // Mark each hole with a comment where it sat with the invalid instruction. 
+    let mut failed_words = errors
+        .iter()
+        .filter_map(|e| match e {
+            DisassemblerError::BytecodeError { error, span } => {
+                Some((span.start / 8 * 8, error.as_str()))
+            }
+            _ => None,
+        })
+        .peekable();
+    let mark_hole = |output: &mut String, indent: &str, offset: usize, error: &str| {
+        if let Some(opcode) = text.get(offset) {
+            output.push_str(&format!("{indent}// 0x{opcode:02x} is skipped\n"));
+        }
+        output.push_str(&format!("{indent}// error: {error}\n"));
+    };
+
     if raw {
+        let mut text_offset = 0usize;
         for ix in &disassembly.instructions {
+            while let Some((offset, error)) = failed_words.next_if(|(offset, _)| *offset <= text_offset) {
+                mark_hole(&mut output, "", offset, error);
+                text_offset += 8;
+            }
             output.push_str(&format!("{}\n", ix.to_asm(format)?));
+            text_offset += ix.get_size() as usize;
+        }
+        for (offset, error) in failed_words {
+            mark_hole(&mut output, "", offset, error);
         }
     } else {
         let mut ixs = disassembly.instructions;
@@ -136,7 +173,15 @@ fn render_asm(
         output.push_str(".globl entrypoint\n");
 
         let mut in_labeled_block = false;
+        let mut text_offset = 0usize;
         for (idx, ix) in ixs.iter_mut().enumerate() {
+            while let Some((offset, error)) = failed_words.next_if(|(offset, _)| *offset <= text_offset) {
+                let indent = if in_labeled_block { "  " } else { "" };
+                mark_hole(&mut output, indent, offset, error);
+                text_offset += 8;
+            }
+            text_offset += ix.get_size() as usize;
+
             let pos = positions[idx];
             let is_fn_target = fn_targets.contains(&pos);
             let is_jmp_target = jmp_targets.contains(&pos);
@@ -189,6 +234,12 @@ fn render_asm(
             output.push_str(&format!("{}{}\n", indent, ix.to_asm(format)?));
         }
 
+        // Holes at the end of .text
+        let indent = if in_labeled_block { "  " } else { "" };
+        for (offset, error) in failed_words {
+            mark_hole(&mut output, indent, offset, error);
+        }
+
         // Output rodata section if present
         if let Some(rodata) = rodata
             && rodata.has_items()
@@ -211,25 +262,70 @@ fn report(errors: &[DisassemblerError]) {
 mod tests {
     use {super::*, hex_literal::hex};
 
-    /// Chain to_ixs + render_asm like the CLI does, asserting no errors
-    /// were found while decoding.
+    /// Chain to_ixs + render_asm 
     fn disassemble_program(program: Program, format: AsmFormat, raw: bool) -> String {
         let entrypoint_offset = program.get_entrypoint_offset();
+        let text = program
+            .section_header_entries
+            .iter()
+            .find(|e| e.label.eq(".text\0"))
+            .map(|e| e.data.clone())
+            .unwrap_or_default();
         let disassembled = if raw {
             program.to_ixs_raw()
         } else {
             program.to_ixs()
         }
         .unwrap();
-        assert!(disassembled.errors.is_empty());
-        render_asm(disassembled.value, entrypoint_offset, format, raw).unwrap()
+        render_asm(
+            disassembled.value,
+            entrypoint_offset,
+            &disassembled.errors,
+            &text,
+            format,
+            raw,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_disassemble_with_skipped_word() {
+        // `call` opcode at .text offset 16 corrupted to 0xff. The
+        // undecodable word is marked with a comment where it sat and
+        // decoding resumes at the next 8-byte boundary.
+        let mut elf_bytes = hex!(
+            "7f454c460201010000000000000000000300f7000100000000000000010000004000000000000000"
+            "a8000000000000000300000040003800010040000300020001000000010000007800000000000000"
+            "00000000010000000000000001000000200000000000000020000000000000000000000000000000"
+            "180100000100000000000000000000008500000078312a5c9500000000000000002e74657874002e"
+            "73000000000000000000000000000000000000000000000000000000000000000000000000000000"
+            "00000000000000000000000000000000000000000000000000000000000000000100000001000000"
+            "06000000000000007800000000000000780000000000000020000000000000000000000000000000"
+            "04000000000000000000000000000000060000000300000000000000000000000000000000000000"
+            "98000000000000000a00000000000000000000000000000001000000000000000000000000000000"
+        )
+        .to_vec();
+        elf_bytes[0x88] = 0xff;
+
+        let program = Program::from_bytes(&elf_bytes).unwrap();
+
+        assert_eq!(
+            disassemble_program(program, AsmFormat::Default, false),
+            r#".globl entrypoint
+
+entrypoint:
+  lddw r1, 0x1
+  // 0xff is skipped
+  // error: no decode handler for opcode 0xff
+  exit
+"#
+        );
     }
 
     #[test]
     fn test_disassemble_with_invalid_header_field() {
-        // Same fixture as test_disassemble_v3 with a corrupted e_version
-        // (LE u32 at bytes 20..24). The error is reported as a header error
-        // and the disassembly is unaffected.
+        // A corrupted e_version (LE u32 at bytes 20..24) fails the parse
+        // with a single header error; nothing is disassembled.
         let mut elf_bytes = hex!(
             "7f454c460201010000000000000000000300f7000100000000000000010000004000000000000000"
             "a8000000000000000300000040003800010040000300020001000000010000007800000000000000"
@@ -244,20 +340,8 @@ mod tests {
         .to_vec();
         elf_bytes[20] = 0x02;
 
-        let parsed = Program::from_bytes(&elf_bytes).unwrap();
-        assert_eq!(parsed.errors.len(), 1);
-        assert!(parsed.errors[0].is_header_error());
-
-        assert_eq!(
-            disassemble_program(parsed.value, AsmFormat::Default, false),
-            r#".globl entrypoint
-
-entrypoint:
-  lddw r1, 0x1
-  call sol_log_64_
-  exit
-"#
-        );
+        let errors = Program::from_bytes(&elf_bytes).unwrap_err();
+        assert_eq!(errors.len(), 1);
     }
 
     #[test]
@@ -327,7 +411,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 false,
             ),
@@ -364,7 +448,7 @@ fn_0088:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 false,
             ),
@@ -446,7 +530,7 @@ fn_0088:
         // Both fn and jmp labels should be present
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 false,
             ),
@@ -466,7 +550,7 @@ jmp_0010:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 false,
             ),
@@ -548,7 +632,7 @@ jmp_0010:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 false,
             ),
@@ -576,7 +660,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 false,
             ),
@@ -626,7 +710,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 false,
             ),
@@ -641,7 +725,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 false,
             ),
@@ -686,7 +770,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 false,
             ),
@@ -705,7 +789,7 @@ entrypoint:
 
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 false,
             ),
@@ -762,7 +846,7 @@ entrypoint:
         // Disassembled program should have no labels.
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Default,
                 true,
             ),
@@ -789,7 +873,7 @@ exit
         // Disassembled program should have no labels.
         assert_eq!(
             disassemble_program(
-                Program::from_bytes(&elf_bytes).unwrap().value,
+                Program::from_bytes(&elf_bytes).unwrap(),
                 AsmFormat::Llvm,
                 true,
             ),
