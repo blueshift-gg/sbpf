@@ -82,7 +82,6 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
         render_asm(
             disassembled.value,
             entrypoint_offset,
-            &disassembled.errors,
             &text,
             format,
             args.raw
@@ -94,45 +93,32 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
 fn render_asm(
     disassembly: Disassembly,
     entrypoint_offset: Option<u64>,
-    errors: &[DisassemblerError],
     text: &[u8],
     format: AsmFormat,
     raw: bool,
 ) -> Result<String, Error> {
     let mut output = String::new();
 
-    // Words that failed to decode are not printed in the in the instruction stream;
-    // Mark each hole with a comment where it sat with the invalid instruction.
-    let mut failed_words = errors
-        .iter()
-        .filter_map(|e| match e {
-            DisassemblerError::BytecodeError { error, span } => {
-                Some((span.start / 8 * 8, error.as_str()))
-            }
-            _ => None,
-        })
-        .peekable();
-    let mark_hole = |output: &mut String, indent: &str, offset: usize, error: &str| {
-        if let Some(opcode) = text.get(offset) {
-            output.push_str(&format!("{indent}// 0x{opcode:02x} is skipped\n"));
+    // A word that fails to decode leaves no instruction to print; mark it
+    // in place with the raw opcode byte and the decode error.
+    let mark_skipped = |output: &mut String, indent: &str, e: &DisassemblerError| {
+        if let DisassemblerError::BytecodeError { error, span } = e
+            && let Some(opcode) = text.get(span.start / 8 * 8)
+        {
+            output.push_str(&format!(
+                "{indent}// 0x{opcode:02x} is skipped due to error: {error}\n"
+            ));
+        } else {
+            output.push_str(&format!("{indent}// skipped due to error: {e}\n"));
         }
-        output.push_str(&format!("{indent}// error: {error}\n"));
     };
 
     if raw {
-        let mut text_offset = 0usize;
         for ix in &disassembly.instructions {
-            while let Some((offset, error)) =
-                failed_words.next_if(|(offset, _)| *offset <= text_offset)
-            {
-                mark_hole(&mut output, "", offset, error);
-                text_offset += 8;
+            match ix {
+                Either::Left(ix) => output.push_str(&format!("{}\n", ix.to_asm(format)?)),
+                Either::Right(e) => mark_skipped(&mut output, "", e),
             }
-            output.push_str(&format!("{}\n", ix.to_asm(format)?));
-            text_offset += ix.get_size() as usize;
-        }
-        for (offset, error) in failed_words {
-            mark_hole(&mut output, "", offset, error);
         }
     } else {
         let mut ixs = disassembly.instructions;
@@ -143,7 +129,10 @@ fn render_asm(
             .iter()
             .scan(0u64, |pos, ix| {
                 let current = *pos;
-                *pos += ix.get_size();
+                *pos += match ix {
+                    Either::Left(ix) => ix.get_size(),
+                    Either::Right(_) => 8,
+                };
                 Some(current)
             })
             .collect();
@@ -152,6 +141,7 @@ fn render_asm(
         let mut jmp_targets: HashSet<u64> = HashSet::new();
         let mut fn_targets: HashSet<u64> = HashSet::new();
         for (idx, ix) in ixs.iter().enumerate() {
+            let Either::Left(ix) = ix else { continue };
             if ix.is_jump()
                 && let Some(Either::Right(off)) = &ix.off
             {
@@ -175,17 +165,7 @@ fn render_asm(
         output.push_str(".globl entrypoint\n");
 
         let mut in_labeled_block = false;
-        let mut text_offset = 0usize;
         for (idx, ix) in ixs.iter_mut().enumerate() {
-            while let Some((offset, error)) =
-                failed_words.next_if(|(offset, _)| *offset <= text_offset)
-            {
-                let indent = if in_labeled_block { "  " } else { "" };
-                mark_hole(&mut output, indent, offset, error);
-                text_offset += 8;
-            }
-            text_offset += ix.get_size() as usize;
-
             let pos = positions[idx];
             let is_fn_target = fn_targets.contains(&pos);
             let is_jmp_target = jmp_targets.contains(&pos);
@@ -205,6 +185,17 @@ fn render_asm(
                 }
                 in_labeled_block = true;
             }
+
+            // Indent instructions under labels
+            let indent = if in_labeled_block { "  " } else { "" };
+
+            let ix = match ix {
+                Either::Left(ix) => ix,
+                Either::Right(e) => {
+                    mark_skipped(&mut output, indent, e);
+                    continue;
+                }
+            };
 
             // Replace numeric values with labels for display.
             if ix.is_jump()
@@ -233,15 +224,7 @@ fn render_asm(
                 ix.imm = Some(Either::Left(label.to_string()));
             }
 
-            // Indent instructions under labels
-            let indent = if in_labeled_block { "  " } else { "" };
             output.push_str(&format!("{}{}\n", indent, ix.to_asm(format)?));
-        }
-
-        // Holes at the end of .text
-        let indent = if in_labeled_block { "  " } else { "" };
-        for (offset, error) in failed_words {
-            mark_hole(&mut output, indent, offset, error);
         }
 
         // Output rodata section if present
@@ -281,15 +264,7 @@ mod tests {
             program.to_ixs()
         }
         .unwrap();
-        render_asm(
-            disassembled.value,
-            entrypoint_offset,
-            &disassembled.errors,
-            &text,
-            format,
-            raw,
-        )
-        .unwrap()
+        render_asm(disassembled.value, entrypoint_offset, &text, format, raw).unwrap()
     }
 
     #[test]
@@ -319,8 +294,7 @@ mod tests {
 
 entrypoint:
   lddw r1, 0x1
-  // 0xff is skipped
-  // error: no decode handler for opcode 0xff
+  // 0xff is skipped due to error: no decode handler for opcode 0xff
   exit
 "#
         );

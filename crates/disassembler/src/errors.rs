@@ -13,7 +13,7 @@ fn hex_list(values: &[u64]) -> String {
         .join(" or ")
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum DisassemblerError {
     #[error("Failed to parse ELF file: {source}; first bytes: {first_bytes:02x?}")]
     InvalidElfFile {

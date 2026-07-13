@@ -39,7 +39,7 @@ impl<T> Parsed<T> {
 
 #[derive(Debug)]
 pub struct Disassembly {
-    pub instructions: Vec<Instruction>,
+    pub instructions: Vec<Either<Instruction, DisassemblerError>>,
     pub rodata: Option<RodataSection>,
     pub entrypoint: Option<usize>,
 }
@@ -185,8 +185,6 @@ impl Program {
     }
 
     fn into_ixs_inner(self, resolve_offsets: bool) -> DisassembleResult {
-        let mut errors = Vec::new();
-
         // Find and populate instructions for the .text section
         let text_section = self
             .section_header_entries
@@ -201,6 +199,9 @@ impl Program {
                         .collect(),
                 }]
             })?;
+
+        let mut errors = Vec::new();
+
         let text_section_offset = text_section.offset as u64;
 
         // Build syscall map
@@ -223,7 +224,7 @@ impl Program {
             .unwrap_or((0, 0));
 
         // Parse instructions and build slot mappings
-        let mut ixs: Vec<Instruction> = Vec::new();
+        let mut ixs: Vec<Either<Instruction, DisassemblerError>> = Vec::new();
         let mut idx_to_slot: Vec<usize> = Vec::new();
         let mut pos: usize = 0;
         let mut slot: usize = 0;
@@ -237,37 +238,42 @@ impl Program {
             // lddw (0x18) is the only 16-byte instruction; sbpf-common's
             // decoder asserts on shorter input, so report the truncation
             // here instead of panicking.
-            if remaining.len() < 16 && remaining[0] == 0x18 {
-                errors.push(DisassemblerError::BytecodeError {
+            let decoded = if remaining.len() < 16 && remaining[0] == 0x18 {
+                Err(DisassemblerError::BytecodeError {
                     error: format!("lddw needs 16 bytes but only {} remain", remaining.len()),
                     span: pos..pos + 8,
-                });
-                pos += 8;
-                slot += 1;
-                continue;
-            }
-
-            // ugly v2 shit we need to fix goes here:
-            let decoded = if is_sbpf_v2 {
-                Instruction::from_bytes_sbpf_v2(remaining)
-            } else if is_sbpf_v3 {
-                Instruction::from_bytes_sbpf_v3(remaining)
+                })
             } else {
-                Instruction::from_bytes(remaining)
+                // ugly v2 shit we need to fix goes here:
+                let decoded = if is_sbpf_v2 {
+                    Instruction::from_bytes_sbpf_v2(remaining)
+                } else if is_sbpf_v3 {
+                    Instruction::from_bytes_sbpf_v3(remaining)
+                } else {
+                    Instruction::from_bytes(remaining)
+                };
+
+                decoded.map_err(|e| match e {
+                    // Decode spans are relative to the instruction slice;
+                    // rebase them to the instruction's offset within .text.
+                    SBPFError::BytecodeError { error, span, .. } => {
+                        DisassemblerError::BytecodeError {
+                            error,
+                            span: span.start + pos..span.end + pos,
+                        }
+                    }
+                })
             };
 
             let mut ix = match decoded {
                 Ok(ix) => ix,
                 // A word that fails to decode doesn't affect the rest of the
-                // stream, record the error and resume at the next 8 byte boundary.
-                // The bad word still occupies a slot to keep jump/call targets truthful.
-                Err(SBPFError::BytecodeError { error, span, .. }) => {
-                    // Decode spans are relative to the instruction slice;
-                    // rebase them to the instruction's offset within .text.
-                    errors.push(DisassemblerError::BytecodeError {
-                        error,
-                        span: span.start + pos..span.end + pos,
-                    });
+                // stream, instead we record the error and keep it inline in the stream,
+                // where it occupies a slot to keep jump/call targets truthful.
+                Err(e) => {
+                    errors.push(e.clone());
+                    idx_to_slot.push(slot);
+                    ixs.push(Either::Right(e));
                     pos += 8;
                     slot += 1;
                     continue;
@@ -292,7 +298,7 @@ impl Program {
                 slot += 1;
             }
 
-            ixs.push(ix);
+            ixs.push(Either::Left(ix));
         }
 
         let mut slot_to_idx = vec![0usize; slot];
@@ -318,6 +324,7 @@ impl Program {
             // Resolve jump/call labels and collect rodata references
 
             for (idx, ix) in ixs.iter_mut().enumerate() {
+                let Either::Left(ix) = ix else { continue };
                 let is_lddw = ix.opcode == Opcode::Lddw;
 
                 // Resolve jump targets
@@ -707,7 +714,10 @@ mod tests {
         assert!(parsed.errors.is_empty());
         let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 2); // lddw + exit
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Lddw
+        );
     }
 
     #[test]
@@ -750,7 +760,10 @@ mod tests {
         assert!(parsed.errors.is_empty());
         let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 1);
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Ldxw
+        );
     }
 
     #[test]
@@ -792,13 +805,17 @@ mod tests {
         assert!(parsed.errors.is_empty());
         let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 1);
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Jset32Imm);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Jset32Imm
+        );
     }
 
     #[test]
     fn test_to_ixs_skips_undecodable_instruction() {
         // .text: [8 bytes of garbage][exit]. The garbage word is reported
-        // and skipped; decoding resumes at the next 8-byte boundary.
+        // and kept inline in the instruction stream; decoding resumes at
+        // the next 8-byte boundary.
         let mut text = vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         text.extend_from_slice(&[0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 
@@ -834,9 +851,15 @@ mod tests {
         };
 
         let parsed = program.to_ixs().unwrap();
-        assert_eq!(parsed.value.instructions.len(), 1);
+        assert_eq!(parsed.value.instructions.len(), 2);
+        match &parsed.value.instructions[0] {
+            either::Either::Right(crate::errors::DisassemblerError::BytecodeError {
+                span, ..
+            }) => assert_eq!(span.start, 0),
+            other => panic!("expected inline BytecodeError, got {other:?}"),
+        }
         assert_eq!(
-            parsed.value.instructions[0].opcode,
+            parsed.value.instructions[1].as_ref().unwrap_left().opcode,
             sbpf_common::opcode::Opcode::Exit
         );
         match parsed.errors.as_slice() {
@@ -886,11 +909,12 @@ mod tests {
         };
 
         let parsed = program.to_ixs().unwrap();
-        assert_eq!(parsed.value.instructions.len(), 1);
+        assert_eq!(parsed.value.instructions.len(), 2);
         assert_eq!(
-            parsed.value.instructions[0].opcode,
+            parsed.value.instructions[0].as_ref().unwrap_left().opcode,
             sbpf_common::opcode::Opcode::Exit
         );
+        assert!(parsed.value.instructions[1].is_right());
         match parsed.errors.as_slice() {
             [crate::errors::DisassemblerError::BytecodeError { error, span }] => {
                 assert_eq!(*span, (8..16));
