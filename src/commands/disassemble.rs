@@ -102,7 +102,7 @@ fn render_asm(
     let mut output = String::new();
 
     // Words that failed to decode are not printed in the in the instruction stream;
-    // Mark each hole with a comment where it sat with the invalid instruction. 
+    // Mark each hole with a comment where it sat with the invalid instruction.
     let mut failed_words = errors
         .iter()
         .filter_map(|e| match e {
@@ -122,7 +122,9 @@ fn render_asm(
     if raw {
         let mut text_offset = 0usize;
         for ix in &disassembly.instructions {
-            while let Some((offset, error)) = failed_words.next_if(|(offset, _)| *offset <= text_offset) {
+            while let Some((offset, error)) =
+                failed_words.next_if(|(offset, _)| *offset <= text_offset)
+            {
                 mark_hole(&mut output, "", offset, error);
                 text_offset += 8;
             }
@@ -175,7 +177,9 @@ fn render_asm(
         let mut in_labeled_block = false;
         let mut text_offset = 0usize;
         for (idx, ix) in ixs.iter_mut().enumerate() {
-            while let Some((offset, error)) = failed_words.next_if(|(offset, _)| *offset <= text_offset) {
+            while let Some((offset, error)) =
+                failed_words.next_if(|(offset, _)| *offset <= text_offset)
+            {
                 let indent = if in_labeled_block { "  " } else { "" };
                 mark_hole(&mut output, indent, offset, error);
                 text_offset += 8;
@@ -262,7 +266,7 @@ fn report(errors: &[DisassemblerError]) {
 mod tests {
     use {super::*, hex_literal::hex};
 
-    /// Chain to_ixs + render_asm 
+    /// Chain to_ixs + render_asm
     fn disassemble_program(program: Program, format: AsmFormat, raw: bool) -> String {
         let entrypoint_offset = program.get_entrypoint_offset();
         let text = program
