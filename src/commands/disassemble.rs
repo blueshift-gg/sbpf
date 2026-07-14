@@ -99,9 +99,7 @@ fn render_asm(
 ) -> Result<String, Error> {
     let mut output = String::new();
 
-    // A word that fails to decode leaves no instruction to print; mark it
-    // in place with the raw opcode byte and the decode error.
-    let mark_skipped = |output: &mut String, indent: &str, e: &DisassemblerError| {
+    let print_error = |output: &mut String, indent: &str, e: &DisassemblerError| {
         if let DisassemblerError::BytecodeError { error, span } = e
             && let Some(opcode) = text.get(span.start / 8 * 8)
         {
@@ -117,7 +115,7 @@ fn render_asm(
         for ix in &disassembly.instructions {
             match ix {
                 Either::Left(ix) => output.push_str(&format!("{}\n", ix.to_asm(format)?)),
-                Either::Right(e) => mark_skipped(&mut output, "", e),
+                Either::Right(e) => print_error(&mut output, "", e),
             }
         }
     } else {
@@ -192,7 +190,7 @@ fn render_asm(
             let ix = match ix {
                 Either::Left(ix) => ix,
                 Either::Right(e) => {
-                    mark_skipped(&mut output, indent, e);
+                    print_error(&mut output, indent, e);
                     continue;
                 }
             };

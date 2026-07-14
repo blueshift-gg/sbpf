@@ -239,30 +239,18 @@ impl Program {
             // decoder asserts on shorter input, so report the truncation
             // here instead of panicking.
             let decoded = if remaining.len() < 16 && remaining[0] == 0x18 {
-                Err(DisassemblerError::BytecodeError {
+                Err(SBPFError::BytecodeError {
                     error: format!("lddw needs 16 bytes but only {} remain", remaining.len()),
-                    span: pos..pos + 8,
+                    span: 0..8,
+                    custom_label: None,
                 })
-            } else {
+            } else if is_sbpf_v2 {
                 // ugly v2 shit we need to fix goes here:
-                let decoded = if is_sbpf_v2 {
-                    Instruction::from_bytes_sbpf_v2(remaining)
-                } else if is_sbpf_v3 {
-                    Instruction::from_bytes_sbpf_v3(remaining)
-                } else {
-                    Instruction::from_bytes(remaining)
-                };
-
-                decoded.map_err(|e| match e {
-                    // Decode spans are relative to the instruction slice;
-                    // rebase them to the instruction's offset within .text.
-                    SBPFError::BytecodeError { error, span, .. } => {
-                        DisassemblerError::BytecodeError {
-                            error,
-                            span: span.start + pos..span.end + pos,
-                        }
-                    }
-                })
+                Instruction::from_bytes_sbpf_v2(remaining)
+            } else if is_sbpf_v3 {
+                Instruction::from_bytes_sbpf_v3(remaining)
+            } else {
+                Instruction::from_bytes(remaining)
             };
 
             let mut ix = match decoded {
@@ -271,6 +259,16 @@ impl Program {
                 // stream, instead we record the error and keep it inline in the stream,
                 // where it occupies a slot to keep jump/call targets truthful.
                 Err(e) => {
+                    // Decode spans are relative to the instruction slice;
+                    // rebase them to the instruction's offset within .text.
+                    let e = match e {
+                        SBPFError::BytecodeError { error, span, .. } => {
+                            DisassemblerError::BytecodeError {
+                                error,
+                                span: span.start + pos..span.end + pos,
+                            }
+                        }
+                    };
                     errors.push(e.clone());
                     idx_to_slot.push(slot);
                     ixs.push(Either::Right(e));
