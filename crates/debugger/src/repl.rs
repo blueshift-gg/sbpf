@@ -37,7 +37,7 @@ impl Repl {
             print!("dbg> ");
             io::stdout().flush().unwrap();
             let mut input = String::new();
-            if stdin.read_line(&mut input).is_err() {
+            if stdin.read_line(&mut input).is_err() || input.is_empty() {
                 break;
             }
             let cmd = input.trim();
