@@ -241,7 +241,7 @@ impl Program {
             let decoded = if remaining.len() < 16 && remaining[0] == 0x18 {
                 Err(SBPFError::BytecodeError {
                     error: format!("lddw needs 16 bytes but only {} remain", remaining.len()),
-                    span: 0..8,
+                    span: 0..8, // Spans are relative to `remaining` and rebased by `pos` below, in the Err(e) arm.
                     custom_label: None,
                 })
             } else if is_sbpf_v2 {
