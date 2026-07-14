@@ -108,14 +108,19 @@ pub struct SectionHeader {
 impl SectionHeader {
     pub fn from_elf_file(
         elf_file: &ElfFile64<Endianness>,
-    ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), DisassemblerError> {
+    ) -> Result<(Vec<Self>, Vec<SectionHeaderEntry>), Vec<DisassemblerError>> {
         let endian = elf_file.endian();
         let section_headers_data: Vec<_> = elf_file.elf_section_table().iter().collect();
+
+        let mut errors = Vec::new();
 
         let mut section_headers = Vec::new();
         for sh in section_headers_data.iter() {
             let sh_name = sh.sh_name.get(endian);
-            let sh_type = SectionHeaderType::try_from(sh.sh_type.get(endian))?;
+            let sh_type = SectionHeaderType::try_from(sh.sh_type.get(endian)).unwrap_or_else(|e| {
+                errors.push(e);
+                SectionHeaderType::SHT_NULL
+            });
             let sh_flags = sh.sh_flags.get(endian);
             let sh_addr = sh.sh_addr.get(endian);
             let sh_offset = sh.sh_offset.get(endian);
@@ -146,42 +151,83 @@ impl SectionHeader {
             return Ok((Vec::new(), Vec::new()));
         }
 
+        let data = elf_file.data();
         let elf_header = elf_file.elf_header();
         let e_shstrndx = elf_header.e_shstrndx.get(endian);
-        let shstrndx = &section_headers[e_shstrndx as usize];
-        let shstrndx_value = elf_file.data()
-            [shstrndx.sh_offset as usize..shstrndx.sh_offset as usize + shstrndx.sh_size as usize]
-            .to_vec();
+        let Some(shstrndx) = section_headers.get(e_shstrndx as usize) else {
+            errors.push(DisassemblerError::InvalidShstrndx {
+                shstrndx: e_shstrndx,
+                shnum: section_headers.len(),
+            });
+            return Err(errors);
+        };
+        let strtab_start = shstrndx.sh_offset as usize;
+        let strtab_end = strtab_start.saturating_add(shstrndx.sh_size as usize);
+        let Some(shstrndx_value) = data.get(strtab_start..strtab_end) else {
+            errors.push(DisassemblerError::SectionDataOutOfBounds {
+                section: ".shstrtab".to_string(),
+                offset: shstrndx.sh_offset,
+                size: shstrndx.sh_size,
+                file_len: data.len(),
+            });
+            return Err(errors);
+        };
+        let shstrndx_value = shstrndx_value.to_vec();
 
-        let mut indices: Vec<u32> = section_headers.iter().map(|h| h.sh_name).collect();
-        indices.push(shstrndx.sh_size as u32);
-        indices.sort_unstable();
+        let mut section_header_entries = Vec::with_capacity(section_headers.len());
+        for s in &section_headers {
+            let current_offset = s.sh_name as usize;
 
-        let section_header_entries = section_headers
-            .iter()
-            .map(|s| {
-                let current_offset = s.sh_name as usize;
+            // Find the null terminator for this string.
+            let label = match shstrndx_value.get(current_offset..) {
+                Some(label_bytes) if !label_bytes.is_empty() => {
+                    let null_pos = label_bytes
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(label_bytes.len());
+                    String::from_utf8(
+                        label_bytes[..=null_pos.min(label_bytes.len().saturating_sub(1))].to_vec(),
+                    )
+                    .unwrap_or("default".to_string())
+                }
+                _ => {
+                    errors.push(DisassemblerError::InvalidSectionName {
+                        sh_name: s.sh_name,
+                        strtab_len: shstrndx_value.len(),
+                    });
+                    "default".to_string()
+                }
+            };
 
-                // Find the null terminator for this string.
-                let label_bytes = &shstrndx_value[current_offset..];
-                let null_pos = label_bytes
-                    .iter()
-                    .position(|&b| b == 0)
-                    .unwrap_or(label_bytes.len());
-                let label = String::from_utf8(
-                    label_bytes[..=null_pos.min(label_bytes.len().saturating_sub(1))].to_vec(),
-                )
-                .unwrap_or("default".to_string());
+            let data_start = s.sh_offset as usize;
+            let data_end = data_start.saturating_add(s.sh_size as usize);
+            let section_data = match data.get(data_start..data_end) {
+                Some(d) => d.to_vec(),
+                None => {
+                    errors.push(DisassemblerError::SectionDataOutOfBounds {
+                        section: label.trim_end_matches('\0').to_string(),
+                        offset: s.sh_offset,
+                        size: s.sh_size,
+                        file_len: data.len(),
+                    });
+                    // Best effort: keep whatever bytes exist at the offset.
+                    data.get(data_start..)
+                        .map(<[u8]>::to_vec)
+                        .unwrap_or_default()
+                }
+            };
 
-                let data = elf_file.data()
-                    [s.sh_offset as usize..s.sh_offset as usize + s.sh_size as usize]
-                    .to_vec();
+            match SectionHeaderEntry::new(label, s.sh_offset as usize, section_data) {
+                Ok(entry) => section_header_entries.push(entry),
+                Err(e) => errors.push(e),
+            }
+        }
 
-                SectionHeaderEntry::new(label, s.sh_offset as usize, data)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((section_headers, section_header_entries))
+        if errors.is_empty() {
+            Ok((section_headers, section_header_entries))
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

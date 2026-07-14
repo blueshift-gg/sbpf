@@ -2,7 +2,10 @@ use {
     crate::errors::{RuntimeError, RuntimeResult},
     either::Either,
     sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
-    sbpf_disassembler::{program::Program, rodata::RodataSection},
+    sbpf_disassembler::{
+        program::{Disassembly, Parsed, Program},
+        rodata::RodataSection,
+    },
     sbpf_vm::memory::Memory,
 };
 
@@ -10,10 +13,22 @@ use {
 pub fn load_elf(elf_bytes: &[u8]) -> RuntimeResult<(Vec<Instruction>, Vec<u8>, usize)> {
     let program = Program::from_bytes(elf_bytes)
         .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
-    let (mut instructions, rodata_section, entrypoint_idx) = program
+
+    let Disassembly {
+        instructions,
+        rodata: rodata_section,
+        entrypoint: entrypoint_idx,
+    } = program
         .to_ixs()
+        .and_then(Parsed::into_strict)
         .map_err(|e| RuntimeError::ElfParseError(format!("{:?}", e)))?;
     let entrypoint = entrypoint_idx.unwrap_or(0);
+
+    // into_strict fails on any decode error, so every entry is an instruction.
+    let mut instructions: Vec<Instruction> = instructions
+        .into_iter()
+        .map(|ix| ix.expect_left("strict disassembly contains no decode errors"))
+        .collect();
 
     let mut rodata = rodata_section
         .as_ref()

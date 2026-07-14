@@ -17,8 +17,34 @@ use {
     std::collections::{BTreeSet, HashMap},
 };
 
-pub type DisassembleResult =
-    Result<(Vec<Instruction>, Option<RodataSection>, Option<usize>), DisassemblerError>;
+/// Outcome of an error-tolerant operation, the value `T` plus every error found while producing it.
+#[derive(Debug)]
+#[must_use]
+pub struct Parsed<T> {
+    pub value: T,
+    pub errors: Vec<DisassemblerError>,
+}
+
+impl<T> Parsed<T> {
+    /// Collapse to strict semantics where any error becomes failure.
+    /// used in places where the errors are unrecoverable
+    pub fn into_strict(self) -> Result<T, Vec<DisassemblerError>> {
+        if self.errors.is_empty() {
+            Ok(self.value)
+        } else {
+            Err(self.errors)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Disassembly {
+    pub instructions: Vec<Either<Instruction, DisassemblerError>>,
+    pub rodata: Option<RodataSection>,
+    pub entrypoint: Option<usize>,
+}
+
+pub type DisassembleResult = Result<Parsed<Disassembly>, Vec<DisassemblerError>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Program {
@@ -30,13 +56,20 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn from_bytes(b: &[u8]) -> Result<Self, DisassemblerError> {
-        let elf_file = ElfFile64::<Endianness>::parse(b).map_err(|source| {
-            DisassemblerError::InvalidElfFile {
-                first_bytes: b.get(..16).unwrap_or(b).to_vec(),
-                source,
+    pub fn from_bytes(b: &[u8]) -> Result<Self, Vec<DisassemblerError>> {
+        let mut errors = Vec::new();
+
+        let elf_file = match ElfFile64::<Endianness>::parse(b) {
+            Ok(elf_file) => elf_file,
+            Err(source) => {
+                errors.push(DisassemblerError::InvalidElfFile {
+                    first_bytes: b.get(..16).unwrap_or(b).to_vec(),
+                    source,
+                });
+                // Nothing to parse headers from.
+                return Err(errors);
             }
-        })?;
+        };
 
         // Parse elf header.
         let elf_header = ELFHeader::from_elf_file(&elf_file)?;
@@ -54,7 +87,7 @@ impl Program {
         // .rodata section views from the program (segment) headers so the rest
         // of the disassembler can locate them by name.
         let (section_headers, section_header_entries) = if section_header_entries.is_empty() {
-            Self::synthesize_sections_from_segments(b, &program_headers)?
+            Self::synthesize_sections_from_segments(b, &program_headers).map_err(|e| vec![e])?
         } else {
             (section_headers, section_header_entries)
         };
@@ -157,13 +190,18 @@ impl Program {
             .section_header_entries
             .iter()
             .find(|e| e.label.eq(".text\0"))
-            .ok_or_else(|| DisassemblerError::MissingTextSection {
-                sections: self
-                    .section_header_entries
-                    .iter()
-                    .map(|e| e.label.trim_end_matches('\0').to_string())
-                    .collect(),
+            .ok_or_else(|| {
+                vec![DisassemblerError::MissingTextSection {
+                    sections: self
+                        .section_header_entries
+                        .iter()
+                        .map(|e| e.label.trim_end_matches('\0').to_string())
+                        .collect(),
+                }]
             })?;
+
+        let mut errors = Vec::new();
+
         let text_section_offset = text_section.offset as u64;
 
         // Build syscall map
@@ -171,7 +209,7 @@ impl Program {
 
         let data = &text_section.data;
         if !data.len().is_multiple_of(8) {
-            return Err(DisassemblerError::InvalidDataLength(data.len()));
+            errors.push(DisassemblerError::InvalidDataLength(data.len()));
         }
 
         let is_sbpf_v2 =
@@ -186,7 +224,7 @@ impl Program {
             .unwrap_or((0, 0));
 
         // Parse instructions and build slot mappings
-        let mut ixs: Vec<Instruction> = Vec::new();
+        let mut ixs: Vec<Either<Instruction, DisassemblerError>> = Vec::new();
         let mut idx_to_slot: Vec<usize> = Vec::new();
         let mut pos: usize = 0;
         let mut slot: usize = 0;
@@ -197,22 +235,48 @@ impl Program {
                 break;
             }
 
-            // ugly v2 shit we need to fix goes here:
-            let mut ix = if is_sbpf_v2 {
+            // lddw (0x18) is the only 16-byte instruction; sbpf-common's
+            // decoder asserts on shorter input, so report the truncation
+            // here instead of panicking.
+            let decoded = if remaining.len() < 16 && remaining[0] == 0x18 {
+                Err(SBPFError::BytecodeError {
+                    error: format!("lddw needs 16 bytes but only {} remain", remaining.len()),
+                    span: 0..8,
+                    custom_label: None,
+                })
+            } else if is_sbpf_v2 {
+                // ugly v2 shit we need to fix goes here:
                 Instruction::from_bytes_sbpf_v2(remaining)
             } else if is_sbpf_v3 {
                 Instruction::from_bytes_sbpf_v3(remaining)
             } else {
                 Instruction::from_bytes(remaining)
-            }
-            .map_err(|e| match e {
-                // Decode spans are relative to the instruction slice; rebase
-                // them to the instruction's offset within .text.
-                SBPFError::BytecodeError { error, span, .. } => DisassemblerError::BytecodeError {
-                    error,
-                    span: span.start + pos..span.end + pos,
-                },
-            })?;
+            };
+
+            let mut ix = match decoded {
+                Ok(ix) => ix,
+                // A word that fails to decode doesn't affect the rest of the
+                // stream, instead we record the error and keep it inline in the stream,
+                // where it occupies a slot to keep jump/call targets truthful.
+                Err(e) => {
+                    // Decode spans are relative to the instruction slice;
+                    // rebase them to the instruction's offset within .text.
+                    let e = match e {
+                        SBPFError::BytecodeError { error, span, .. } => {
+                            DisassemblerError::BytecodeError {
+                                error,
+                                span: span.start + pos..span.end + pos,
+                            }
+                        }
+                    };
+                    errors.push(e.clone());
+                    idx_to_slot.push(slot);
+                    ixs.push(Either::Right(e));
+                    pos += 8;
+                    slot += 1;
+                    continue;
+                }
+            };
 
             // Handle syscall relocation
             if ix.opcode == Opcode::Call
@@ -232,7 +296,7 @@ impl Program {
                 slot += 1;
             }
 
-            ixs.push(ix);
+            ixs.push(Either::Left(ix));
         }
 
         let mut slot_to_idx = vec![0usize; slot];
@@ -258,6 +322,7 @@ impl Program {
             // Resolve jump/call labels and collect rodata references
 
             for (idx, ix) in ixs.iter_mut().enumerate() {
+                let Either::Left(ix) = ix else { continue };
                 let is_lddw = ix.opcode == Opcode::Lddw;
 
                 // Resolve jump targets
@@ -334,7 +399,14 @@ impl Program {
             }
         });
 
-        Ok((ixs, rodata, entrypoint_idx))
+        Ok(Parsed {
+            value: Disassembly {
+                instructions: ixs,
+                rodata,
+                entrypoint: entrypoint_idx,
+            },
+            errors,
+        })
     }
 
     /// Build a hashmap where:
@@ -513,21 +585,46 @@ mod tests {
         let program = Program::from_bytes(&bytes).unwrap();
         assert_eq!(program.elf_header.ei_osabi, EI_OSABI_LINUX);
 
-        // Corrupt e_machine (LE u16 at bytes 18..20): the error should carry
-        // the field name, the accepted values and the value found.
+        // Corrupt e_machine (LE u16 at bytes 18..20): parsing fails and the
+        // error carries the field name, the accepted values and the value
+        // found.
         bytes[18] = 0x00;
-        match Program::from_bytes(&bytes) {
-            Err(crate::errors::DisassemblerError::NonStandardElfHeader {
-                field,
-                expected,
-                found,
-            }) => {
-                assert_eq!(field, "machine");
-                assert_eq!(expected, vec![E_MACHINE as u64, E_MACHINE_SBPF as u64]);
-                assert_eq!(found, 0);
+        let errors = Program::from_bytes(&bytes).unwrap_err();
+        match errors.as_slice() {
+            [
+                crate::errors::DisassemblerError::NonStandardElfHeader {
+                    field,
+                    expected,
+                    found,
+                },
+            ] => {
+                assert_eq!(*field, "machine");
+                assert_eq!(*expected, vec![E_MACHINE as u64, E_MACHINE_SBPF as u64]);
+                assert_eq!(*found, 0);
             }
             other => panic!("expected NonStandardElfHeader for machine, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_from_bytes_reports_all_header_errors() {
+        let mut bytes = hex!("7F454C460201010000000000000000000300F700010000002001000000000000400000000000000028020000000000000000000040003800030040000600050001000000050000002001000000000000200100000000000020010000000000003000000000000000300000000000000000100000000000000100000004000000C001000000000000C001000000000000C0010000000000003C000000000000003C000000000000000010000000000000020000000600000050010000000000005001000000000000500100000000000070000000000000007000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007912A000000000007911182900000000B7000000010000002D21010000000000B70000000000000095000000000000001E0000000000000004000000000000000600000000000000C0010000000000000B0000000000000018000000000000000500000000000000F0010000000000000A000000000000000C00000000000000160000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000120001002001000000000000300000000000000000656E747279706F696E7400002E74657874002E64796E737472002E64796E73796D002E64796E616D6963002E73687374727461620000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000010000000600000000000000200100000000000020010000000000003000000000000000000000000000000008000000000000000000000000000000170000000600000003000000000000005001000000000000500100000000000070000000000000000400000000000000080000000000000010000000000000000F0000000B0000000200000000000000C001000000000000C001000000000000300000000000000004000000010000000800000000000000180000000000000007000000030000000200000000000000F001000000000000F0010000000000000C00000000000000000000000000000001000000000000000000000000000000200000000300000000000000000000000000000000000000FC010000000000002A00000000000000000000000000000001000000000000000000000000000000").to_vec();
+
+        // Corrupt two independent header fields: os abi (byte 7) and
+        // e_version (LE u32 at bytes 20..24). One Err reports both, not
+        // just the first.
+        bytes[7] = 0x05;
+        bytes[20] = 0x02;
+
+        let errors = Program::from_bytes(&bytes).unwrap_err();
+        let fields: Vec<&str> = errors
+            .iter()
+            .map(|e| match e {
+                crate::errors::DisassemblerError::NonStandardElfHeader { field, .. } => *field,
+                other => panic!("expected NonStandardElfHeader, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(fields, vec!["os abi", "version"]);
     }
 
     #[test]
@@ -564,11 +661,11 @@ mod tests {
             relocations: vec![],
         };
 
-        let result = program.to_ixs();
-        assert!(result.is_err());
+        let parsed = program.to_ixs().unwrap();
+        assert!(parsed.value.instructions.is_empty());
         assert!(matches!(
-            result.unwrap_err(),
-            crate::errors::DisassemblerError::InvalidDataLength(3)
+            parsed.errors.as_slice(),
+            [crate::errors::DisassemblerError::InvalidDataLength(3)]
         ));
     }
 
@@ -611,9 +708,14 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _, _) = program.to_ixs().unwrap();
+        let parsed = program.to_ixs().unwrap();
+        assert!(parsed.errors.is_empty());
+        let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 2); // lddw + exit
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Lddw);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Lddw
+        );
     }
 
     #[test]
@@ -652,9 +754,14 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _, _) = program.to_ixs().unwrap();
+        let parsed = program.to_ixs().unwrap();
+        assert!(parsed.errors.is_empty());
+        let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 1);
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Ldxw);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Ldxw
+        );
     }
 
     #[test]
@@ -692,8 +799,173 @@ mod tests {
             relocations: vec![],
         };
 
-        let (ixs, _, _) = program.to_ixs().unwrap();
+        let parsed = program.to_ixs().unwrap();
+        assert!(parsed.errors.is_empty());
+        let ixs = parsed.value.instructions;
         assert_eq!(ixs.len(), 1);
-        assert_eq!(ixs[0].opcode, sbpf_common::opcode::Opcode::Jset32Imm);
+        assert_eq!(
+            ixs[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Jset32Imm
+        );
+    }
+
+    #[test]
+    fn test_to_ixs_skips_undecodable_instruction() {
+        // .text: [8 bytes of garbage][exit]. The garbage word is reported
+        // and kept inline in the instruction stream; decoding resumes at
+        // the next 8-byte boundary.
+        let mut text = vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        text.extend_from_slice(&[0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+        let program = Program {
+            elf_header: ELFHeader {
+                ei_magic: [127, 69, 76, 70],
+                ei_class: 2,
+                ei_data: 1,
+                ei_version: 1,
+                ei_osabi: 0,
+                ei_abiversion: 0,
+                ei_pad: [0; 7],
+                e_type: 0,
+                e_machine: E_MACHINE_SBPF,
+                e_version: 0,
+                e_entry: 0,
+                e_phoff: 0,
+                e_shoff: 0,
+                e_flags: 0,
+                e_ehsize: 0,
+                e_phentsize: 0,
+                e_phnum: 0,
+                e_shentsize: 0,
+                e_shnum: 0,
+                e_shstrndx: 0,
+            },
+            program_headers: vec![],
+            section_headers: vec![],
+            section_header_entries: vec![
+                SectionHeaderEntry::new(".text\0".to_string(), 0, text).unwrap(),
+            ],
+            relocations: vec![],
+        };
+
+        let parsed = program.to_ixs().unwrap();
+        assert_eq!(parsed.value.instructions.len(), 2);
+        match &parsed.value.instructions[0] {
+            either::Either::Right(crate::errors::DisassemblerError::BytecodeError {
+                span, ..
+            }) => assert_eq!(span.start, 0),
+            other => panic!("expected inline BytecodeError, got {other:?}"),
+        }
+        assert_eq!(
+            parsed.value.instructions[1].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Exit
+        );
+        match parsed.errors.as_slice() {
+            [crate::errors::DisassemblerError::BytecodeError { span, .. }] => {
+                assert_eq!(span.start, 0);
+            }
+            other => panic!("expected one BytecodeError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_ixs_reports_truncated_lddw() {
+        // .text: [exit][lddw first half with no second half]. The truncated
+        // lddw is reported and skipped instead of panicking in the decoder.
+        let mut text = vec![0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        text.extend_from_slice(&[0x18, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+
+        let program = Program {
+            elf_header: ELFHeader {
+                ei_magic: [127, 69, 76, 70],
+                ei_class: 2,
+                ei_data: 1,
+                ei_version: 1,
+                ei_osabi: 0,
+                ei_abiversion: 0,
+                ei_pad: [0; 7],
+                e_type: 0,
+                e_machine: E_MACHINE_SBPF,
+                e_version: 0,
+                e_entry: 0,
+                e_phoff: 0,
+                e_shoff: 0,
+                e_flags: 0,
+                e_ehsize: 0,
+                e_phentsize: 0,
+                e_phnum: 0,
+                e_shentsize: 0,
+                e_shnum: 0,
+                e_shstrndx: 0,
+            },
+            program_headers: vec![],
+            section_headers: vec![],
+            section_header_entries: vec![
+                SectionHeaderEntry::new(".text\0".to_string(), 0, text).unwrap(),
+            ],
+            relocations: vec![],
+        };
+
+        let parsed = program.to_ixs().unwrap();
+        assert_eq!(parsed.value.instructions.len(), 2);
+        assert_eq!(
+            parsed.value.instructions[0].as_ref().unwrap_left().opcode,
+            sbpf_common::opcode::Opcode::Exit
+        );
+        assert!(parsed.value.instructions[1].is_right());
+        match parsed.errors.as_slice() {
+            [crate::errors::DisassemblerError::BytecodeError { error, span }] => {
+                assert_eq!(*span, (8..16));
+                assert_eq!(error, "lddw needs 16 bytes but only 8 remain");
+            }
+            other => panic!("expected one BytecodeError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_to_ixs_decodes_words_before_trailing_bytes() {
+        // .text: exit + 3 trailing bytes (11 total). The length is reported
+        // but the full 8-byte word still decodes.
+        let text = vec![
+            0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03,
+        ];
+
+        let program = Program {
+            elf_header: ELFHeader {
+                ei_magic: [127, 69, 76, 70],
+                ei_class: 2,
+                ei_data: 1,
+                ei_version: 1,
+                ei_osabi: 0,
+                ei_abiversion: 0,
+                ei_pad: [0; 7],
+                e_type: 0,
+                e_machine: E_MACHINE_SBPF,
+                e_version: 0,
+                e_entry: 0,
+                e_phoff: 0,
+                e_shoff: 0,
+                e_flags: 0,
+                e_ehsize: 0,
+                e_phentsize: 0,
+                e_phnum: 0,
+                e_shentsize: 0,
+                e_shnum: 0,
+                e_shstrndx: 0,
+            },
+            program_headers: vec![],
+            section_headers: vec![],
+            section_header_entries: vec![
+                SectionHeaderEntry::new(".text\0".to_string(), 0, text).unwrap(),
+            ],
+            relocations: vec![],
+        };
+
+        let parsed = program.to_ixs().unwrap();
+        assert_eq!(parsed.value.instructions.len(), 1);
+        assert!(matches!(
+            parsed.errors.as_slice(),
+            [crate::errors::DisassemblerError::InvalidDataLength(11)]
+        ));
     }
 }

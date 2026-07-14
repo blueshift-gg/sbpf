@@ -114,13 +114,19 @@ pub struct ProgramHeader {
 }
 
 impl ProgramHeader {
-    pub fn from_elf_file(elf_file: &ElfFile64<Endianness>) -> Result<Vec<Self>, DisassemblerError> {
+    pub fn from_elf_file(
+        elf_file: &ElfFile64<Endianness>,
+    ) -> Result<Vec<Self>, Vec<DisassemblerError>> {
         let endian = elf_file.endian();
         let program_headers_data = elf_file.elf_program_headers();
+        let mut errors = Vec::new();
 
         let mut program_headers = Vec::new();
         for ph in program_headers_data {
-            let p_type = ProgramType::try_from(ph.p_type.get(endian))?;
+            let p_type = ProgramType::try_from(ph.p_type.get(endian)).unwrap_or_else(|e| {
+                errors.push(e);
+                ProgramType::PT_NULL
+            });
             let p_flags = ProgramFlags::from(ph.p_flags.get(endian));
             let p_offset = ph.p_offset.get(endian);
             let p_vaddr = ph.p_vaddr.get(endian);
@@ -141,7 +147,11 @@ impl ProgramHeader {
             });
         }
 
-        Ok(program_headers)
+        if errors.is_empty() {
+            Ok(program_headers)
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
