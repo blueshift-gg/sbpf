@@ -22,11 +22,12 @@ fn main() {
     let manifest = fs::read_to_string(&manifest_path)
         .unwrap_or_else(|error| panic!("Failed to read {}: {error}", manifest_path.display()));
     let manifest = manifest
-        .parse::<toml::Value>()
+        .parse::<toml::Table>()
         .unwrap_or_else(|error| panic!("Failed to parse {}: {error}", manifest_path.display()));
     let workspace_dependencies = manifest
         .get("workspace")
         .and_then(|workspace| workspace.get("dependencies"))
+        .and_then(toml::Value::as_table)
         .unwrap_or_else(|| {
             panic!(
                 "Missing [workspace.dependencies] in {}",
@@ -46,7 +47,7 @@ fn main() {
     }
 }
 
-fn dependency_version<'a>(dependencies: &'a toml::Value, dependency_name: &str) -> Option<&'a str> {
+fn dependency_version<'a>(dependencies: &'a toml::Table, dependency_name: &str) -> Option<&'a str> {
     match dependencies.get(dependency_name)? {
         toml::Value::String(version) => Some(version),
         toml::Value::Table(dependency) => dependency.get("version")?.as_str(),

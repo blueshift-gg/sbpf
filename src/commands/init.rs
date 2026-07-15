@@ -5,7 +5,7 @@ use {
     anyhow::{Error, Result},
     clap::Args,
     ed25519_dalek::SigningKey,
-    rand::rngs::OsRng,
+    getrandom::{SysRng, rand_core::UnwrapErr},
     std::{
         fs,
         io::{self, Write},
@@ -79,7 +79,7 @@ pub fn init(args: InitArgs) -> Result<(), Error> {
             PROGRAM,
         )?;
 
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         fs::write(
             project_path
                 .join("deploy")
