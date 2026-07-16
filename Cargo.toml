@@ -103,7 +103,7 @@ sbpf-common = { path = "crates/common", version = "0.2.4" }
 sbpf-ir = { path = "crates/ir", version = "0.2.4" }
 sbpf-runtime = { path = "crates/runtime", version = "0.2.4" }
 sbpf-syscall-map = { path = "crates/syscall-map", version = "0.2.4" }
-sbpf-analyzer = { path = "crates/analyzer", version = "0.2.4" }
+sbpf-analyze = { path = "crates/analyzer", version = "0.2.4" }
 sbpf-vm = { path = "crates/vm", version = "0.2.4" }
 mollusk-svm = "0.14.0"
 mollusk-svm-programs-token = "0.14.0"

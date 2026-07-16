@@ -1,3 +1,5 @@
+SHELL := /bin/bash
+
 build:
 	make node; make bundler; make web
 node:
@@ -25,12 +27,15 @@ test-examples:
 	done
 
 release:
-	@for pkg in sbpf-syscall-map sbpf-common sbpf-ir sbpf-analyzer sbpf-vm sbpf-assembler sbpf-disassembler sbpf-runtime sbpf-debugger sbpf; do \
+	@set -o pipefail; \
+	for pkg in sbpf-syscall-map sbpf-common sbpf-ir sbpf-analyze sbpf-vm sbpf-assembler sbpf-disassembler sbpf-runtime sbpf-debugger sbpf; do \
 		echo "Publishing $$pkg..."; \
-		cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log || \
-		if grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
+		if cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log; then \
+			: ; \
+		elif grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
 			echo "$$pkg: already published, skipping"; \
 		else \
+			echo "$$pkg: publish failed"; \
 			exit 1; \
 		fi; \
 	done

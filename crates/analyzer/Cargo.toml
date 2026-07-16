@@ -1,5 +1,5 @@
 [package]
-name = "sbpf-analyzer"
+name = "sbpf-analyze"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ categories = ["development-tools", "compilers"]
 rust-version.workspace = true
 
 [lib]
-name = "sbpf_analyzer"
+name = "sbpf_analyze"
 
 [dependencies]
 sbpf-common = { workspace = true }

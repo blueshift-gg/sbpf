@@ -20,7 +20,7 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 sbpf-common = { workspace = true }
-sbpf-analyzer = { workspace = true }
+sbpf-analyze = { workspace = true }
 sbpf-ir = { workspace = true }
 phf = "0.13.1"
 phf_macros = "0.13.1"
