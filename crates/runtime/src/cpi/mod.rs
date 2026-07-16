@@ -374,7 +374,7 @@ mod tests {
                     is_writable: true,
                 },
             ],
-            data: bincode::serialize(&SystemInstruction::Transfer { lamports: 400_000 }).unwrap(),
+            data: wincode::serialize(&SystemInstruction::Transfer { lamports: 400_000 }).unwrap(),
             caller_accounts: Vec::new(),
             signers: Vec::new(),
         };

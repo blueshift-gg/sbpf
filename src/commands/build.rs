@@ -7,7 +7,6 @@ use {
         term,
     },
     ed25519_dalek::SigningKey,
-    rand::rngs::OsRng,
     sbpf_assembler::{
         AssembleErrors, Assembler, AssemblerOption, DebugMode, FileRegistry, FsFileResolver,
         SbpfArch, SourceOrigin, errors::CompileError,
@@ -134,7 +133,7 @@ fn emit_assembler_errors(assemble_errors: &AssembleErrors) -> Result<()> {
                     diagnostic = diagnostic.with_notes(notes);
                 }
 
-                term::emit(&mut writer.lock(), &config, &files, &diagnostic)?;
+                term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic)?;
             } else {
                 // File not in registry (shouldn't happen), fall back to text-only
                 eprintln!("error: {}", error);
@@ -256,7 +255,7 @@ pub fn build(args: BuildArgs) -> Result<()> {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("program");
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         fs::write(
             deploy_path.join(format!("{}-keypair.json", project_name)),
             serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..]).to_string(),

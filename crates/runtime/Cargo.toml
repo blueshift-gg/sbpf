@@ -16,7 +16,7 @@ name = "sbpf_runtime"
 
 [dependencies]
 base64 = { workspace = true }
-bincode = { workspace = true }
+wincode = { workspace = true }
 blake3 = { workspace = true }
 bs58 = { workspace = true }
 either = { workspace = true }

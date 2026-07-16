@@ -24,7 +24,7 @@ pub fn process(
         ));
     }
 
-    let ix: SystemInstruction = bincode::deserialize(&instruction.data)
+    let ix: SystemInstruction = wincode::deserialize(&instruction.data)
         .map_err(|_| RuntimeError::BuiltinError("invalid system instruction data".into()))?;
 
     match ix {
@@ -400,7 +400,7 @@ mod tests {
         CpiRequest {
             program_id: system_program::ID,
             accounts,
-            data: bincode::serialize(ix).unwrap(),
+            data: wincode::serialize(ix).unwrap(),
             caller_accounts: Vec::new(),
             signers: Vec::new(),
         }

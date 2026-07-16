@@ -21,8 +21,7 @@ fn main() {
 
     let manifest = fs::read_to_string(&manifest_path)
         .unwrap_or_else(|error| panic!("Failed to read {}: {error}", manifest_path.display()));
-    let manifest = manifest
-        .parse::<toml::Value>()
+    let manifest = toml::from_str::<toml::Value>(&manifest)
         .unwrap_or_else(|error| panic!("Failed to parse {}: {error}", manifest_path.display()));
     let workspace_dependencies = manifest
         .get("workspace")

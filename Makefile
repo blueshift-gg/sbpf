@@ -25,7 +25,7 @@ test-examples:
 	done
 
 release:
-	@for pkg in sbpf-syscall-map sbpf-common sbpf-vm sbpf-assembler sbpf-disassembler sbpf-debugger sbpf; do \
+	@for pkg in sbpf-syscall-map sbpf-common sbpf-ir sbpf-analyzer sbpf-vm sbpf-assembler sbpf-disassembler sbpf-runtime sbpf-debugger sbpf; do \
 		echo "Publishing $$pkg..."; \
 		cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log || \
 		if grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
