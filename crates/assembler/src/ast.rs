@@ -227,7 +227,7 @@ fn run_optimizations(ast: &mut AST, config: &OptimizationConfig) -> Optimization
             } else {
                 optimizer::eliminate_unreachable_functions_with_observer(ast, |stage, cfg| {
                     let path = dump_dir.join(stage.file_name());
-                    if let Err(error) = std::fs::write(&path, sbpf_transform::dump_cfg(cfg)) {
+                    if let Err(error) = std::fs::write(&path, sbpf_analyzer::dump_cfg(cfg)) {
                         dump_errors.push((path, error));
                     }
                 });

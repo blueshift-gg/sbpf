@@ -52,7 +52,7 @@ members = [
 exclude = []
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/blueshift-gg/sbpf"
@@ -96,14 +96,14 @@ solana-program-pack = "3.1.0"
 solana-last-restart-slot = "3.1.0"
 solana-program-error = "3.0.1"
 solana-native-token = "3.0.0"
-sbpf-assembler = { path = "crates/assembler", version = "0.2.3" }
-sbpf-disassembler = { path = "crates/disassembler", version = "0.2.3" }
-sbpf-debugger = { path = "crates/debugger", version = "0.2.3" }
-sbpf-common = { path = "crates/common", version = "0.2.3" }
-sbpf-ir = { path = "crates/ir", version = "0.2.3" }
-sbpf-runtime = { path = "crates/runtime", version = "0.2.3" }
-sbpf-syscall-map = { path = "crates/syscall-map", version = "0.2.3" }
-sbpf-transform = { path = "crates/analyzer", version = "0.2.3" }
-sbpf-vm = { path = "crates/vm", version = "0.2.3" }
+sbpf-assembler = { path = "crates/assembler", version = "0.2.4" }
+sbpf-disassembler = { path = "crates/disassembler", version = "0.2.4" }
+sbpf-debugger = { path = "crates/debugger", version = "0.2.4" }
+sbpf-common = { path = "crates/common", version = "0.2.4" }
+sbpf-ir = { path = "crates/ir", version = "0.2.4" }
+sbpf-runtime = { path = "crates/runtime", version = "0.2.4" }
+sbpf-syscall-map = { path = "crates/syscall-map", version = "0.2.4" }
+sbpf-analyzer = { path = "crates/analyzer", version = "0.2.4" }
+sbpf-vm = { path = "crates/vm", version = "0.2.4" }
 mollusk-svm = "0.14.0"
 mollusk-svm-programs-token = "0.14.0"
