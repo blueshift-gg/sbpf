@@ -32,7 +32,7 @@ release:
 		echo "Publishing $$pkg..."; \
 		if cargo publish --package=$$pkg 2>&1 | tee /tmp/publish-$$pkg.log; then \
 			: ; \
-		elif grep -q "already uploaded" /tmp/publish-$$pkg.log; then \
+		elif grep -qiE "already (uploaded|exists)" /tmp/publish-$$pkg.log; then \
 			echo "$$pkg: already published, skipping"; \
 		else \
 			echo "$$pkg: publish failed"; \

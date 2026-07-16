@@ -5,8 +5,8 @@ pub(crate) use canonicalize::{
 };
 use {
     crate::{ast::AST, astnode::ASTNode},
-    sbpf_ir::{Cfg, InputNode, control_flow_graph},
     sbpf_analyze::remove_dead_functions,
+    sbpf_ir::{Cfg, InputNode, control_flow_graph},
     std::collections::HashSet,
 };
 
