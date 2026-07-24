@@ -29,6 +29,7 @@ sbpf-disassembler = { workspace = true }
 sbpf-debugger = { workspace = true }
 sbpf-runtime = { workspace = true }
 sbpf-vm = { workspace = true }
+solana-hash = { workspace = true }
 
 [dev-dependencies]
 hex-literal = "1.1.0"
