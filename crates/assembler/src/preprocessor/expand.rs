@@ -347,15 +347,15 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
             // Find matching .endr
             let (body, end_idx) = find_endr_block(&lines, i + 1, &lines[i].origin)?;
 
-            match count_str.parse::<usize>() {
-                Ok(count) => {
+            match eval_rept_count(count_str) {
+                Some(count) => {
                     // Recursively expand nested .rept/.irp inside the body
                     let expanded_body = expand_repetitions(body)?;
                     for _ in 0..count {
                         output.extend(expanded_body.iter().cloned());
                     }
                 }
-                Err(_) => {
+                None => {
                     errors.push(ExpandError {
                         error: CompileError::InvalidReptCount {
                             value: count_str.to_string(),
@@ -413,6 +413,66 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
     } else {
         Err(errors)
     }
+}
+
+/// Evaluate a `.rept` count: a constant expression of number literals,
+/// parentheses, unary minus, and `+ - * /`. Returns `None` on syntax errors,
+/// overflow, division by zero, or a negative result.
+fn eval_rept_count(s: &str) -> Option<usize> {
+    usize::try_from(eval_const(s)?).ok()
+}
+
+/// Evaluate an expression, returning its value and the unconsumed remainder
+/// (with leading whitespace already stripped).
+fn eval_const_expr(s: &str) -> Option<(i64, &str)> {
+    let (mut acc, mut rest) = eval_const_term(s)?;
+    loop {
+        let r = rest.trim_start();
+        let Some(op) = r
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '+' | '-' | '*' | '/'))
+        else {
+            return Some((acc, r));
+        };
+        let (rhs, r) = eval_const_term(&r[1..])?;
+        acc = match op {
+            '+' => acc.checked_add(rhs)?,
+            '-' => acc.checked_sub(rhs)?,
+            '*' => acc.checked_mul(rhs)?,
+            _ => acc.checked_div(rhs)?,
+        };
+        rest = r;
+    }
+}
+
+/// Evaluate a parenthesised expression or a single number literal: decimal or
+/// `0x`-prefixed hex, optionally negated, with `_` separators ignored.
+fn eval_const_term(s: &str) -> Option<(i64, &str)> {
+    let s = s.trim_start();
+    if let Some(r) = s.strip_prefix('(') {
+        let (value, r) = eval_const_expr(r)?;
+        return Some((value, r.strip_prefix(')')?));
+    }
+    let (negative, s) = match s.strip_prefix('-') {
+        Some(r) => (true, r.trim_start()),
+        None => (false, s),
+    };
+    let (radix, s) = match s.strip_prefix("0x") {
+        Some(r) => (16, r),
+        None => (10, s),
+    };
+    let end = s
+        .find(|c: char| !c.is_digit(radix) && c != '_')
+        .unwrap_or(s.len());
+    let value = i64::from_str_radix(&s[..end].replace('_', ""), radix).ok()?;
+    Some((if negative { -value } else { value }, &s[end..]))
+}
+
+/// Evaluate an expression that must consume its entire input.
+fn eval_const(s: &str) -> Option<i64> {
+    let (value, rest) = eval_const_expr(s)?;
+    rest.trim().is_empty().then_some(value)
 }
 
 /// Find the matching `.endr` for a `.rept` or `.irp` block, handling nesting.
@@ -676,6 +736,52 @@ mod tests {
 
         let result = expand_and_collect(lines);
         assert_eq!(result, vec!["    nop", "    nop", "    nop"]);
+    }
+
+    #[test]
+    fn test_eval_rept_count() {
+        assert_eq!(eval_rept_count("3"), Some(3));
+        assert_eq!(eval_rept_count("0x10"), Some(16));
+        assert_eq!(eval_rept_count("1_000"), Some(1000));
+        assert_eq!(eval_rept_count("2 * 4"), Some(8));
+        assert_eq!(eval_rept_count("(1 + 2) * 2"), Some(6));
+        assert_eq!(eval_rept_count("4 - 1"), Some(3));
+        assert_eq!(eval_rept_count("6 / 2"), Some(3));
+        assert_eq!(eval_rept_count("2 - 4"), None); // negative
+        assert_eq!(eval_rept_count("1 / 0"), None);
+        assert_eq!(eval_rept_count("foo"), None);
+        assert_eq!(eval_rept_count("2 +"), None);
+        assert_eq!(eval_rept_count("(1"), None);
+    }
+
+    #[test]
+    fn test_rept_expression_from_macro_param() {
+        let lines = vec![
+            make_line(".macro FILL num", 1),
+            make_line("    .rept \\num + 1", 2),
+            make_line("        nop", 3),
+            make_line("    .endr", 4),
+            make_line(".endm", 5),
+            make_line("FILL 2", 6),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["        nop", "        nop", "        nop"]);
+    }
+
+    #[test]
+    fn test_rept_invalid_count() {
+        let lines = vec![
+            make_line(".rept foo", 1),
+            make_line("    nop", 2),
+            make_line(".endr", 3),
+        ];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(
+            &errors[0].error,
+            CompileError::InvalidReptCount { value, .. } if value == "foo"
+        ));
     }
 
     #[test]
