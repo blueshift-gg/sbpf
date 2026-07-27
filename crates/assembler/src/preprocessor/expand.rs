@@ -420,6 +420,23 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
             }
 
             i = end_idx + 1;
+        } else if trimmed == ".else" || trimmed == ".endif" {
+            let error = if trimmed == ".else" {
+                CompileError::StrayElse {
+                    span: 0..0,
+                    custom_label: None,
+                }
+            } else {
+                CompileError::StrayEndif {
+                    span: 0..0,
+                    custom_label: None,
+                }
+            };
+            errors.push(ExpandError {
+                error,
+                origin: Some(lines[i].origin.clone()),
+            });
+            i += 1;
         } else {
             output.push(lines[i].clone());
             i += 1;
@@ -541,6 +558,15 @@ fn find_if_block(
                 return Ok((then_body, else_body, i));
             }
         } else if trimmed == ".else" && depth == 1 {
+            if else_idx.is_some() {
+                return Err(vec![ExpandError {
+                    error: CompileError::DuplicateElse {
+                        span: 0..0,
+                        custom_label: None,
+                    },
+                    origin: Some(lines[i].origin.clone()),
+                }]);
+            }
             else_idx = Some(i);
         }
     }
@@ -1003,6 +1029,39 @@ mod tests {
             &errors[0].error,
             CompileError::InvalidIfCondition { value, .. } if value == "foo"
         ));
+    }
+
+    #[test]
+    fn test_stray_else() {
+        let lines = vec![make_line("    nop", 1), make_line(".else", 2)];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::StrayElse { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 2);
+    }
+
+    #[test]
+    fn test_stray_endif() {
+        let lines = vec![make_line(".endif", 1)];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::StrayEndif { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 1);
+    }
+
+    #[test]
+    fn test_duplicate_else() {
+        let lines = vec![
+            make_line(".if 1", 1),
+            make_line("    nop", 2),
+            make_line(".else", 3),
+            make_line(".else", 4),
+            make_line(".endif", 5),
+        ];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::DuplicateElse { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 4);
     }
 
     #[test]
