@@ -23,7 +23,7 @@ pub(crate) struct ExpandError {
     pub origin: Option<SourceOrigin>,
 }
 
-/// Expand all macros, `.rept`, and `.irp` directives in the given lines.
+/// Expand all macros, `.rept`, `.irp`, and `.if` directives in the given lines.
 ///
 /// Returns the expanded lines and any errors encountered.
 pub(crate) fn expand_macros(
@@ -52,7 +52,7 @@ pub(crate) fn expand_macros(
         expand_line(&line, &macros, &mut output, &mut errors, 0);
     }
 
-    // Now, handle .rept and .irp on the post-macro output
+    // Now, handle .rept, .irp, and .if on the post-macro output
     let output = expand_repetitions(output)?;
 
     Ok((output, errors))
@@ -328,7 +328,16 @@ fn substitute(line: &str, bindings: &HashMap<String, String>, expansion_id: u64)
     result
 }
 
-/// Expand `.rept` and `.irp` blocks (these are processed before macro expansion).
+/// If `trimmed` is the directive `name` followed by an argument, return the
+/// trimmed argument (e.g. `directive_arg(".rept 3", ".rept") == Some("3")`).
+fn directive_arg<'a>(trimmed: &'a str, name: &str) -> Option<&'a str> {
+    trimmed
+        .strip_prefix(name)
+        .and_then(|r| r.starts_with(char::is_whitespace).then(|| r.trim()))
+}
+
+/// Expand `.rept`, `.irp`, and `.if`/`.else`/`.endif` blocks
+/// (these are processed after macro expansion).
 fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<ExpandError>> {
     let mut output = Vec::new();
     let mut errors = Vec::new();
@@ -337,13 +346,7 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
     while i < lines.len() {
         let trimmed = lines[i].text.trim();
 
-        if let Some(count_str) = trimmed.strip_prefix(".rept").and_then(|r| {
-            if r.starts_with(char::is_whitespace) {
-                Some(r.trim())
-            } else {
-                None
-            }
-        }) {
+        if let Some(count_str) = directive_arg(trimmed, ".rept") {
             // Find matching .endr
             let (body, end_idx) = find_endr_block(&lines, i + 1, &lines[i].origin)?;
 
@@ -368,13 +371,7 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
             }
 
             i = end_idx + 1;
-        } else if let Some(rest) = trimmed.strip_prefix(".irp").and_then(|r| {
-            if r.starts_with(char::is_whitespace) {
-                Some(r.trim())
-            } else {
-                None
-            }
-        }) {
+        } else if let Some(rest) = directive_arg(trimmed, ".irp") {
             // Parse: .irp var, val1, val2, val3
             let (body, end_idx) = find_endr_block(&lines, i + 1, &lines[i].origin)?;
 
@@ -402,6 +399,44 @@ fn expand_repetitions(lines: Vec<SourceLine>) -> Result<Vec<SourceLine>, Vec<Exp
             }
 
             i = end_idx + 1;
+        } else if let Some(cond_str) = directive_arg(trimmed, ".if") {
+            let (then_body, else_body, end_idx) = find_if_block(&lines, i + 1, &lines[i].origin)?;
+
+            match eval_if_condition(cond_str) {
+                Some(taken) => {
+                    let body = if taken { then_body } else { else_body };
+                    output.extend(expand_repetitions(body)?);
+                }
+                None => {
+                    errors.push(ExpandError {
+                        error: CompileError::InvalidIfCondition {
+                            value: cond_str.to_string(),
+                            span: 0..0,
+                            custom_label: None,
+                        },
+                        origin: Some(lines[i].origin.clone()),
+                    });
+                }
+            }
+
+            i = end_idx + 1;
+        } else if trimmed == ".else" || trimmed == ".endif" {
+            let error = if trimmed == ".else" {
+                CompileError::StrayElse {
+                    span: 0..0,
+                    custom_label: None,
+                }
+            } else {
+                CompileError::StrayEndif {
+                    span: 0..0,
+                    custom_label: None,
+                }
+            };
+            errors.push(ExpandError {
+                error,
+                origin: Some(lines[i].origin.clone()),
+            });
+            i += 1;
         } else {
             output.push(lines[i].clone());
             i += 1;
@@ -469,10 +504,80 @@ fn eval_const_term(s: &str) -> Option<(i64, &str)> {
     Some((if negative { -value } else { value }, &s[end..]))
 }
 
+/// Evaluate a `.if` condition: an optional comparison (`== != <= >= < >`)
+/// between two constant expressions, or a bare expression (non-zero = true).
+fn eval_if_condition(s: &str) -> Option<bool> {
+    for op in ["==", "!=", "<=", ">=", "<", ">"] {
+        if let Some((lhs, rhs)) = s.split_once(op) {
+            let (lhs, rhs) = (eval_const(lhs)?, eval_const(rhs)?);
+            return Some(match op {
+                "==" => lhs == rhs,
+                "!=" => lhs != rhs,
+                "<=" => lhs <= rhs,
+                ">=" => lhs >= rhs,
+                "<" => lhs < rhs,
+                _ => lhs > rhs,
+            });
+        }
+    }
+    eval_const(s).map(|v| v != 0)
+}
+
 /// Evaluate an expression that must consume its entire input.
 fn eval_const(s: &str) -> Option<i64> {
     let (value, rest) = eval_const_expr(s)?;
     rest.trim().is_empty().then_some(value)
+}
+
+/// Is this line a `.if <expr>` directive?
+fn is_if_directive(trimmed: &str) -> bool {
+    directive_arg(trimmed, ".if").is_some()
+}
+
+/// Find the matching `.else`/`.endif` for a `.if` block, handling nesting.
+/// Returns (then_body, else_body, endif_idx).
+#[allow(clippy::type_complexity)]
+fn find_if_block(
+    lines: &[SourceLine],
+    start: usize,
+    directive_origin: &SourceOrigin,
+) -> Result<(Vec<SourceLine>, Vec<SourceLine>, usize), Vec<ExpandError>> {
+    let mut depth = 1u32;
+    let mut else_idx = None;
+
+    for i in start..lines.len() {
+        let trimmed = lines[i].text.trim();
+        if is_if_directive(trimmed) {
+            depth += 1;
+        } else if trimmed == ".endif" {
+            depth -= 1;
+            if depth == 0 {
+                let split = else_idx.unwrap_or(i);
+                let then_body = lines[start..split].to_vec();
+                let else_body = else_idx.map_or(Vec::new(), |e| lines[e + 1..i].to_vec());
+                return Ok((then_body, else_body, i));
+            }
+        } else if trimmed == ".else" && depth == 1 {
+            if else_idx.is_some() {
+                return Err(vec![ExpandError {
+                    error: CompileError::DuplicateElse {
+                        span: 0..0,
+                        custom_label: None,
+                    },
+                    origin: Some(lines[i].origin.clone()),
+                }]);
+            }
+            else_idx = Some(i);
+        }
+    }
+
+    Err(vec![ExpandError {
+        error: CompileError::UnclosedIf {
+            span: 0..0,
+            custom_label: None,
+        },
+        origin: Some(directive_origin.clone()),
+    }])
 }
 
 /// Find the matching `.endr` for a `.rept` or `.irp` block, handling nesting.
@@ -782,6 +887,184 @@ mod tests {
             &errors[0].error,
             CompileError::InvalidReptCount { value, .. } if value == "foo"
         ));
+    }
+
+    #[test]
+    fn test_eval_if_condition() {
+        assert_eq!(eval_if_condition("1"), Some(true));
+        assert_eq!(eval_if_condition("0"), Some(false));
+        assert_eq!(eval_if_condition("2 - 2"), Some(false));
+        assert_eq!(eval_if_condition("3 == 3"), Some(true));
+        assert_eq!(eval_if_condition("3 != 3"), Some(false));
+        assert_eq!(eval_if_condition("2 < 3"), Some(true));
+        assert_eq!(eval_if_condition("2 >= 3"), Some(false));
+        assert_eq!(eval_if_condition("0x10 <= 16"), Some(true));
+        assert_eq!(eval_if_condition("foo"), None);
+        assert_eq!(eval_if_condition("1 == foo"), None);
+    }
+
+    #[test]
+    fn test_if_true_branch() {
+        let lines = vec![
+            make_line(".if 1", 1),
+            make_line("    mov64 r0, 1", 2),
+            make_line(".else", 3),
+            make_line("    mov64 r0, 2", 4),
+            make_line(".endif", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["    mov64 r0, 1"]);
+    }
+
+    #[test]
+    fn test_if_false_branch() {
+        let lines = vec![
+            make_line(".if 2 > 3", 1),
+            make_line("    mov64 r0, 1", 2),
+            make_line(".else", 3),
+            make_line("    mov64 r0, 2", 4),
+            make_line(".endif", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["    mov64 r0, 2"]);
+    }
+
+    #[test]
+    fn test_if_false_no_else() {
+        let lines = vec![
+            make_line(".if 0", 1),
+            make_line("    mov64 r0, 1", 2),
+            make_line(".endif", 3),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_nested_if() {
+        let lines = vec![
+            make_line(".if 1", 1),
+            make_line("    .if 0", 2),
+            make_line("        nop1", 3),
+            make_line("    .else", 4),
+            make_line("        nop2", 5),
+            make_line("    .endif", 6),
+            make_line(".else", 7),
+            make_line("    nop3", 8),
+            make_line(".endif", 9),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["        nop2"]);
+    }
+
+    #[test]
+    fn test_if_from_macro_param() {
+        let lines = vec![
+            make_line(".macro SET_OR_NOP val", 1),
+            make_line("    .if \\val == 0", 2),
+            make_line("        mov64 r0, 0", 3),
+            make_line("    .else", 4),
+            make_line("        mov64 r0, \\val", 5),
+            make_line("    .endif", 6),
+            make_line(".endm", 7),
+            make_line("SET_OR_NOP 0", 8),
+            make_line("SET_OR_NOP 5", 9),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["        mov64 r0, 0", "        mov64 r0, 5"]);
+    }
+
+    #[test]
+    fn test_if_inside_irp() {
+        let lines = vec![
+            make_line(".irp v, 0, 1, 2", 1),
+            make_line("    .if \\v != 1", 2),
+            make_line("        mov64 r0, \\v", 3),
+            make_line("    .endif", 4),
+            make_line(".endr", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["        mov64 r0, 0", "        mov64 r0, 2"]);
+    }
+
+    #[test]
+    fn test_rept_inside_if() {
+        let lines = vec![
+            make_line(".if 1", 1),
+            make_line("    .rept 2", 2),
+            make_line("        nop", 3),
+            make_line("    .endr", 4),
+            make_line(".endif", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["        nop", "        nop"]);
+    }
+
+    #[test]
+    fn test_unclosed_if() {
+        let lines = vec![make_line(".if 1", 1), make_line("    nop", 2)];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::UnclosedIf { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 1);
+    }
+
+    #[test]
+    fn test_invalid_if_condition() {
+        let lines = vec![
+            make_line(".if foo", 1),
+            make_line("    nop", 2),
+            make_line(".endif", 3),
+        ];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(
+            &errors[0].error,
+            CompileError::InvalidIfCondition { value, .. } if value == "foo"
+        ));
+    }
+
+    #[test]
+    fn test_stray_else() {
+        let lines = vec![make_line("    nop", 1), make_line(".else", 2)];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::StrayElse { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 2);
+    }
+
+    #[test]
+    fn test_stray_endif() {
+        let lines = vec![make_line(".endif", 1)];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(&errors[0].error, CompileError::StrayEndif { .. }));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 1);
+    }
+
+    #[test]
+    fn test_duplicate_else() {
+        let lines = vec![
+            make_line(".if 1", 1),
+            make_line("    nop", 2),
+            make_line(".else", 3),
+            make_line(".else", 4),
+            make_line(".endif", 5),
+        ];
+
+        let errors = expand_macros(lines).unwrap_err();
+        assert!(matches!(
+            &errors[0].error,
+            CompileError::DuplicateElse { .. }
+        ));
+        assert_eq!(errors[0].origin.as_ref().unwrap().line, 4);
     }
 
     #[test]

@@ -162,6 +162,31 @@ define_compile_errors! {
         label = "Invalid repeat count",
         fields = { value: String, span: Range<usize> }
     },
+    UnclosedIf {
+        error = "Missing .endif for .if",
+        label = "Unclosed conditional block",
+        fields = { span: Range<usize> }
+    },
+    InvalidIfCondition {
+        error = "Invalid .if condition: '{value}'",
+        label = "Invalid condition",
+        fields = { value: String, span: Range<usize> }
+    },
+    StrayElse {
+        error = ".else without matching .if",
+        label = "Stray .else",
+        fields = { span: Range<usize> }
+    },
+    StrayEndif {
+        error = ".endif without matching .if",
+        label = "Stray .endif",
+        fields = { span: Range<usize> }
+    },
+    DuplicateElse {
+        error = "Multiple .else for the same .if",
+        label = "Duplicate .else",
+        fields = { span: Range<usize> }
+    },
     VarargNotLast {
         error = "Vararg parameter must be last in macro '{name}'",
         label = "Vararg not last",
