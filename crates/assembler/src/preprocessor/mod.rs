@@ -125,7 +125,8 @@ pub struct PreprocessFailure {
 
 /// Run the full preprocessor pipeline:
 /// 1. Resolve `.include` directives (flatten files)
-/// 2. Expand `.macro`/`.endm`, `.rept`/`.endr`, `.irp`/`.endr`
+/// 2. Expand `.macro`/`.endm`, `.rept`/`.endr`, `.irp`/`.endr`,
+///    `.if`/`.else`/`.endif`
 ///
 /// The resulting `expanded_source` can be fed directly to the pest parser.
 /// The `source_map` allows remapping pest error spans back to original locations.
