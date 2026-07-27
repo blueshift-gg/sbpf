@@ -1060,7 +1060,10 @@ mod tests {
         ];
 
         let errors = expand_macros(lines).unwrap_err();
-        assert!(matches!(&errors[0].error, CompileError::DuplicateElse { .. }));
+        assert!(matches!(
+            &errors[0].error,
+            CompileError::DuplicateElse { .. }
+        ));
         assert_eq!(errors[0].origin.as_ref().unwrap().line, 4);
     }
 
