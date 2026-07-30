@@ -33,6 +33,7 @@ solana-clock = { workspace = true }
 solana-epoch-schedule = { workspace = true }
 solana-last-restart-slot = { workspace = true }
 solana-system-interface = { workspace = true }
+solana-fee-calculator = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
