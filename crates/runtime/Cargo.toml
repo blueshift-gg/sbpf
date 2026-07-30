@@ -39,6 +39,7 @@ solana-stake-history = { workspace = true, features = ["wincode", "sysvar"] }
 solana-slot-hashes = { workspace = true, features = ["wincode", "sysvar"] }
 solana-epoch-rewards = { workspace = true, features = ["wincode", "sysvar"] }
 solana-system-interface = { workspace = true }
+solana-fee-calculator = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
