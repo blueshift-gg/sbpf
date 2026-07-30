@@ -1,6 +1,7 @@
 use {
-    solana_clock::Clock, solana_epoch_schedule::EpochSchedule,
-    solana_last_restart_slot::LastRestartSlot, solana_rent::Rent,
+    solana_clock::Clock, solana_epoch_rewards::EpochRewards, solana_epoch_schedule::EpochSchedule,
+    solana_last_restart_slot::LastRestartSlot, solana_rent::Rent, solana_slot_hashes::SlotHashes,
+    solana_stake_history::StakeHistory,
 };
 
 #[derive(Debug, Clone)]
@@ -22,12 +23,29 @@ impl Default for RuntimeConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct SysvarContext {
     pub clock: Clock,
     pub rent: Rent,
     pub epoch_schedule: EpochSchedule,
     pub last_restart_slot: LastRestartSlot,
+    pub epoch_rewards: EpochRewards,
+    pub slot_hashes: SlotHashes,
+    pub stake_history: StakeHistory,
+}
+
+impl Clone for SysvarContext {
+    fn clone(&self) -> Self {
+        Self {
+            clock: self.clock.clone(),
+            rent: self.rent.clone(),
+            epoch_schedule: self.epoch_schedule.clone(),
+            last_restart_slot: self.last_restart_slot.clone(),
+            epoch_rewards: self.epoch_rewards.clone(),
+            slot_hashes: SlotHashes::new(self.slot_hashes.slot_hashes()),
+            stake_history: self.stake_history.clone(),
+        }
+    }
 }
 
 /// Reference: https://github.com/anza-xyz/agave/blob/master/program-runtime/src/execution_budget.rs

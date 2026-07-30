@@ -198,6 +198,12 @@ impl Memory {
         Ok(())
     }
 
+    pub fn check_writable(&mut self, addr: u64, len: usize) -> SbpfVmResult<()> {
+        let (region, offset) = self.translate(addr)?;
+        let _ = self.get_slice_mut(region, offset, len)?;
+        Ok(())
+    }
+
     pub fn alloc(&mut self, size: usize) -> SbpfVmResult<u64> {
         if self.heap_ptr + size > self.heap.len() {
             return Err(SbpfVmError::MemoryOutOfBounds(
