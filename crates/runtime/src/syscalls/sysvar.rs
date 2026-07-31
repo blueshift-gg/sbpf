@@ -125,6 +125,12 @@ pub fn sol_get_sysvar(
         .map_err(|_| SbpfVmError::SyscallError("sol_get_sysvar: length exceeds usize".into()))?;
     memory.check_writable(var_addr, length_usize)?;
 
+    // Read sysvar ID
+    let id_bytes = memory.read_bytes(sysvar_id_addr, 32)?;
+    let mut id_arr = [0u8; 32];
+    id_arr.copy_from_slice(id_bytes);
+    let sysvar_id = Address::new_from_array(id_arr);
+
     // Check for overflows
     let offset_length = offset.checked_add(length).ok_or_else(|| {
         SbpfVmError::SyscallError("sol_get_sysvar: offset + length overflow".into())
@@ -132,11 +138,6 @@ pub fn sol_get_sysvar(
     let _ = var_addr.checked_add(length).ok_or_else(|| {
         SbpfVmError::SyscallError("sol_get_sysvar: var_addr + length overflow".into())
     })?;
-
-    let id_bytes = memory.read_bytes(sysvar_id_addr, 32)?;
-    let mut id_arr = [0u8; 32];
-    id_arr.copy_from_slice(id_bytes);
-    let sysvar_id = Address::new_from_array(id_arr);
 
     let serialized = if sysvar_id == solana_clock::sysvar::ID {
         wincode::serialize(&sysvars.clock)
