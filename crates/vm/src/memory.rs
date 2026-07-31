@@ -91,11 +91,10 @@ impl Memory {
             MemoryRegion::Heap => &self.heap,
         };
 
-        if offset + len > data.len() {
-            return Err(SbpfVmError::MemoryOutOfBounds(offset as u64, len));
-        }
-
-        Ok(&data[offset..offset + len])
+        offset
+            .checked_add(len)
+            .and_then(|end| data.get(offset..end))
+            .ok_or(SbpfVmError::MemoryOutOfBounds(offset as u64, len))
     }
 
     fn get_slice_mut(
@@ -118,11 +117,10 @@ impl Memory {
             MemoryRegion::Rodata => unreachable!(),
         };
 
-        if offset + len > data.len() {
-            return Err(SbpfVmError::MemoryOutOfBounds(offset as u64, len));
-        }
-
-        Ok(&mut data[offset..offset + len])
+        offset
+            .checked_add(len)
+            .and_then(|end| data.get_mut(offset..end))
+            .ok_or(SbpfVmError::MemoryOutOfBounds(offset as u64, len))
     }
 
     pub fn read_u8(&self, addr: u64) -> SbpfVmResult<u8> {
@@ -195,6 +193,12 @@ impl Memory {
         let (region, offset) = self.translate(addr)?;
         let slice = self.get_slice_mut(region, offset, bytes.len())?;
         slice.copy_from_slice(bytes);
+        Ok(())
+    }
+
+    pub fn check_writable(&mut self, addr: u64, len: usize) -> SbpfVmResult<()> {
+        let (region, offset) = self.translate(addr)?;
+        let _ = self.get_slice_mut(region, offset, len)?;
         Ok(())
     }
 

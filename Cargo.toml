@@ -98,6 +98,9 @@ solana-program-pack = "3.1.0"
 solana-last-restart-slot = "~3.1.0"
 solana-program-error = "3.0.1"
 solana-native-token = "3.0.0"
+solana-stake-history = "~1.0.0"
+solana-slot-hashes = "3.1.0"
+solana-epoch-rewards = "3.1.0"
 solana-fee-calculator = "~3.2.2"
 sbpf-assembler = { path = "crates/assembler", version = "0.2.4" }
 sbpf-disassembler = { path = "crates/disassembler", version = "0.2.4" }
