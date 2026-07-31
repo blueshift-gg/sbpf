@@ -37,9 +37,9 @@ pub struct InstructionHandler {
     pub execute: ExecuteFn,
 }
 
-use {once_cell::sync::Lazy, std::collections::HashMap};
+use std::{collections::HashMap, sync::LazyLock};
 
-pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::new(|| {
+pub static OPCODE_TO_HANDLER: LazyLock<HashMap<Opcode, InstructionHandler>> = LazyLock::new(|| {
     //
     let mut map = HashMap::new();
 
@@ -168,7 +168,7 @@ pub static OPCODE_TO_HANDLER: Lazy<HashMap<Opcode, InstructionHandler>> = Lazy::
     map
 });
 
-pub static OPCODE_TO_TYPE: Lazy<HashMap<Opcode, OperationType>> = Lazy::new(|| {
+pub static OPCODE_TO_TYPE: LazyLock<HashMap<Opcode, OperationType>> = LazyLock::new(|| {
     let mut map = HashMap::new();
 
     fn register_group(
