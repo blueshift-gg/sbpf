@@ -44,8 +44,6 @@ mod tests {
     fn setup_sbpf_runtime() -> Runtime {
         let fixtures = fixtures_dir();
         let escrow_elf_path = fixtures.join("libupstream_pinocchio_escrow.so");
-        let token_elf_path = fixtures.join("token.so");
-        let associated_token_elf_path = fixtures.join("associated_token.so");
         let config = RuntimeConfig {
             compute_budget: 1_400_000,
             max_cpi_depth: 4,
@@ -53,10 +51,15 @@ mod tests {
         };
         let mut runtime =
             Runtime::new(PROGRAM_ID, escrow_elf_path.to_str().unwrap(), config).unwrap();
-        runtime.add_program(&spl_token_interface::ID, token_elf_path.to_str().unwrap());
+
+        // Add the token and associated token programs used by Mollusk.
         runtime.add_program(
-            &Address::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
-            associated_token_elf_path.to_str().unwrap(),
+            &mollusk_svm_programs_token::token::ID,
+            mollusk_svm_programs_token::token::ELF,
+        );
+        runtime.add_program(
+            &mollusk_svm_programs_token::associated_token::ID,
+            mollusk_svm_programs_token::associated_token::ELF,
         );
         runtime
     }
@@ -234,6 +237,7 @@ mod tests {
 
         // MAKE
         let result = runtime.run(&make_instruction, &accounts)?;
+        let make_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -245,6 +249,7 @@ mod tests {
 
         // TAKE
         let result = runtime.run(&take_instruction, &accounts)?;
+        let take_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -268,6 +273,8 @@ mod tests {
                         Check::account(&vault).owner(&token_program).build(),
                         // Check escrow is owned by our program
                         Check::account(&escrow).owner(&PROGRAM_ID).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -281,6 +288,8 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(take_cus_consumed),
                     ],
                 ),
             ],
@@ -427,6 +436,7 @@ mod tests {
 
         // MAKE
         let result = runtime.run(&make_instruction, &accounts)?;
+        let make_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -442,6 +452,7 @@ mod tests {
 
         // REFUND
         let result = runtime.run(&refund_instruction, &accounts)?;
+        let refund_cus_consumed = result.compute_units_consumed;
         // Check program succeeded
         assert_eq!(result.exit_code, Some(0));
         let vault_acct = runtime.get_account(&vault).ok_or("vault not found")?;
@@ -473,6 +484,8 @@ mod tests {
                         Check::account(&escrow)
                             .data_slice(96, &[13, 37, 0, 0, 0, 0, 0, 0])
                             .build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(make_cus_consumed),
                     ],
                 ),
                 (
@@ -486,6 +499,8 @@ mod tests {
                         // Check that our escrow is closed
                         Check::account(&escrow).owner(&system_program).build(),
                         Check::account(&escrow).lamports(0).build(),
+                        // Check consumed CUs match with runtime
+                        Check::compute_units(refund_cus_consumed),
                     ],
                 ),
             ],
