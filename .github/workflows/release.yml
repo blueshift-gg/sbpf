@@ -28,7 +28,7 @@ jobs:
 
       - name: Verify npm/package.json matches tag
         run: |
-          v=$(yq -e '.version' npm/package.json)
+          v=$(jq -r '.version' npm/package.json)
           test "$v" = "${GITHUB_REF_NAME#v}" \
             || { echo "::error::tag ${GITHUB_REF_NAME} does not match npm/package.json version $v"; exit 1; }
 
@@ -74,7 +74,7 @@ jobs:
 
       - name: Verify npm/package.json matches tag
         run: |
-          v=$(yq -e '.version' npm/package.json)
+          v=$(jq -r '.version' npm/package.json)
           expected="${GITHUB_REF_NAME#wasm-v}"
           expected="${expected#v}"
           test "$v" = "$expected" \
