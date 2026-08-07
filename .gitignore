@@ -6,3 +6,4 @@ test-ledger
 deploy
 *.sh
 .npmrc
+npm/dist/

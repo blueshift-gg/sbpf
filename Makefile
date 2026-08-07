@@ -39,5 +39,5 @@ release:
 			exit 1; \
 		fi; \
 	done
-release-npm:
+release-npm: build
 	cd npm && npm publish --access public

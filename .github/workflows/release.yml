@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*", "wasm-v*"]
+
+jobs:
+  crates:
+    name: Publish crates
+    if: startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-crates
+      cancel-in-progress: false
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          v=$(yq -e '.workspace.package.version' Cargo.toml)
+          test "v$v" = "${GITHUB_REF_NAME}" \
+            || { echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version v$v"; exit 1; }
+
+      - name: Verify npm/package.json matches tag
+        run: |
+          v=$(yq -e '.version' npm/package.json)
+          test "$v" = "${GITHUB_REF_NAME#v}" \
+            || { echo "::error::tag ${GITHUB_REF_NAME} does not match npm/package.json version $v"; exit 1; }
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: stable
+          cache: false
+          rustflags: ""       # don't force -D warnings on the publish build
+
+      - name: Install cargo-release
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: cargo-release
+
+      - name: Authenticate with crates.io
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+        id: auth
+
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo release --unpublished --workspace --no-tag --no-push --execute --no-confirm
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+
+  wasm:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-wasm
+      cancel-in-progress: false
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify npm/package.json matches tag
+        run: |
+          v=$(yq -e '.version' npm/package.json)
+          expected="${GITHUB_REF_NAME#wasm-v}"
+          expected="${expected#v}"
+          test "$v" = "$expected" \
+            || { echo "::error::tag ${GITHUB_REF_NAME} does not match npm/package.json version $v"; exit 1; }
+
+      - name: Check npm version not already published
+        run: |
+          v="${GITHUB_REF_NAME#wasm-v}"
+          v="${v#v}"
+          if npm view "@blueshift-gg/sbpf-assembler@$v" version >/dev/null 2>&1; then
+            if startsWith(github.ref_name, 'wasm-v'); then
+              echo "::error::$v is already published to npm; pick a new version"
+              exit 1
+            else
+              echo "npm $v already published; skipping npm publish"
+              echo "skip=true" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: stable
+          cache: false
+          rustflags: ""       # don't force -D warnings on the publish build
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # v2.85.7
+        with:
+          tool: wasm-pack
+
+      - name: Build wasm dist (node, bundler, web)
+        run: make build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish npm package (trusted publishing, no token)
+        if: env.skip != 'true'
+        working-directory: npm
+        run: npm publish --access public
+
+      - name: Create release
+        if: startsWith(github.ref_name, 'wasm-v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes
