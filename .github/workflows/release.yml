@@ -85,7 +85,7 @@ jobs:
           v="${GITHUB_REF_NAME#wasm-v}"
           v="${v#v}"
           if npm view "@blueshift-gg/sbpf-assembler@$v" version >/dev/null 2>&1; then
-            if startsWith(github.ref_name, 'wasm-v'); then
+            if [[ "${GITHUB_REF_NAME}" == wasm-v* ]]; then
               echo "::error::$v is already published to npm; pick a new version"
               exit 1
             else
