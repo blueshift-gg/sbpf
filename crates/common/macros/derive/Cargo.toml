@@ -1,0 +1,24 @@
+[package]
+name = "sbpf-common-derive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Proc macros for sbpf-common opcode table generation"
+keywords = ["solana", "bpf", "blockchain"]
+categories = ["development-tools"]
+rust-version.workspace = true
+
+[lib]
+proc-macro = true
+name = "sbpf_common_derive"
+
+[dependencies]
+sbpf-common-tablegen = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["full"] }
+
+[dev-dependencies]
+trybuild = "1"

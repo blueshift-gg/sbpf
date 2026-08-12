@@ -41,6 +41,8 @@ members = [
     "crates/analyzer",
     "crates/assembler",
     "crates/common",
+    "crates/common/macros/derive",
+    "crates/common/macros/tablegen",
     "crates/disassembler",
     "crates/debugger",
     "crates/ir",
@@ -108,5 +110,10 @@ sbpf-runtime = { path = "crates/runtime", version = "0.3.0" }
 sbpf-syscall-map = { path = "crates/syscall-map", version = "0.3.0" }
 sbpf-analyze = { path = "crates/analyzer", version = "0.3.0" }
 sbpf-vm = { path = "crates/vm", version = "0.3.0" }
+sbpf-common-derive = { path = "crates/common/macros/derive", version = "0.3.0" }
+sbpf-common-tablegen = { path = "crates/common/macros/tablegen", version = "0.3.0" }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["extra-traits", "full"] }
 mollusk-svm = "0.14.0"
 mollusk-svm-programs-token = "0.14.0"

@@ -1,0 +1,20 @@
+[package]
+name = "sbpf-common-tablegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Parser, IR, and other helpers for sBPF opcode table generation"
+keywords = ["solana", "bpf", "blockchain"]
+categories = ["development-tools"]
+rust-version.workspace = true
+
+[lib]
+crate-type = ["lib"]
+name = "sbpf_common_tablegen"
+
+[dependencies]
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
