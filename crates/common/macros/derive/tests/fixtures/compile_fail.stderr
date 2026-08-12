@@ -1,0 +1,79 @@
+error: OpcodeTable requires at least one opcode variant
+  --> tests/fixtures/compile_fail.rs:27:10
+   |
+27 | pub enum OpcodeEmpty {}
+   |          ^^^^^^^^^^^
+
+error: OpcodeGroup requires at least one group variant
+  --> tests/fixtures/compile_fail.rs:36:10
+   |
+36 | pub enum GroupEmpty {}
+   |          ^^^^^^^^^^
+
+error: missing required field `doc`
+  --> tests/fixtures/compile_fail.rs:42:5
+   |
+42 |     X,
+   |     ^
+
+error: `mnemonic` specified more than once
+  --> tests/fixtures/compile_fail.rs:50:9
+   |
+50 |         mnemonic = "y",
+   |         ^^^^^^^^
+
+error: duplicate code found for opcodes `A` and `B`: 0x01
+  --> tests/fixtures/compile_fail.rs:64:5
+   |
+64 |     B,
+   |     ^
+
+error: OpcodeGroup requires #[handlers(...)]
+  --> tests/fixtures/compile_fail.rs:69:10
+   |
+69 | pub enum GroupMissingHandlers {
+   |          ^^^^^^^^^^^^^^^^^^^^
+
+error: missing required field `decode`
+  --> tests/fixtures/compile_fail.rs:89:5
+   |
+89 |     A,
+   |     ^
+
+error[E0277]: the trait bound `InvalidOpcodeGroup: OpcodeGroup` is not satisfied
+   --> tests/fixtures/compile_fail.rs:123:17
+    |
+123 |         group = InvalidOpcodeGroup::A,
+    |                 ^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `OpcodeGroup` is not implemented for `InvalidOpcodeGroup`
+   --> tests/fixtures/compile_fail.rs:114:1
+    |
+114 | pub enum InvalidOpcodeGroup {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `OpcodeGroup`
+   --> tests/fixtures/compile_fail.rs:8:23
+    |
+  8 | #[derive(Clone, Copy, OpcodeGroup)]
+    |                       ^^^^^^^^^^^ `Group`
+...
+ 95 | #[derive(Clone, Copy, OpcodeGroup)]
+    |                       ^^^^^^^^^^^ `GroupWrongHandlerSignature`
+note: required by a bound in `sbpf_common_tablegen::OpcodeTable::Group`
+   --> $WORKSPACE/crates/common/macros/tablegen/src/lib.rs
+    |
+    |     type Group: OpcodeGroup;
+    |                 ^^^^^^^^^^^ required by this bound in `OpcodeTable::Group`
+    = note: this error originates in the derive macro `OpcodeGroup` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> tests/fixtures/compile_fail.rs:105:18
+    |
+ 95 | #[derive(Clone, Copy, OpcodeGroup)]
+    |                       ----------- expected `fn()` because of return type
+...
+105 |         decode = bad_decode,
+    |                  ^^^^^^^^^^ incorrect number of function parameters
+    |
+    = note: expected fn pointer `fn()`
+                  found fn item `fn(i32) {bad_decode}`
