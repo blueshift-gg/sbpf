@@ -1,4 +1,4 @@
-use {std::ops::Range, thiserror::Error};
+use {crate::OpcodeError, std::ops::Range, thiserror::Error};
 
 #[derive(Debug, Error)]
 pub enum SBPFError {
@@ -8,6 +8,18 @@ pub enum SBPFError {
         span: Range<usize>,
         custom_label: Option<String>,
     },
+}
+
+impl From<OpcodeError> for SBPFError {
+    fn from(e: OpcodeError) -> Self {
+        match e {
+            OpcodeError::InvalidOpcode { byte } => SBPFError::BytecodeError {
+                error: format!("invalid opcode: 0x{byte:02x}"),
+                span: 0..1,
+                custom_label: Some("Invalid opcode".to_string()),
+            },
+        }
+    }
 }
 
 impl SBPFError {

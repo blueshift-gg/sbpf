@@ -2,7 +2,7 @@ use {
     super::{BPF_X, Rule, Section, common::*},
     crate::{SbpfArch, errors::CompileError},
     pest::iterators::Pair,
-    sbpf_common::{inst_param::Number, instruction::Instruction, opcode::Opcode},
+    sbpf_common::{OpcodeTable, inst_param::Number, instruction::Instruction, opcode::Opcode},
     std::{collections::HashMap, str::FromStr},
 };
 

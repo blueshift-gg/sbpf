@@ -29,6 +29,8 @@ pub struct OpcodeDef {
     pub group: Path,
     pub doc: String,
     pub operator: Option<String>,
+    /// Memory access width for load/store ops
+    pub size: Option<String>,
     /// If the opcode is only available in a specific arch (v2 or v3)
     pub arch: Option<OpcodeArch>,
     pub span: Span,

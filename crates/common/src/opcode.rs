@@ -1,950 +1,1136 @@
 use {
-    crate::errors::SBPFError,
-    core::{fmt, str::FromStr},
+    crate::optype::OperationType,
     num_derive::FromPrimitive,
+    sbpf_common_derive::OpcodeTable,
     serde::{Deserialize, Serialize},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MemOpKind {
-    Load,
-    StoreImm,
-    StoreReg,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum OperationType {
-    LoadImmediate,
-    LoadMemory,
-    StoreImmediate,
-    StoreRegister,
-    BinaryImmediate,
-    BinaryRegister,
-    Unary,
-    Endian,
-    Jump,
-    JumpImmediate,
-    JumpRegister,
-    Jump32Immediate,
-    Jump32Register,
-    CallImmediate,
-    CallRegister,
-    Exit,
-}
-
-pub const LOAD_IMM_OPS: &[Opcode] = &[Opcode::Lddw]; // OperationType::LoadImmediate
-
-pub const LOAD_MEMORY_OPS: &[Opcode] = &[
-    Opcode::Ldxb, // OperationType::LoadMemory
-    Opcode::Ldxh,
-    Opcode::Ldxw,
-    Opcode::Ldxdw,
-];
-
-pub const STORE_IMM_OPS: &[Opcode] = &[
-    Opcode::Stb, // OperationType::StoreImmediate
-    Opcode::Sth,
-    Opcode::Stw,
-    Opcode::Stdw,
-];
-
-pub const STORE_REG_OPS: &[Opcode] = &[
-    Opcode::Stxb, // OperationType::StoreRegister
-    Opcode::Stxh,
-    Opcode::Stxw,
-    Opcode::Stxdw,
-];
-
-pub const BIN_IMM_OPS: &[Opcode] = &[
-    Opcode::Add32Imm, // OperationType::BinaryImmediate
-    Opcode::Sub32Imm,
-    Opcode::Mul32Imm,
-    Opcode::Div32Imm,
-    Opcode::Or32Imm,
-    Opcode::And32Imm,
-    Opcode::Lsh32Imm,
-    Opcode::Rsh32Imm,
-    Opcode::Mod32Imm,
-    Opcode::Xor32Imm,
-    Opcode::Mov32Imm,
-    Opcode::Arsh32Imm,
-    Opcode::Lmul32Imm,
-    Opcode::Udiv32Imm,
-    Opcode::Urem32Imm,
-    Opcode::Sdiv32Imm,
-    Opcode::Srem32Imm,
-    Opcode::Add64Imm,
-    Opcode::Sub64Imm,
-    Opcode::Mul64Imm,
-    Opcode::Div64Imm,
-    Opcode::Or64Imm,
-    Opcode::And64Imm,
-    Opcode::Lsh64Imm,
-    Opcode::Rsh64Imm,
-    Opcode::Mod64Imm,
-    Opcode::Xor64Imm,
-    Opcode::Mov64Imm,
-    Opcode::Arsh64Imm,
-    Opcode::Hor64Imm,
-    Opcode::Lmul64Imm,
-    Opcode::Uhmul64Imm,
-    Opcode::Udiv64Imm,
-    Opcode::Urem64Imm,
-    Opcode::Shmul64Imm,
-    Opcode::Sdiv64Imm,
-    Opcode::Srem64Imm,
-];
-
-pub const ENDIAN_OPS: &[Opcode] = &[
-    Opcode::Le, // OperationType::Endian
-    Opcode::Be,
-];
-
-pub const BIN_REG_OPS: &[Opcode] = &[
-    Opcode::Add32Reg, // OperationType::BinaryRegister
-    Opcode::Sub32Reg,
-    Opcode::Mul32Reg,
-    Opcode::Div32Reg,
-    Opcode::Or32Reg,
-    Opcode::And32Reg,
-    Opcode::Lsh32Reg,
-    Opcode::Rsh32Reg,
-    Opcode::Mod32Reg,
-    Opcode::Xor32Reg,
-    Opcode::Mov32Reg,
-    Opcode::Arsh32Reg,
-    Opcode::Lmul32Reg,
-    Opcode::Udiv32Reg,
-    Opcode::Urem32Reg,
-    Opcode::Sdiv32Reg,
-    Opcode::Srem32Reg,
-    Opcode::Add64Reg,
-    Opcode::Sub64Reg,
-    Opcode::Mul64Reg,
-    Opcode::Div64Reg,
-    Opcode::Or64Reg,
-    Opcode::And64Reg,
-    Opcode::Lsh64Reg,
-    Opcode::Rsh64Reg,
-    Opcode::Mod64Reg,
-    Opcode::Xor64Reg,
-    Opcode::Mov64Reg,
-    Opcode::Arsh64Reg,
-    Opcode::Lmul64Reg,
-    Opcode::Uhmul64Reg,
-    Opcode::Udiv64Reg,
-    Opcode::Urem64Reg,
-    Opcode::Shmul64Reg,
-    Opcode::Sdiv64Reg,
-    Opcode::Srem64Reg,
-];
-
-pub const UNARY_OPS: &[Opcode] = &[
-    Opcode::Neg32, // OperationType::Unary
-    Opcode::Neg64,
-];
-
-pub const JUMP_OPS: &[Opcode] = &[Opcode::Ja]; // OperationType::Jump
-
-pub const JUMP_IMM_OPS: &[Opcode] = &[
-    Opcode::JeqImm, // OperationType::JumpImmediate
-    Opcode::JgtImm,
-    Opcode::JgeImm,
-    Opcode::JltImm,
-    Opcode::JleImm,
-    Opcode::JsetImm,
-    Opcode::JneImm,
-    Opcode::JsgtImm,
-    Opcode::JsgeImm,
-    Opcode::JsltImm,
-    Opcode::JsleImm,
-];
-
-pub const JUMP_REG_OPS: &[Opcode] = &[
-    Opcode::JeqReg, // OperationType::JumpRegister
-    Opcode::JgtReg,
-    Opcode::JgeReg,
-    Opcode::JltReg,
-    Opcode::JleReg,
-    Opcode::JsetReg,
-    Opcode::JneReg,
-    Opcode::JsgtReg,
-    Opcode::JsgeReg,
-    Opcode::JsltReg,
-    Opcode::JsleReg,
-];
-
-pub const JUMP32_IMM_OPS: &[Opcode] = &[
-    Opcode::Jeq32Imm, // OperationType::Jump32Immediate
-    Opcode::Jgt32Imm,
-    Opcode::Jge32Imm,
-    Opcode::Jlt32Imm,
-    Opcode::Jle32Imm,
-    Opcode::Jset32Imm,
-    Opcode::Jne32Imm,
-    Opcode::Jsgt32Imm,
-    Opcode::Jsge32Imm,
-    Opcode::Jslt32Imm,
-    Opcode::Jsle32Imm,
-];
-
-pub const JUMP32_REG_OPS: &[Opcode] = &[
-    Opcode::Jeq32Reg, // OperationType::Jump32Register
-    Opcode::Jgt32Reg,
-    Opcode::Jge32Reg,
-    Opcode::Jlt32Reg,
-    Opcode::Jle32Reg,
-    Opcode::Jset32Reg,
-    Opcode::Jne32Reg,
-    Opcode::Jsgt32Reg,
-    Opcode::Jsge32Reg,
-    Opcode::Jslt32Reg,
-    Opcode::Jsle32Reg,
-];
-
-pub const CALL_IMM_OPS: &[Opcode] = &[Opcode::Call]; // OperationType::CallImmediate
-
-pub const CALL_REG_OPS: &[Opcode] = &[Opcode::Callx]; // OperationType::CallRegister
-
-pub const EXIT_OPS: &[Opcode] = &[Opcode::Exit]; // OperationType::Exit
-//
-#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq, FromPrimitive, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Hash, Eq, PartialEq, FromPrimitive, Serialize, Deserialize, OpcodeTable,
+)]
 pub enum Opcode {
+    #[opcode(
+        mnemonic = "lddw",
+        code = 0x18,
+        group = OperationType::LoadImmediate,
+        doc = "lddw dst, imm",
+    )]
     Lddw,
+    #[opcode(
+        mnemonic = "ldxb",
+        code = 0x71,
+        group = OperationType::LoadMemory,
+        doc = "ldxb dst, [src + off]",
+        size = "u8",
+    )]
     Ldxb,
+    #[opcode(
+        mnemonic = "ldxh",
+        code = 0x69,
+        group = OperationType::LoadMemory,
+        doc = "ldxh dst, [src + off]",
+        size = "u16",
+    )]
     Ldxh,
+    #[opcode(
+        mnemonic = "ldxw",
+        code = 0x61,
+        group = OperationType::LoadMemory,
+        doc = "ldxw dst, [src + off]",
+        size = "u32",
+    )]
     Ldxw,
+    #[opcode(
+        mnemonic = "ldxdw",
+        code = 0x79,
+        group = OperationType::LoadMemory,
+        doc = "ldxdw dst, [src + off]",
+        size = "u64",
+    )]
     Ldxdw,
+    #[opcode(
+        mnemonic = "stb",
+        code = 0x72,
+        group = OperationType::StoreImmediate,
+        doc = "stb [dst + off], imm",
+        size = "u8",
+    )]
     Stb,
+    #[opcode(
+        mnemonic = "sth",
+        code = 0x6a,
+        group = OperationType::StoreImmediate,
+        doc = "sth [dst + off], imm",
+        size = "u16",
+    )]
     Sth,
+    #[opcode(
+        mnemonic = "stw",
+        code = 0x62,
+        group = OperationType::StoreImmediate,
+        doc = "stw [dst + off], imm",
+        size = "u32",
+    )]
     Stw,
+    #[opcode(
+        mnemonic = "stdw",
+        code = 0x7a,
+        group = OperationType::StoreImmediate,
+        doc = "stdw [dst + off], imm",
+        size = "u64",
+    )]
     Stdw,
+    #[opcode(
+        mnemonic = "stxb",
+        code = 0x73,
+        group = OperationType::StoreRegister,
+        doc = "stxb [dst + off], src",
+        size = "u8",
+    )]
     Stxb,
+    #[opcode(
+        mnemonic = "stxh",
+        code = 0x6b,
+        group = OperationType::StoreRegister,
+        doc = "stxh [dst + off], src",
+        size = "u16",
+    )]
     Stxh,
+    #[opcode(
+        mnemonic = "stxw",
+        code = 0x63,
+        group = OperationType::StoreRegister,
+        doc = "stxw [dst + off], src",
+        size = "u32",
+    )]
     Stxw,
+    #[opcode(
+        mnemonic = "stxdw",
+        code = 0x7b,
+        group = OperationType::StoreRegister,
+        doc = "stxdw [dst + off], src",
+        size = "u64",
+    )]
     Stxdw,
+    #[opcode(
+        mnemonic = "add32",
+        code = 0x04,
+        group = OperationType::BinaryImmediate,
+        doc = "add32 dst, imm",
+        operator = "+=",
+    )]
     Add32Imm,
+    #[opcode(
+        mnemonic = "add32",
+        code = 0x0c,
+        group = OperationType::BinaryRegister,
+        doc = "add32 dst, src",
+        operator = "+=",
+    )]
     Add32Reg,
+    #[opcode(
+        mnemonic = "sub32",
+        code = 0x14,
+        group = OperationType::BinaryImmediate,
+        doc = "sub32 dst, imm",
+        operator = "-=",
+    )]
     Sub32Imm,
+    #[opcode(
+        mnemonic = "sub32",
+        code = 0x1c,
+        group = OperationType::BinaryRegister,
+        doc = "sub32 dst, src",
+        operator = "-=",
+    )]
     Sub32Reg,
+    #[opcode(
+        mnemonic = "mul32",
+        code = 0x24,
+        group = OperationType::BinaryImmediate,
+        doc = "mul32 dst, imm",
+        operator = "*=",
+    )]
     Mul32Imm,
+    #[opcode(
+        mnemonic = "mul32",
+        code = 0x2c,
+        group = OperationType::BinaryRegister,
+        doc = "mul32 dst, src",
+        operator = "*=",
+    )]
     Mul32Reg,
+    #[opcode(
+        mnemonic = "div32",
+        code = 0x34,
+        group = OperationType::BinaryImmediate,
+        doc = "div32 dst, imm",
+        operator = "/=",
+    )]
     Div32Imm,
+    #[opcode(
+        mnemonic = "div32",
+        code = 0x3c,
+        group = OperationType::BinaryRegister,
+        doc = "div32 dst, src",
+        operator = "/=",
+    )]
     Div32Reg,
+    #[opcode(
+        mnemonic = "or32",
+        code = 0x44,
+        group = OperationType::BinaryImmediate,
+        doc = "or32 dst, imm",
+        operator = "|=",
+    )]
     Or32Imm,
+    #[opcode(
+        mnemonic = "or32",
+        code = 0x4c,
+        group = OperationType::BinaryRegister,
+        doc = "or32 dst, src",
+        operator = "|=",
+    )]
     Or32Reg,
+    #[opcode(
+        mnemonic = "and32",
+        code = 0x54,
+        group = OperationType::BinaryImmediate,
+        doc = "and32 dst, imm",
+        operator = "&=",
+    )]
     And32Imm,
+    #[opcode(
+        mnemonic = "and32",
+        code = 0x5c,
+        group = OperationType::BinaryRegister,
+        doc = "and32 dst, src",
+        operator = "&=",
+    )]
     And32Reg,
+    #[opcode(
+        mnemonic = "lsh32",
+        code = 0x64,
+        group = OperationType::BinaryImmediate,
+        doc = "lsh32 dst, imm",
+        operator = "<<=",
+    )]
     Lsh32Imm,
+    #[opcode(
+        mnemonic = "lsh32",
+        code = 0x6c,
+        group = OperationType::BinaryRegister,
+        doc = "lsh32 dst, src",
+        operator = "<<=",
+    )]
     Lsh32Reg,
+    #[opcode(
+        mnemonic = "rsh32",
+        code = 0x74,
+        group = OperationType::BinaryImmediate,
+        doc = "rsh32 dst, imm",
+        operator = ">>=",
+    )]
     Rsh32Imm,
+    #[opcode(
+        mnemonic = "rsh32",
+        code = 0x7c,
+        group = OperationType::BinaryRegister,
+        doc = "rsh32 dst, src",
+        operator = ">>=",
+    )]
     Rsh32Reg,
+    #[opcode(
+        mnemonic = "mod32",
+        code = 0x94,
+        group = OperationType::BinaryImmediate,
+        doc = "mod32 dst, imm",
+        operator = "%=",
+    )]
     Mod32Imm,
+    #[opcode(
+        mnemonic = "mod32",
+        code = 0x9c,
+        group = OperationType::BinaryRegister,
+        doc = "mod32 dst, src",
+        operator = "%=",
+    )]
     Mod32Reg,
+    #[opcode(
+        mnemonic = "xor32",
+        code = 0xa4,
+        group = OperationType::BinaryImmediate,
+        doc = "xor32 dst, imm",
+        operator = "^=",
+    )]
     Xor32Imm,
+    #[opcode(
+        mnemonic = "xor32",
+        code = 0xac,
+        group = OperationType::BinaryRegister,
+        doc = "xor32 dst, src",
+        operator = "^=",
+    )]
     Xor32Reg,
+    #[opcode(
+        mnemonic = "mov32",
+        code = 0xb4,
+        group = OperationType::BinaryImmediate,
+        doc = "mov32 dst, imm",
+        operator = "=",
+    )]
     Mov32Imm,
+    #[opcode(
+        mnemonic = "mov32",
+        code = 0xbc,
+        group = OperationType::BinaryRegister,
+        doc = "mov32 dst, src",
+        operator = "=",
+    )]
     Mov32Reg,
+    #[opcode(
+        mnemonic = "arsh32",
+        code = 0xc4,
+        group = OperationType::BinaryImmediate,
+        doc = "arsh32 dst, imm",
+        operator = "s>>=",
+    )]
     Arsh32Imm,
+    #[opcode(
+        mnemonic = "arsh32",
+        code = 0xcc,
+        group = OperationType::BinaryRegister,
+        doc = "arsh32 dst, src",
+        operator = "s>>=",
+    )]
     Arsh32Reg,
+    #[opcode(
+        mnemonic = "lmul32",
+        code = 0x86,
+        group = OperationType::BinaryImmediate,
+        doc = "lmul32 dst, imm",
+        arch = v2,
+    )]
     Lmul32Imm,
+    #[opcode(
+        mnemonic = "lmul32",
+        code = 0x8e,
+        group = OperationType::BinaryRegister,
+        doc = "lmul32 dst, src",
+        arch = v2,
+    )]
     Lmul32Reg,
+    #[opcode(
+        mnemonic = "udiv32",
+        code = 0x46,
+        group = OperationType::BinaryImmediate,
+        doc = "udiv32 dst, imm",
+        arch = v2,
+    )]
     Udiv32Imm,
+    #[opcode(
+        mnemonic = "udiv32",
+        code = 0x4e,
+        group = OperationType::BinaryRegister,
+        doc = "udiv32 dst, src",
+        arch = v2,
+    )]
     Udiv32Reg,
+    #[opcode(
+        mnemonic = "urem32",
+        code = 0x66,
+        group = OperationType::BinaryImmediate,
+        doc = "urem32 dst, imm",
+        arch = v2,
+    )]
     Urem32Imm,
+    #[opcode(
+        mnemonic = "urem32",
+        code = 0x6e,
+        group = OperationType::BinaryRegister,
+        doc = "urem32 dst, src",
+        arch = v2,
+    )]
     Urem32Reg,
+    #[opcode(
+        mnemonic = "sdiv32",
+        code = 0xc6,
+        group = OperationType::BinaryImmediate,
+        doc = "sdiv32 dst, imm",
+        arch = v2,
+    )]
     Sdiv32Imm,
+    #[opcode(
+        mnemonic = "sdiv32",
+        code = 0xce,
+        group = OperationType::BinaryRegister,
+        doc = "sdiv32 dst, src",
+        arch = v2,
+    )]
     Sdiv32Reg,
+    #[opcode(
+        mnemonic = "srem32",
+        code = 0xe6,
+        group = OperationType::BinaryImmediate,
+        doc = "srem32 dst, imm",
+        arch = v2,
+    )]
     Srem32Imm,
+    #[opcode(
+        mnemonic = "srem32",
+        code = 0xee,
+        group = OperationType::BinaryRegister,
+        doc = "srem32 dst, src",
+        arch = v2,
+    )]
     Srem32Reg,
+    #[opcode(
+        mnemonic = "le",
+        code = 0xd4,
+        group = OperationType::Endian,
+        doc = "le16 dst / le32 dst / le64 dst",
+    )]
     Le,
+    #[opcode(
+        mnemonic = "be",
+        code = 0xdc,
+        group = OperationType::Endian,
+        doc = "be16 dst / be32 dst / be64 dst",
+    )]
     Be,
+    #[opcode(
+        mnemonic = "add64",
+        code = 0x07,
+        group = OperationType::BinaryImmediate,
+        doc = "add64 dst, imm",
+        operator = "+=",
+    )]
     Add64Imm,
+    #[opcode(
+        mnemonic = "add64",
+        code = 0x0f,
+        group = OperationType::BinaryRegister,
+        doc = "add64 dst, src",
+        operator = "+=",
+    )]
     Add64Reg,
+    #[opcode(
+        mnemonic = "sub64",
+        code = 0x17,
+        group = OperationType::BinaryImmediate,
+        doc = "sub64 dst, imm",
+        operator = "-=",
+    )]
     Sub64Imm,
+    #[opcode(
+        mnemonic = "sub64",
+        code = 0x1f,
+        group = OperationType::BinaryRegister,
+        doc = "sub64 dst, src",
+        operator = "-=",
+    )]
     Sub64Reg,
+    #[opcode(
+        mnemonic = "mul64",
+        code = 0x27,
+        group = OperationType::BinaryImmediate,
+        doc = "mul64 dst, imm",
+        operator = "*=",
+    )]
     Mul64Imm,
+    #[opcode(
+        mnemonic = "mul64",
+        code = 0x2f,
+        group = OperationType::BinaryRegister,
+        doc = "mul64 dst, src",
+        operator = "*=",
+    )]
     Mul64Reg,
+    #[opcode(
+        mnemonic = "div64",
+        code = 0x37,
+        group = OperationType::BinaryImmediate,
+        doc = "div64 dst, imm",
+        operator = "/=",
+    )]
     Div64Imm,
+    #[opcode(
+        mnemonic = "div64",
+        code = 0x3f,
+        group = OperationType::BinaryRegister,
+        doc = "div64 dst, src",
+        operator = "/=",
+    )]
     Div64Reg,
+    #[opcode(
+        mnemonic = "or64",
+        code = 0x47,
+        group = OperationType::BinaryImmediate,
+        doc = "or64 dst, imm",
+        operator = "|=",
+    )]
     Or64Imm,
+    #[opcode(
+        mnemonic = "or64",
+        code = 0x4f,
+        group = OperationType::BinaryRegister,
+        doc = "or64 dst, src",
+        operator = "|=",
+    )]
     Or64Reg,
+    #[opcode(
+        mnemonic = "and64",
+        code = 0x57,
+        group = OperationType::BinaryImmediate,
+        doc = "and64 dst, imm",
+        operator = "&=",
+    )]
     And64Imm,
+    #[opcode(
+        mnemonic = "and64",
+        code = 0x5f,
+        group = OperationType::BinaryRegister,
+        doc = "and64 dst, src",
+        operator = "&=",
+    )]
     And64Reg,
+    #[opcode(
+        mnemonic = "lsh64",
+        code = 0x67,
+        group = OperationType::BinaryImmediate,
+        doc = "lsh64 dst, imm",
+        operator = "<<=",
+    )]
     Lsh64Imm,
+    #[opcode(
+        mnemonic = "lsh64",
+        code = 0x6f,
+        group = OperationType::BinaryRegister,
+        doc = "lsh64 dst, src",
+        operator = "<<=",
+    )]
     Lsh64Reg,
+    #[opcode(
+        mnemonic = "rsh64",
+        code = 0x77,
+        group = OperationType::BinaryImmediate,
+        doc = "rsh64 dst, imm",
+        operator = ">>=",
+    )]
     Rsh64Imm,
+    #[opcode(
+        mnemonic = "rsh64",
+        code = 0x7f,
+        group = OperationType::BinaryRegister,
+        doc = "rsh64 dst, src",
+        operator = ">>=",
+    )]
     Rsh64Reg,
+    #[opcode(
+        mnemonic = "mod64",
+        code = 0x97,
+        group = OperationType::BinaryImmediate,
+        doc = "mod64 dst, imm",
+        operator = "%=",
+    )]
     Mod64Imm,
+    #[opcode(
+        mnemonic = "mod64",
+        code = 0x9f,
+        group = OperationType::BinaryRegister,
+        doc = "mod64 dst, src",
+        operator = "%=",
+    )]
     Mod64Reg,
+    #[opcode(
+        mnemonic = "xor64",
+        code = 0xa7,
+        group = OperationType::BinaryImmediate,
+        doc = "xor64 dst, imm",
+        operator = "^=",
+    )]
     Xor64Imm,
+    #[opcode(
+        mnemonic = "xor64",
+        code = 0xaf,
+        group = OperationType::BinaryRegister,
+        doc = "xor64 dst, src",
+        operator = "^=",
+    )]
     Xor64Reg,
+    #[opcode(
+        mnemonic = "mov64",
+        code = 0xb7,
+        group = OperationType::BinaryImmediate,
+        doc = "mov64 dst, imm",
+        operator = "=",
+    )]
     Mov64Imm,
+    #[opcode(
+        mnemonic = "mov64",
+        code = 0xbf,
+        group = OperationType::BinaryRegister,
+        doc = "mov64 dst, src",
+        operator = "=",
+    )]
     Mov64Reg,
+    #[opcode(
+        mnemonic = "arsh64",
+        code = 0xc7,
+        group = OperationType::BinaryImmediate,
+        doc = "arsh64 dst, imm",
+        operator = "s>>=",
+    )]
     Arsh64Imm,
+    #[opcode(
+        mnemonic = "arsh64",
+        code = 0xcf,
+        group = OperationType::BinaryRegister,
+        doc = "arsh64 dst, src",
+        operator = "s>>=",
+    )]
     Arsh64Reg,
+    #[opcode(
+        mnemonic = "hor64",
+        code = 0xf7,
+        group = OperationType::BinaryImmediate,
+        doc = "hor64 dst, imm",
+        arch = v2,
+    )]
     Hor64Imm,
+    #[opcode(
+        mnemonic = "lmul64",
+        code = 0x96,
+        group = OperationType::BinaryImmediate,
+        doc = "lmul64 dst, imm",
+        arch = v2,
+    )]
     Lmul64Imm,
+    #[opcode(
+        mnemonic = "lmul64",
+        code = 0x9e,
+        group = OperationType::BinaryRegister,
+        doc = "lmul64 dst, src",
+        arch = v2,
+    )]
     Lmul64Reg,
+    #[opcode(
+        mnemonic = "uhmul64",
+        code = 0x36,
+        group = OperationType::BinaryImmediate,
+        doc = "uhmul64 dst, imm",
+        arch = v2,
+    )]
     Uhmul64Imm,
+    #[opcode(
+        mnemonic = "uhmul64",
+        code = 0x3e,
+        group = OperationType::BinaryRegister,
+        doc = "uhmul64 dst, src",
+        arch = v2,
+    )]
     Uhmul64Reg,
+    #[opcode(
+        mnemonic = "udiv64",
+        code = 0x56,
+        group = OperationType::BinaryImmediate,
+        doc = "udiv64 dst, imm",
+        arch = v2,
+    )]
     Udiv64Imm,
+    #[opcode(
+        mnemonic = "udiv64",
+        code = 0x5e,
+        group = OperationType::BinaryRegister,
+        doc = "udiv64 dst, src",
+        arch = v2,
+    )]
     Udiv64Reg,
+    #[opcode(
+        mnemonic = "urem64",
+        code = 0x76,
+        group = OperationType::BinaryImmediate,
+        doc = "urem64 dst, imm",
+        arch = v2,
+    )]
     Urem64Imm,
+    #[opcode(
+        mnemonic = "urem64",
+        code = 0x7e,
+        group = OperationType::BinaryRegister,
+        doc = "urem64 dst, src",
+        arch = v2,
+    )]
     Urem64Reg,
+    #[opcode(
+        mnemonic = "shmul64",
+        code = 0xb6,
+        group = OperationType::BinaryImmediate,
+        doc = "shmul64 dst, imm",
+        arch = v2,
+    )]
     Shmul64Imm,
+    #[opcode(
+        mnemonic = "shmul64",
+        code = 0xbe,
+        group = OperationType::BinaryRegister,
+        doc = "shmul64 dst, src",
+        arch = v2,
+    )]
     Shmul64Reg,
+    #[opcode(
+        mnemonic = "sdiv64",
+        code = 0xd6,
+        group = OperationType::BinaryImmediate,
+        doc = "sdiv64 dst, imm",
+        arch = v2,
+    )]
     Sdiv64Imm,
+    #[opcode(
+        mnemonic = "sdiv64",
+        code = 0xde,
+        group = OperationType::BinaryRegister,
+        doc = "sdiv64 dst, src",
+        arch = v2,
+    )]
     Sdiv64Reg,
+    #[opcode(
+        mnemonic = "srem64",
+        code = 0xf6,
+        group = OperationType::BinaryImmediate,
+        doc = "srem64 dst, imm",
+        arch = v2,
+    )]
     Srem64Imm,
+    #[opcode(
+        mnemonic = "srem64",
+        code = 0xfe,
+        group = OperationType::BinaryRegister,
+        doc = "srem64 dst, src",
+        arch = v2,
+    )]
     Srem64Reg,
+    #[opcode(
+        mnemonic = "neg32",
+        code = 0x84,
+        group = OperationType::Unary,
+        doc = "neg32 dst",
+    )]
     Neg32,
+    #[opcode(
+        mnemonic = "neg64",
+        code = 0x87,
+        group = OperationType::Unary,
+        doc = "neg64 dst",
+    )]
     Neg64,
+    #[opcode(
+        mnemonic = "ja",
+        code = 0x05,
+        group = OperationType::Jump,
+        doc = "ja off",
+    )]
     Ja,
+    #[opcode(
+        mnemonic = "jeq",
+        code = 0x15,
+        group = OperationType::JumpImmediate,
+        doc = "jeq dst, imm, off",
+        operator = "==",
+    )]
     JeqImm,
+    #[opcode(
+        mnemonic = "jeq",
+        code = 0x1d,
+        group = OperationType::JumpRegister,
+        doc = "jeq dst, src, off",
+        operator = "==",
+    )]
     JeqReg,
+    #[opcode(
+        mnemonic = "jgt",
+        code = 0x25,
+        group = OperationType::JumpImmediate,
+        doc = "jgt dst, imm, off",
+        operator = ">",
+    )]
     JgtImm,
+    #[opcode(
+        mnemonic = "jgt",
+        code = 0x2d,
+        group = OperationType::JumpRegister,
+        doc = "jgt dst, src, off",
+        operator = ">",
+    )]
     JgtReg,
+    #[opcode(
+        mnemonic = "jge",
+        code = 0x35,
+        group = OperationType::JumpImmediate,
+        doc = "jge dst, imm, off",
+        operator = ">=",
+    )]
     JgeImm,
+    #[opcode(
+        mnemonic = "jge",
+        code = 0x3d,
+        group = OperationType::JumpRegister,
+        doc = "jge dst, src, off",
+        operator = ">=",
+    )]
     JgeReg,
+    #[opcode(
+        mnemonic = "jlt",
+        code = 0xa5,
+        group = OperationType::JumpImmediate,
+        doc = "jlt dst, imm, off",
+        operator = "<",
+    )]
     JltImm,
+    #[opcode(
+        mnemonic = "jlt",
+        code = 0xad,
+        group = OperationType::JumpRegister,
+        doc = "jlt dst, src, off",
+        operator = "<",
+    )]
     JltReg,
+    #[opcode(
+        mnemonic = "jle",
+        code = 0xb5,
+        group = OperationType::JumpImmediate,
+        doc = "jle dst, imm, off",
+        operator = "<=",
+    )]
     JleImm,
+    #[opcode(
+        mnemonic = "jle",
+        code = 0xbd,
+        group = OperationType::JumpRegister,
+        doc = "jle dst, src, off",
+        operator = "<=",
+    )]
     JleReg,
+    #[opcode(
+        mnemonic = "jset",
+        code = 0x45,
+        group = OperationType::JumpImmediate,
+        doc = "jset dst, imm, off",
+        operator = "&",
+    )]
     JsetImm,
+    #[opcode(
+        mnemonic = "jset",
+        code = 0x4d,
+        group = OperationType::JumpRegister,
+        doc = "jset dst, src, off",
+        operator = "&",
+    )]
     JsetReg,
+    #[opcode(
+        mnemonic = "jne",
+        code = 0x55,
+        group = OperationType::JumpImmediate,
+        doc = "jne dst, imm, off",
+        operator = "!=",
+    )]
     JneImm,
+    #[opcode(
+        mnemonic = "jne",
+        code = 0x5d,
+        group = OperationType::JumpRegister,
+        doc = "jne dst, src, off",
+        operator = "!=",
+    )]
     JneReg,
+    #[opcode(
+        mnemonic = "jsgt",
+        code = 0x65,
+        group = OperationType::JumpImmediate,
+        doc = "jsgt dst, imm, off",
+        operator = "s>",
+    )]
     JsgtImm,
+    #[opcode(
+        mnemonic = "jsgt",
+        code = 0x6d,
+        group = OperationType::JumpRegister,
+        doc = "jsgt dst, src, off",
+        operator = "s>",
+    )]
     JsgtReg,
+    #[opcode(
+        mnemonic = "jsge",
+        code = 0x75,
+        group = OperationType::JumpImmediate,
+        doc = "jsge dst, imm, off",
+        operator = "s>=",
+    )]
     JsgeImm,
+    #[opcode(
+        mnemonic = "jsge",
+        code = 0x7d,
+        group = OperationType::JumpRegister,
+        doc = "jsge dst, src, off",
+        operator = "s>=",
+    )]
     JsgeReg,
+    #[opcode(
+        mnemonic = "jslt",
+        code = 0xc5,
+        group = OperationType::JumpImmediate,
+        doc = "jslt dst, imm, off",
+        operator = "s<",
+    )]
     JsltImm,
+    #[opcode(
+        mnemonic = "jslt",
+        code = 0xcd,
+        group = OperationType::JumpRegister,
+        doc = "jslt dst, src, off",
+        operator = "s<",
+    )]
     JsltReg,
+    #[opcode(
+        mnemonic = "jsle",
+        code = 0xd5,
+        group = OperationType::JumpImmediate,
+        doc = "jsle dst, imm, off",
+        operator = "s<=",
+    )]
     JsleImm,
+    #[opcode(
+        mnemonic = "jsle",
+        code = 0xdd,
+        group = OperationType::JumpRegister,
+        doc = "jsle dst, src, off",
+        operator = "s<=",
+    )]
     JsleReg,
+    #[opcode(
+        mnemonic = "jeq32",
+        code = 0x16,
+        group = OperationType::Jump32Immediate,
+        doc = "jeq32 dst, imm, off",
+        arch = v3,
+        operator = "==",
+    )]
     Jeq32Imm,
+    #[opcode(
+        mnemonic = "jeq32",
+        code = 0x1e,
+        group = OperationType::Jump32Register,
+        doc = "jeq32 dst, src, off",
+        arch = v3,
+        operator = "==",
+    )]
     Jeq32Reg,
+    #[opcode(
+        mnemonic = "jgt32",
+        code = 0x26,
+        group = OperationType::Jump32Immediate,
+        doc = "jgt32 dst, imm, off",
+        arch = v3,
+        operator = ">",
+    )]
     Jgt32Imm,
+    #[opcode(
+        mnemonic = "jgt32",
+        code = 0x2e,
+        group = OperationType::Jump32Register,
+        doc = "jgt32 dst, src, off",
+        arch = v3,
+        operator = ">",
+    )]
     Jgt32Reg,
+    #[opcode(
+        mnemonic = "jge32",
+        code = 0x36,
+        group = OperationType::Jump32Immediate,
+        doc = "jge32 dst, imm, off",
+        arch = v3,
+        operator = ">=",
+    )]
     Jge32Imm,
+    #[opcode(
+        mnemonic = "jge32",
+        code = 0x3e,
+        group = OperationType::Jump32Register,
+        doc = "jge32 dst, src, off",
+        arch = v3,
+        operator = ">=",
+    )]
     Jge32Reg,
+    #[opcode(
+        mnemonic = "jlt32",
+        code = 0xa6,
+        group = OperationType::Jump32Immediate,
+        doc = "jlt32 dst, imm, off",
+        arch = v3,
+        operator = "<",
+    )]
     Jlt32Imm,
+    #[opcode(
+        mnemonic = "jlt32",
+        code = 0xae,
+        group = OperationType::Jump32Register,
+        doc = "jlt32 dst, src, off",
+        arch = v3,
+        operator = "<",
+    )]
     Jlt32Reg,
+    #[opcode(
+        mnemonic = "jle32",
+        code = 0xb6,
+        group = OperationType::Jump32Immediate,
+        doc = "jle32 dst, imm, off",
+        arch = v3,
+        operator = "<=",
+    )]
     Jle32Imm,
+    #[opcode(
+        mnemonic = "jle32",
+        code = 0xbe,
+        group = OperationType::Jump32Register,
+        doc = "jle32 dst, src, off",
+        arch = v3,
+        operator = "<=",
+    )]
     Jle32Reg,
+    #[opcode(
+        mnemonic = "jset32",
+        code = 0x46,
+        group = OperationType::Jump32Immediate,
+        doc = "jset32 dst, imm, off",
+        arch = v3,
+        operator = "&",
+    )]
     Jset32Imm,
+    #[opcode(
+        mnemonic = "jset32",
+        code = 0x4e,
+        group = OperationType::Jump32Register,
+        doc = "jset32 dst, src, off",
+        arch = v3,
+        operator = "&",
+    )]
     Jset32Reg,
+    #[opcode(
+        mnemonic = "jne32",
+        code = 0x56,
+        group = OperationType::Jump32Immediate,
+        doc = "jne32 dst, imm, off",
+        arch = v3,
+        operator = "!=",
+    )]
     Jne32Imm,
+    #[opcode(
+        mnemonic = "jne32",
+        code = 0x5e,
+        group = OperationType::Jump32Register,
+        doc = "jne32 dst, src, off",
+        arch = v3,
+        operator = "!=",
+    )]
     Jne32Reg,
+    #[opcode(
+        mnemonic = "jsgt32",
+        code = 0x66,
+        group = OperationType::Jump32Immediate,
+        doc = "jsgt32 dst, imm, off",
+        arch = v3,
+        operator = "s>",
+    )]
     Jsgt32Imm,
+    #[opcode(
+        mnemonic = "jsgt32",
+        code = 0x6e,
+        group = OperationType::Jump32Register,
+        doc = "jsgt32 dst, src, off",
+        arch = v3,
+        operator = "s>",
+    )]
     Jsgt32Reg,
+    #[opcode(
+        mnemonic = "jsge32",
+        code = 0x76,
+        group = OperationType::Jump32Immediate,
+        doc = "jsge32 dst, imm, off",
+        arch = v3,
+        operator = "s>=",
+    )]
     Jsge32Imm,
+    #[opcode(
+        mnemonic = "jsge32",
+        code = 0x7e,
+        group = OperationType::Jump32Register,
+        doc = "jsge32 dst, src, off",
+        arch = v3,
+        operator = "s>=",
+    )]
     Jsge32Reg,
+    #[opcode(
+        mnemonic = "jslt32",
+        code = 0xc6,
+        group = OperationType::Jump32Immediate,
+        doc = "jslt32 dst, imm, off",
+        arch = v3,
+        operator = "s<",
+    )]
     Jslt32Imm,
+    #[opcode(
+        mnemonic = "jslt32",
+        code = 0xce,
+        group = OperationType::Jump32Register,
+        doc = "jslt32 dst, src, off",
+        arch = v3,
+        operator = "s<",
+    )]
     Jslt32Reg,
+    #[opcode(
+        mnemonic = "jsle32",
+        code = 0xd6,
+        group = OperationType::Jump32Immediate,
+        doc = "jsle32 dst, imm, off",
+        arch = v3,
+        operator = "s<=",
+    )]
     Jsle32Imm,
+    #[opcode(
+        mnemonic = "jsle32",
+        code = 0xde,
+        group = OperationType::Jump32Register,
+        doc = "jsle32 dst, src, off",
+        arch = v3,
+        operator = "s<=",
+    )]
     Jsle32Reg,
+    #[opcode(
+        mnemonic = "call",
+        code = 0x85,
+        group = OperationType::CallImmediate,
+        doc = "call imm",
+    )]
     Call,
+    #[opcode(
+        mnemonic = "callx",
+        code = 0x8d,
+        group = OperationType::CallRegister,
+        doc = "callx src",
+    )]
     Callx,
+    #[opcode(
+        mnemonic = "exit",
+        code = 0x95,
+        group = OperationType::Exit,
+        doc = "exit",
+    )]
     Exit,
-}
-
-impl FromStr for Opcode {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "lddw" => Ok(Opcode::Lddw),
-            "ldxb" => Ok(Opcode::Ldxb),
-            "ldxh" => Ok(Opcode::Ldxh),
-            "ldxw" => Ok(Opcode::Ldxw),
-            "ldxdw" => Ok(Opcode::Ldxdw),
-            "stb" => Ok(Opcode::Stb),
-            "sth" => Ok(Opcode::Sth),
-            "stw" => Ok(Opcode::Stw),
-            "stdw" => Ok(Opcode::Stdw),
-            "stxb" => Ok(Opcode::Stxb),
-            "stxh" => Ok(Opcode::Stxh),
-            "stxw" => Ok(Opcode::Stxw),
-            "stxdw" => Ok(Opcode::Stxdw),
-            "add32" => Ok(Opcode::Add32Imm),
-            "sub32" => Ok(Opcode::Sub32Imm),
-            "mul32" => Ok(Opcode::Mul32Imm),
-            "div32" => Ok(Opcode::Div32Imm),
-            "or32" => Ok(Opcode::Or32Imm),
-            "and32" => Ok(Opcode::And32Imm),
-            "lsh32" => Ok(Opcode::Lsh32Imm),
-            "rsh32" => Ok(Opcode::Rsh32Imm),
-            "neg32" => Ok(Opcode::Neg32),
-            "mod32" => Ok(Opcode::Mod32Imm),
-            "xor32" => Ok(Opcode::Xor32Imm),
-            "mov32" => Ok(Opcode::Mov32Imm),
-            "arsh32" => Ok(Opcode::Arsh32Imm),
-            "lmul32" => Ok(Opcode::Lmul32Imm),
-            "udiv32" => Ok(Opcode::Udiv32Imm),
-            "urem32" => Ok(Opcode::Urem32Imm),
-            "sdiv32" => Ok(Opcode::Sdiv32Imm),
-            "srem32" => Ok(Opcode::Srem32Imm),
-            "le" => Ok(Opcode::Le),
-            "be" => Ok(Opcode::Be),
-            "add64" => Ok(Opcode::Add64Imm),
-            "sub64" => Ok(Opcode::Sub64Imm),
-            "mul64" => Ok(Opcode::Mul64Imm),
-            "div64" => Ok(Opcode::Div64Imm),
-            "or64" => Ok(Opcode::Or64Imm),
-            "and64" => Ok(Opcode::And64Imm),
-            "lsh64" => Ok(Opcode::Lsh64Imm),
-            "rsh64" => Ok(Opcode::Rsh64Imm),
-            "neg64" => Ok(Opcode::Neg64),
-            "mod64" => Ok(Opcode::Mod64Imm),
-            "xor64" => Ok(Opcode::Xor64Imm),
-            "mov64" => Ok(Opcode::Mov64Imm),
-            "arsh64" => Ok(Opcode::Arsh64Imm),
-            "hor64" => Ok(Opcode::Hor64Imm),
-            "lmul64" => Ok(Opcode::Lmul64Imm),
-            "uhmul64" => Ok(Opcode::Uhmul64Imm),
-            "udiv64" => Ok(Opcode::Udiv64Imm),
-            "urem64" => Ok(Opcode::Urem64Imm),
-            "shmul64" => Ok(Opcode::Shmul64Imm),
-            "sdiv64" => Ok(Opcode::Sdiv64Imm),
-            "srem64" => Ok(Opcode::Srem64Imm),
-            "ja" => Ok(Opcode::Ja),
-            "jeq" => Ok(Opcode::JeqImm),
-            "jgt" => Ok(Opcode::JgtImm),
-            "jge" => Ok(Opcode::JgeImm),
-            "jlt" => Ok(Opcode::JltImm),
-            "jle" => Ok(Opcode::JleImm),
-            "jset" => Ok(Opcode::JsetImm),
-            "jne" => Ok(Opcode::JneImm),
-            "jsgt" => Ok(Opcode::JsgtImm),
-            "jsge" => Ok(Opcode::JsgeImm),
-            "jslt" => Ok(Opcode::JsltImm),
-            "jsle" => Ok(Opcode::JsleImm),
-            "jeq32" => Ok(Opcode::Jeq32Imm),
-            "jgt32" => Ok(Opcode::Jgt32Imm),
-            "jge32" => Ok(Opcode::Jge32Imm),
-            "jlt32" => Ok(Opcode::Jlt32Imm),
-            "jle32" => Ok(Opcode::Jle32Imm),
-            "jset32" => Ok(Opcode::Jset32Imm),
-            "jne32" => Ok(Opcode::Jne32Imm),
-            "jsgt32" => Ok(Opcode::Jsgt32Imm),
-            "jsge32" => Ok(Opcode::Jsge32Imm),
-            "jslt32" => Ok(Opcode::Jslt32Imm),
-            "jsle32" => Ok(Opcode::Jsle32Imm),
-            "call" => Ok(Opcode::Call),
-            "callx" => Ok(Opcode::Callx),
-            "exit" => Ok(Opcode::Exit),
-            _ => Err("Invalid opcode"),
-        }
-    }
-}
-
-impl fmt::Display for Opcode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_str())
-    }
-}
-
-impl TryFrom<u8> for Opcode {
-    type Error = SBPFError;
-
-    fn try_from(opcode: u8) -> Result<Self, Self::Error> {
-        match opcode {
-            0x18 => Ok(Opcode::Lddw),
-            0x71 => Ok(Opcode::Ldxb),
-            0x69 => Ok(Opcode::Ldxh),
-            0x61 => Ok(Opcode::Ldxw),
-            0x79 => Ok(Opcode::Ldxdw),
-            0x72 => Ok(Opcode::Stb),
-            0x6a => Ok(Opcode::Sth),
-            0x62 => Ok(Opcode::Stw),
-            0x7a => Ok(Opcode::Stdw),
-            0x73 => Ok(Opcode::Stxb),
-            0x6b => Ok(Opcode::Stxh),
-            0x63 => Ok(Opcode::Stxw),
-            0x7b => Ok(Opcode::Stxdw),
-            0x04 => Ok(Opcode::Add32Imm),
-            0x0c => Ok(Opcode::Add32Reg),
-            0x14 => Ok(Opcode::Sub32Imm),
-            0x1c => Ok(Opcode::Sub32Reg),
-            0x24 => Ok(Opcode::Mul32Imm),
-            0x2c => Ok(Opcode::Mul32Reg),
-            0x34 => Ok(Opcode::Div32Imm),
-            0x3c => Ok(Opcode::Div32Reg),
-            0x44 => Ok(Opcode::Or32Imm),
-            0x4c => Ok(Opcode::Or32Reg),
-            0x54 => Ok(Opcode::And32Imm),
-            0x5c => Ok(Opcode::And32Reg),
-            0x64 => Ok(Opcode::Lsh32Imm),
-            0x6c => Ok(Opcode::Lsh32Reg),
-            0x74 => Ok(Opcode::Rsh32Imm),
-            0x7c => Ok(Opcode::Rsh32Reg),
-            0x94 => Ok(Opcode::Mod32Imm),
-            0x9c => Ok(Opcode::Mod32Reg),
-            0xa4 => Ok(Opcode::Xor32Imm),
-            0xac => Ok(Opcode::Xor32Reg),
-            0xb4 => Ok(Opcode::Mov32Imm),
-            0xbc => Ok(Opcode::Mov32Reg),
-            0xc4 => Ok(Opcode::Arsh32Imm),
-            0xcc => Ok(Opcode::Arsh32Reg),
-            0x86 => Ok(Opcode::Lmul32Imm),
-            0x8e => Ok(Opcode::Lmul32Reg),
-            0x46 => Ok(Opcode::Udiv32Imm),
-            0x4e => Ok(Opcode::Udiv32Reg),
-            0x66 => Ok(Opcode::Urem32Imm),
-            0x6e => Ok(Opcode::Urem32Reg),
-            0xc6 => Ok(Opcode::Sdiv32Imm),
-            0xce => Ok(Opcode::Sdiv32Reg),
-            0xe6 => Ok(Opcode::Srem32Imm),
-            0xee => Ok(Opcode::Srem32Reg),
-            0xd4 => Ok(Opcode::Le),
-            0xdc => Ok(Opcode::Be),
-            0x07 => Ok(Opcode::Add64Imm),
-            0x0f => Ok(Opcode::Add64Reg),
-            0x17 => Ok(Opcode::Sub64Imm),
-            0x1f => Ok(Opcode::Sub64Reg),
-            0x27 => Ok(Opcode::Mul64Imm),
-            0x2f => Ok(Opcode::Mul64Reg),
-            0x37 => Ok(Opcode::Div64Imm),
-            0x3f => Ok(Opcode::Div64Reg),
-            0x47 => Ok(Opcode::Or64Imm),
-            0x4f => Ok(Opcode::Or64Reg),
-            0x57 => Ok(Opcode::And64Imm),
-            0x5f => Ok(Opcode::And64Reg),
-            0x67 => Ok(Opcode::Lsh64Imm),
-            0x6f => Ok(Opcode::Lsh64Reg),
-            0x77 => Ok(Opcode::Rsh64Imm),
-            0x7f => Ok(Opcode::Rsh64Reg),
-            0x97 => Ok(Opcode::Mod64Imm),
-            0x9f => Ok(Opcode::Mod64Reg),
-            0xa7 => Ok(Opcode::Xor64Imm),
-            0xaf => Ok(Opcode::Xor64Reg),
-            0xb7 => Ok(Opcode::Mov64Imm),
-            0xbf => Ok(Opcode::Mov64Reg),
-            0xc7 => Ok(Opcode::Arsh64Imm),
-            0xcf => Ok(Opcode::Arsh64Reg),
-            0xf7 => Ok(Opcode::Hor64Imm),
-            0x96 => Ok(Opcode::Lmul64Imm),
-            0x9e => Ok(Opcode::Lmul64Reg),
-            0x36 => Ok(Opcode::Uhmul64Imm),
-            0x3e => Ok(Opcode::Uhmul64Reg),
-            0x56 => Ok(Opcode::Udiv64Imm),
-            0x5e => Ok(Opcode::Udiv64Reg),
-            0x76 => Ok(Opcode::Urem64Imm),
-            0x7e => Ok(Opcode::Urem64Reg),
-            0xb6 => Ok(Opcode::Shmul64Imm),
-            0xbe => Ok(Opcode::Shmul64Reg),
-            0xd6 => Ok(Opcode::Sdiv64Imm),
-            0xde => Ok(Opcode::Sdiv64Reg),
-            0xf6 => Ok(Opcode::Srem64Imm),
-            0xfe => Ok(Opcode::Srem64Reg),
-            0x84 => Ok(Opcode::Neg32),
-            0x87 => Ok(Opcode::Neg64),
-            0x05 => Ok(Opcode::Ja),
-            0x15 => Ok(Opcode::JeqImm),
-            0x1d => Ok(Opcode::JeqReg),
-            0x25 => Ok(Opcode::JgtImm),
-            0x2d => Ok(Opcode::JgtReg),
-            0x35 => Ok(Opcode::JgeImm),
-            0x3d => Ok(Opcode::JgeReg),
-            0xa5 => Ok(Opcode::JltImm),
-            0xad => Ok(Opcode::JltReg),
-            0xb5 => Ok(Opcode::JleImm),
-            0xbd => Ok(Opcode::JleReg),
-            0x45 => Ok(Opcode::JsetImm),
-            0x4d => Ok(Opcode::JsetReg),
-            0x55 => Ok(Opcode::JneImm),
-            0x5d => Ok(Opcode::JneReg),
-            0x65 => Ok(Opcode::JsgtImm),
-            0x6d => Ok(Opcode::JsgtReg),
-            0x75 => Ok(Opcode::JsgeImm),
-            0x7d => Ok(Opcode::JsgeReg),
-            0xc5 => Ok(Opcode::JsltImm),
-            0xcd => Ok(Opcode::JsltReg),
-            0xd5 => Ok(Opcode::JsleImm),
-            0xdd => Ok(Opcode::JsleReg),
-            0x85 => Ok(Opcode::Call),
-            0x8d => Ok(Opcode::Callx),
-            0x95 => Ok(Opcode::Exit),
-            _ => Err(SBPFError::BytecodeError {
-                error: format!("no decode handler for opcode 0x{:02x}", opcode),
-                span: 0..1,
-                custom_label: Some("Invalid opcode".to_string()),
-            }),
-        }
-    }
-}
-
-impl From<Opcode> for u8 {
-    fn from(opcode: Opcode) -> u8 {
-        match opcode {
-            Opcode::Lddw => 0x18,
-            Opcode::Ldxb => 0x71,
-            Opcode::Ldxh => 0x69,
-            Opcode::Ldxw => 0x61,
-            Opcode::Ldxdw => 0x79,
-            Opcode::Stb => 0x72,
-            Opcode::Sth => 0x6a,
-            Opcode::Stw => 0x62,
-            Opcode::Stdw => 0x7a,
-            Opcode::Stxb => 0x73,
-            Opcode::Stxh => 0x6b,
-            Opcode::Stxw => 0x63,
-            Opcode::Stxdw => 0x7b,
-            Opcode::Add32Imm => 0x04,
-            Opcode::Add32Reg => 0x0c,
-            Opcode::Sub32Imm => 0x14,
-            Opcode::Sub32Reg => 0x1c,
-            Opcode::Mul32Imm => 0x24,
-            Opcode::Mul32Reg => 0x2c,
-            Opcode::Div32Imm => 0x34,
-            Opcode::Div32Reg => 0x3c,
-            Opcode::Or32Imm => 0x44,
-            Opcode::Or32Reg => 0x4c,
-            Opcode::And32Imm => 0x54,
-            Opcode::And32Reg => 0x5c,
-            Opcode::Lsh32Imm => 0x64,
-            Opcode::Lsh32Reg => 0x6c,
-            Opcode::Rsh32Imm => 0x74,
-            Opcode::Rsh32Reg => 0x7c,
-            Opcode::Mod32Imm => 0x94,
-            Opcode::Mod32Reg => 0x9c,
-            Opcode::Xor32Imm => 0xa4,
-            Opcode::Xor32Reg => 0xac,
-            Opcode::Mov32Imm => 0xb4,
-            Opcode::Mov32Reg => 0xbc,
-            Opcode::Arsh32Imm => 0xc4,
-            Opcode::Arsh32Reg => 0xcc,
-            Opcode::Lmul32Imm => 0x86,
-            Opcode::Lmul32Reg => 0x8e,
-            Opcode::Udiv32Imm => 0x46,
-            Opcode::Udiv32Reg => 0x4e,
-            Opcode::Urem32Imm => 0x66,
-            Opcode::Urem32Reg => 0x6e,
-            Opcode::Sdiv32Imm => 0xc6,
-            Opcode::Sdiv32Reg => 0xce,
-            Opcode::Srem32Imm => 0xe6,
-            Opcode::Srem32Reg => 0xee,
-            Opcode::Le => 0xd4,
-            Opcode::Be => 0xdc,
-            Opcode::Add64Imm => 0x07,
-            Opcode::Add64Reg => 0x0f,
-            Opcode::Sub64Imm => 0x17,
-            Opcode::Sub64Reg => 0x1f,
-            Opcode::Mul64Imm => 0x27,
-            Opcode::Mul64Reg => 0x2f,
-            Opcode::Div64Imm => 0x37,
-            Opcode::Div64Reg => 0x3f,
-            Opcode::Or64Imm => 0x47,
-            Opcode::Or64Reg => 0x4f,
-            Opcode::And64Imm => 0x57,
-            Opcode::And64Reg => 0x5f,
-            Opcode::Lsh64Imm => 0x67,
-            Opcode::Lsh64Reg => 0x6f,
-            Opcode::Rsh64Imm => 0x77,
-            Opcode::Rsh64Reg => 0x7f,
-            Opcode::Mod64Imm => 0x97,
-            Opcode::Mod64Reg => 0x9f,
-            Opcode::Xor64Imm => 0xa7,
-            Opcode::Xor64Reg => 0xaf,
-            Opcode::Mov64Imm => 0xb7,
-            Opcode::Mov64Reg => 0xbf,
-            Opcode::Arsh64Imm => 0xc7,
-            Opcode::Arsh64Reg => 0xcf,
-            Opcode::Hor64Imm => 0xf7,
-            Opcode::Lmul64Imm => 0x96,
-            Opcode::Lmul64Reg => 0x9e,
-            Opcode::Uhmul64Imm => 0x36,
-            Opcode::Uhmul64Reg => 0x3e,
-            Opcode::Udiv64Imm => 0x56,
-            Opcode::Udiv64Reg => 0x5e,
-            Opcode::Urem64Imm => 0x76,
-            Opcode::Urem64Reg => 0x7e,
-            Opcode::Shmul64Imm => 0xb6,
-            Opcode::Shmul64Reg => 0xbe,
-            Opcode::Sdiv64Imm => 0xd6,
-            Opcode::Sdiv64Reg => 0xde,
-            Opcode::Srem64Imm => 0xf6,
-            Opcode::Srem64Reg => 0xfe,
-            Opcode::Neg32 => 0x84,
-            Opcode::Neg64 => 0x87,
-            Opcode::Ja => 0x05,
-            Opcode::JeqImm => 0x15,
-            Opcode::JeqReg => 0x1d,
-            Opcode::JgtImm => 0x25,
-            Opcode::JgtReg => 0x2d,
-            Opcode::JgeImm => 0x35,
-            Opcode::JgeReg => 0x3d,
-            Opcode::JltImm => 0xa5,
-            Opcode::JltReg => 0xad,
-            Opcode::JleImm => 0xb5,
-            Opcode::JleReg => 0xbd,
-            Opcode::JsetImm => 0x45,
-            Opcode::JsetReg => 0x4d,
-            Opcode::JneImm => 0x55,
-            Opcode::JneReg => 0x5d,
-            Opcode::JsgtImm => 0x65,
-            Opcode::JsgtReg => 0x6d,
-            Opcode::JsgeImm => 0x75,
-            Opcode::JsgeReg => 0x7d,
-            Opcode::JsltImm => 0xc5,
-            Opcode::JsltReg => 0xcd,
-            Opcode::JsleImm => 0xd5,
-            Opcode::JsleReg => 0xdd,
-            Opcode::Jeq32Imm => 0x16,
-            Opcode::Jeq32Reg => 0x1e,
-            Opcode::Jgt32Imm => 0x26,
-            Opcode::Jgt32Reg => 0x2e,
-            Opcode::Jge32Imm => 0x36,
-            Opcode::Jge32Reg => 0x3e,
-            Opcode::Jlt32Imm => 0xa6,
-            Opcode::Jlt32Reg => 0xae,
-            Opcode::Jle32Imm => 0xb6,
-            Opcode::Jle32Reg => 0xbe,
-            Opcode::Jset32Imm => 0x46,
-            Opcode::Jset32Reg => 0x4e,
-            Opcode::Jne32Imm => 0x56,
-            Opcode::Jne32Reg => 0x5e,
-            Opcode::Jsgt32Imm => 0x66,
-            Opcode::Jsgt32Reg => 0x6e,
-            Opcode::Jsge32Imm => 0x76,
-            Opcode::Jsge32Reg => 0x7e,
-            Opcode::Jslt32Imm => 0xc6,
-            Opcode::Jslt32Reg => 0xce,
-            Opcode::Jsle32Imm => 0xd6,
-            Opcode::Jsle32Reg => 0xde,
-            Opcode::Call => 0x85,
-            Opcode::Callx => 0x8d,
-            Opcode::Exit => 0x95,
-        }
-    }
-}
-
-impl Opcode {
-    /// Decode opcode byte with sBPF v3 semantics.
-    pub fn try_from_sbpf_v3(opcode: u8) -> Result<Self, SBPFError> {
-        match opcode {
-            0x16 => Ok(Opcode::Jeq32Imm),
-            0x1e => Ok(Opcode::Jeq32Reg),
-            0x26 => Ok(Opcode::Jgt32Imm),
-            0x2e => Ok(Opcode::Jgt32Reg),
-            0x36 => Ok(Opcode::Jge32Imm),
-            0x3e => Ok(Opcode::Jge32Reg),
-            0xa6 => Ok(Opcode::Jlt32Imm),
-            0xae => Ok(Opcode::Jlt32Reg),
-            0xb6 => Ok(Opcode::Jle32Imm),
-            0xbe => Ok(Opcode::Jle32Reg),
-            0x46 => Ok(Opcode::Jset32Imm),
-            0x4e => Ok(Opcode::Jset32Reg),
-            0x56 => Ok(Opcode::Jne32Imm),
-            0x5e => Ok(Opcode::Jne32Reg),
-            0x66 => Ok(Opcode::Jsgt32Imm),
-            0x6e => Ok(Opcode::Jsgt32Reg),
-            0x76 => Ok(Opcode::Jsge32Imm),
-            0x7e => Ok(Opcode::Jsge32Reg),
-            0xc6 => Ok(Opcode::Jslt32Imm),
-            0xce => Ok(Opcode::Jslt32Reg),
-            0xd6 => Ok(Opcode::Jsle32Imm),
-            0xde => Ok(Opcode::Jsle32Reg),
-            _ => opcode.try_into(),
-        }
-    }
-
-    pub fn to_str(&self) -> &'static str {
-        match self {
-            Opcode::Lddw => "lddw",
-            Opcode::Ldxb => "ldxb",
-            Opcode::Ldxh => "ldxh",
-            Opcode::Ldxw => "ldxw",
-            Opcode::Ldxdw => "ldxdw",
-            Opcode::Stb => "stb",
-            Opcode::Sth => "sth",
-            Opcode::Stw => "stw",
-            Opcode::Stdw => "stdw",
-            Opcode::Stxb => "stxb",
-            Opcode::Stxh => "stxh",
-            Opcode::Stxw => "stxw",
-            Opcode::Stxdw => "stxdw",
-            Opcode::Add32Imm | Opcode::Add32Reg => "add32",
-            Opcode::Sub32Imm | Opcode::Sub32Reg => "sub32",
-            Opcode::Mul32Imm | Opcode::Mul32Reg => "mul32",
-            Opcode::Div32Imm | Opcode::Div32Reg => "div32",
-            Opcode::Or32Imm | Opcode::Or32Reg => "or32",
-            Opcode::And32Imm | Opcode::And32Reg => "and32",
-            Opcode::Lsh32Imm | Opcode::Lsh32Reg => "lsh32",
-            Opcode::Rsh32Imm | Opcode::Rsh32Reg => "rsh32",
-            Opcode::Neg32 => "neg32",
-            Opcode::Mod32Imm | Opcode::Mod32Reg => "mod32",
-            Opcode::Xor32Imm | Opcode::Xor32Reg => "xor32",
-            Opcode::Mov32Imm | Opcode::Mov32Reg => "mov32",
-            Opcode::Arsh32Imm | Opcode::Arsh32Reg => "arsh32",
-            Opcode::Lmul32Imm | Opcode::Lmul32Reg => "lmul32",
-            Opcode::Udiv32Imm | Opcode::Udiv32Reg => "udiv32",
-            Opcode::Urem32Imm | Opcode::Urem32Reg => "urem32",
-            Opcode::Sdiv32Imm | Opcode::Sdiv32Reg => "sdiv32",
-            Opcode::Srem32Imm | Opcode::Srem32Reg => "srem32",
-            Opcode::Le => "le",
-            Opcode::Be => "be",
-            Opcode::Add64Imm | Opcode::Add64Reg => "add64",
-            Opcode::Sub64Imm | Opcode::Sub64Reg => "sub64",
-            Opcode::Mul64Imm | Opcode::Mul64Reg => "mul64",
-            Opcode::Div64Imm | Opcode::Div64Reg => "div64",
-            Opcode::Or64Imm | Opcode::Or64Reg => "or64",
-            Opcode::And64Imm | Opcode::And64Reg => "and64",
-            Opcode::Lsh64Imm | Opcode::Lsh64Reg => "lsh64",
-            Opcode::Rsh64Imm | Opcode::Rsh64Reg => "rsh64",
-            Opcode::Neg64 => "neg64",
-            Opcode::Mod64Imm | Opcode::Mod64Reg => "mod64",
-            Opcode::Xor64Imm | Opcode::Xor64Reg => "xor64",
-            Opcode::Mov64Imm | Opcode::Mov64Reg => "mov64",
-            Opcode::Arsh64Imm | Opcode::Arsh64Reg => "arsh64",
-            Opcode::Hor64Imm => "hor64",
-            Opcode::Lmul64Imm | Opcode::Lmul64Reg => "lmul64",
-            Opcode::Uhmul64Imm | Opcode::Uhmul64Reg => "uhmul64",
-            Opcode::Udiv64Imm | Opcode::Udiv64Reg => "udiv64",
-            Opcode::Urem64Imm | Opcode::Urem64Reg => "urem64",
-            Opcode::Shmul64Imm | Opcode::Shmul64Reg => "shmul64",
-            Opcode::Sdiv64Imm | Opcode::Sdiv64Reg => "sdiv64",
-            Opcode::Srem64Imm | Opcode::Srem64Reg => "srem64",
-            Opcode::Ja => "ja",
-            Opcode::JeqImm | Opcode::JeqReg => "jeq",
-            Opcode::JgtImm | Opcode::JgtReg => "jgt",
-            Opcode::JgeImm | Opcode::JgeReg => "jge",
-            Opcode::JltImm | Opcode::JltReg => "jlt",
-            Opcode::JleImm | Opcode::JleReg => "jle",
-            Opcode::JsetImm | Opcode::JsetReg => "jset",
-            Opcode::JneImm | Opcode::JneReg => "jne",
-            Opcode::JsgtImm | Opcode::JsgtReg => "jsgt",
-            Opcode::JsgeImm | Opcode::JsgeReg => "jsge",
-            Opcode::JsltImm | Opcode::JsltReg => "jslt",
-            Opcode::JsleImm | Opcode::JsleReg => "jsle",
-            Opcode::Jeq32Imm | Opcode::Jeq32Reg => "jeq32",
-            Opcode::Jgt32Imm | Opcode::Jgt32Reg => "jgt32",
-            Opcode::Jge32Imm | Opcode::Jge32Reg => "jge32",
-            Opcode::Jlt32Imm | Opcode::Jlt32Reg => "jlt32",
-            Opcode::Jle32Imm | Opcode::Jle32Reg => "jle32",
-            Opcode::Jset32Imm | Opcode::Jset32Reg => "jset32",
-            Opcode::Jne32Imm | Opcode::Jne32Reg => "jne32",
-            Opcode::Jsgt32Imm | Opcode::Jsgt32Reg => "jsgt32",
-            Opcode::Jsge32Imm | Opcode::Jsge32Reg => "jsge32",
-            Opcode::Jslt32Imm | Opcode::Jslt32Reg => "jslt32",
-            Opcode::Jsle32Imm | Opcode::Jsle32Reg => "jsle32",
-            Opcode::Call => "call",
-            Opcode::Callx => "callx",
-            Opcode::Exit => "exit",
-        }
-    }
-
-    pub fn from_size(size: &str, kind: MemOpKind) -> Option<Opcode> {
-        match (size, kind) {
-            ("u8", MemOpKind::Load) => Some(Opcode::Ldxb),
-            ("u8", MemOpKind::StoreImm) => Some(Opcode::Stb),
-            ("u8", MemOpKind::StoreReg) => Some(Opcode::Stxb),
-            ("u16", MemOpKind::Load) => Some(Opcode::Ldxh),
-            ("u16", MemOpKind::StoreImm) => Some(Opcode::Sth),
-            ("u16", MemOpKind::StoreReg) => Some(Opcode::Stxh),
-            ("u32", MemOpKind::Load) => Some(Opcode::Ldxw),
-            ("u32", MemOpKind::StoreImm) => Some(Opcode::Stw),
-            ("u32", MemOpKind::StoreReg) => Some(Opcode::Stxw),
-            ("u64", MemOpKind::Load) => Some(Opcode::Ldxdw),
-            ("u64", MemOpKind::StoreImm) => Some(Opcode::Stdw),
-            ("u64", MemOpKind::StoreReg) => Some(Opcode::Stxdw),
-            _ => None,
-        }
-    }
-
-    pub fn to_size(&self) -> Option<&'static str> {
-        match self {
-            Opcode::Ldxb | Opcode::Stb | Opcode::Stxb => Some("u8"),
-            Opcode::Ldxh | Opcode::Sth | Opcode::Stxh => Some("u16"),
-            Opcode::Ldxw | Opcode::Stw | Opcode::Stxw => Some("u32"),
-            Opcode::Ldxdw | Opcode::Stdw | Opcode::Stxdw => Some("u64"),
-            _ => None,
-        }
-    }
-
-    pub fn to_operator(&self) -> Option<&'static str> {
-        match self {
-            Opcode::Add32Imm | Opcode::Add32Reg | Opcode::Add64Imm | Opcode::Add64Reg => Some("+="),
-            Opcode::Sub32Imm | Opcode::Sub32Reg | Opcode::Sub64Imm | Opcode::Sub64Reg => Some("-="),
-            Opcode::Mul32Imm | Opcode::Mul32Reg | Opcode::Mul64Imm | Opcode::Mul64Reg => Some("*="),
-            Opcode::Div32Imm | Opcode::Div32Reg | Opcode::Div64Imm | Opcode::Div64Reg => Some("/="),
-            Opcode::Or32Imm | Opcode::Or32Reg | Opcode::Or64Imm | Opcode::Or64Reg => Some("|="),
-            Opcode::And32Imm | Opcode::And32Reg | Opcode::And64Imm | Opcode::And64Reg => Some("&="),
-            Opcode::Xor32Imm | Opcode::Xor32Reg | Opcode::Xor64Imm | Opcode::Xor64Reg => Some("^="),
-            Opcode::Lsh32Imm | Opcode::Lsh32Reg | Opcode::Lsh64Imm | Opcode::Lsh64Reg => {
-                Some("<<=")
-            }
-            Opcode::Rsh32Imm | Opcode::Rsh32Reg | Opcode::Rsh64Imm | Opcode::Rsh64Reg => {
-                Some(">>=")
-            }
-            Opcode::Mod32Imm | Opcode::Mod32Reg | Opcode::Mod64Imm | Opcode::Mod64Reg => Some("%="),
-            Opcode::Mov32Imm | Opcode::Mov32Reg | Opcode::Mov64Imm | Opcode::Mov64Reg => Some("="),
-            Opcode::Arsh32Imm | Opcode::Arsh32Reg | Opcode::Arsh64Imm | Opcode::Arsh64Reg => {
-                Some("s>>=")
-            }
-            Opcode::JeqImm | Opcode::JeqReg => Some("=="),
-            Opcode::JneImm | Opcode::JneReg => Some("!="),
-            Opcode::JgtImm | Opcode::JgtReg => Some(">"),
-            Opcode::JgeImm | Opcode::JgeReg => Some(">="),
-            Opcode::JltImm | Opcode::JltReg => Some("<"),
-            Opcode::JleImm | Opcode::JleReg => Some("<="),
-            Opcode::JsgtImm | Opcode::JsgtReg => Some("s>"),
-            Opcode::JsgeImm | Opcode::JsgeReg => Some("s>="),
-            Opcode::JsltImm | Opcode::JsltReg => Some("s<"),
-            Opcode::JsleImm | Opcode::JsleReg => Some("s<="),
-            Opcode::JsetImm | Opcode::JsetReg => Some("&"),
-            Opcode::Jeq32Imm | Opcode::Jeq32Reg => Some("=="),
-            Opcode::Jne32Imm | Opcode::Jne32Reg => Some("!="),
-            Opcode::Jgt32Imm | Opcode::Jgt32Reg => Some(">"),
-            Opcode::Jge32Imm | Opcode::Jge32Reg => Some(">="),
-            Opcode::Jlt32Imm | Opcode::Jlt32Reg => Some("<"),
-            Opcode::Jle32Imm | Opcode::Jle32Reg => Some("<="),
-            Opcode::Jsgt32Imm | Opcode::Jsgt32Reg => Some("s>"),
-            Opcode::Jsge32Imm | Opcode::Jsge32Reg => Some("s>="),
-            Opcode::Jslt32Imm | Opcode::Jslt32Reg => Some("s<"),
-            Opcode::Jsle32Imm | Opcode::Jsle32Reg => Some("s<="),
-            Opcode::Jset32Imm | Opcode::Jset32Reg => Some("&"),
-            _ => None,
-        }
-    }
-
-    pub fn is_32bit(&self) -> bool {
-        matches!(
-            self,
-            Opcode::Add32Imm
-                | Opcode::Add32Reg
-                | Opcode::Sub32Imm
-                | Opcode::Sub32Reg
-                | Opcode::Mul32Imm
-                | Opcode::Mul32Reg
-                | Opcode::Div32Imm
-                | Opcode::Div32Reg
-                | Opcode::Or32Imm
-                | Opcode::Or32Reg
-                | Opcode::And32Imm
-                | Opcode::And32Reg
-                | Opcode::Lsh32Imm
-                | Opcode::Lsh32Reg
-                | Opcode::Rsh32Imm
-                | Opcode::Rsh32Reg
-                | Opcode::Mod32Imm
-                | Opcode::Mod32Reg
-                | Opcode::Xor32Imm
-                | Opcode::Xor32Reg
-                | Opcode::Mov32Imm
-                | Opcode::Mov32Reg
-                | Opcode::Arsh32Imm
-                | Opcode::Arsh32Reg
-                | Opcode::Neg32
-        )
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::OpcodeTable, core::str::FromStr};
 
     #[test]
     fn test_opcode_from_str_load_ops() {
@@ -1067,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_all_load_memory_ops() {
-        for &op in LOAD_MEMORY_OPS {
+        for &op in Opcode::by_group(OperationType::LoadMemory) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1076,7 +1262,7 @@ mod tests {
 
     #[test]
     fn test_all_bin_imm_ops() {
-        for &op in BIN_IMM_OPS {
+        for &op in Opcode::by_group(OperationType::BinaryImmediate) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1085,7 +1271,7 @@ mod tests {
 
     #[test]
     fn test_all_jump_imm_ops() {
-        for &op in JUMP_IMM_OPS {
+        for &op in Opcode::by_group(OperationType::JumpImmediate) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1094,7 +1280,7 @@ mod tests {
 
     #[test]
     fn test_all_store_imm_ops() {
-        for &op in STORE_IMM_OPS {
+        for &op in Opcode::by_group(OperationType::StoreImmediate) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1103,7 +1289,7 @@ mod tests {
 
     #[test]
     fn test_all_store_reg_ops() {
-        for &op in STORE_REG_OPS {
+        for &op in Opcode::by_group(OperationType::StoreRegister) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1112,7 +1298,7 @@ mod tests {
 
     #[test]
     fn test_all_bin_reg_ops() {
-        for &op in BIN_REG_OPS {
+        for &op in Opcode::by_group(OperationType::BinaryRegister) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1121,7 +1307,7 @@ mod tests {
 
     #[test]
     fn test_all_unary_ops() {
-        for &op in UNARY_OPS {
+        for &op in Opcode::by_group(OperationType::Unary) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1130,7 +1316,7 @@ mod tests {
 
     #[test]
     fn test_all_endian_ops() {
-        for &op in ENDIAN_OPS {
+        for &op in Opcode::by_group(OperationType::Endian) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1139,7 +1325,7 @@ mod tests {
 
     #[test]
     fn test_all_jump_ops() {
-        for &op in JUMP_OPS {
+        for &op in Opcode::by_group(OperationType::Jump) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1148,7 +1334,7 @@ mod tests {
 
     #[test]
     fn test_all_jump_reg_ops() {
-        for &op in JUMP_REG_OPS {
+        for &op in Opcode::by_group(OperationType::JumpRegister) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1157,7 +1343,7 @@ mod tests {
 
     #[test]
     fn test_all_jump32_imm_ops() {
-        for &op in JUMP32_IMM_OPS {
+        for &op in Opcode::by_group(OperationType::Jump32Immediate) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1166,7 +1352,7 @@ mod tests {
 
     #[test]
     fn test_all_jump32_reg_ops() {
-        for &op in JUMP32_REG_OPS {
+        for &op in Opcode::by_group(OperationType::Jump32Register) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from_sbpf_v3(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1175,12 +1361,12 @@ mod tests {
 
     #[test]
     fn test_all_call_ops() {
-        for &op in CALL_IMM_OPS {
+        for &op in Opcode::by_group(OperationType::CallImmediate) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
         }
-        for &op in CALL_REG_OPS {
+        for &op in Opcode::by_group(OperationType::CallRegister) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);
@@ -1189,7 +1375,7 @@ mod tests {
 
     #[test]
     fn test_exit_op() {
-        for &op in EXIT_OPS {
+        for &op in Opcode::by_group(OperationType::Exit) {
             let byte: u8 = op.into();
             let roundtrip = Opcode::try_from(byte).unwrap();
             assert_eq!(roundtrip, op);

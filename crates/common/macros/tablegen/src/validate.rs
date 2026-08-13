@@ -7,6 +7,8 @@ use {
     syn::Error,
 };
 
+const VALID_SIZES: &[&str] = &["u8", "u16", "u32", "u64"];
+
 /// Validate an opcode table.
 pub fn validate_opcode_table(def: &OpcodeTableDef) -> Result<(), Error> {
     let mut errors = Vec::new();
@@ -52,6 +54,17 @@ pub fn validate_opcode_table(def: &OpcodeTableDef) -> Result<(), Error> {
         }
         if op.doc.is_empty() {
             errors.push(err(op.span, "doc must not be empty"));
+        }
+        if let Some(size) = &op.size
+            && !VALID_SIZES.contains(&size.as_str())
+        {
+            errors.push(err(
+                op.span,
+                format!(
+                    "invalid size `{size}`, expected one of {}",
+                    VALID_SIZES.join(", ")
+                ),
+            ));
         }
     }
 

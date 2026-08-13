@@ -3,9 +3,8 @@ use {
     crate::{SbpfArch, errors::CompileError},
     pest::iterators::Pair,
     sbpf_common::{
-        inst_param::Number,
-        instruction::Instruction,
-        opcode::{MemOpKind, Opcode},
+        OpcodeTable, inst_param::Number, instruction::Instruction, opcode::Opcode,
+        optype::OperationType,
     },
     std::collections::HashMap,
 };
@@ -243,13 +242,11 @@ fn process_load(
         }
     }
 
-    let opcode =
-        Opcode::from_size(size.as_deref().unwrap_or(""), MemOpKind::Load).ok_or_else(|| {
-            CompileError::ParseError {
-                error: "Invalid memory size for load".to_string(),
-                span: span.clone(),
-                custom_label: None,
-            }
+    let opcode = Opcode::from_size(size.as_deref().unwrap_or(""), OperationType::LoadMemory)
+        .ok_or_else(|| CompileError::ParseError {
+            error: "Invalid memory size for load".to_string(),
+            span: span.clone(),
+            custom_label: None,
         })?;
 
     Ok(Instruction {
@@ -286,13 +283,11 @@ fn process_store_imm(
         }
     }
 
-    let opcode =
-        Opcode::from_size(size.as_deref().unwrap_or(""), MemOpKind::StoreImm).ok_or_else(|| {
-            CompileError::ParseError {
-                error: "Invalid memory size for store".to_string(),
-                span: span.clone(),
-                custom_label: None,
-            }
+    let opcode = Opcode::from_size(size.as_deref().unwrap_or(""), OperationType::StoreImmediate)
+        .ok_or_else(|| CompileError::ParseError {
+            error: "Invalid memory size for store".to_string(),
+            span: span.clone(),
+            custom_label: None,
         })?;
 
     Ok(Instruction {
@@ -328,13 +323,11 @@ fn process_store_reg(
         }
     }
 
-    let opcode =
-        Opcode::from_size(size.as_deref().unwrap_or(""), MemOpKind::StoreReg).ok_or_else(|| {
-            CompileError::ParseError {
-                error: "Invalid memory size for store".to_string(),
-                span: span.clone(),
-                custom_label: None,
-            }
+    let opcode = Opcode::from_size(size.as_deref().unwrap_or(""), OperationType::StoreRegister)
+        .ok_or_else(|| CompileError::ParseError {
+            error: "Invalid memory size for store".to_string(),
+            span: span.clone(),
+            custom_label: None,
         })?;
 
     Ok(Instruction {

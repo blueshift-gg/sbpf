@@ -292,7 +292,7 @@ mod tests {
 
 entrypoint:
   lddw r1, 0x1
-  // 0xff is skipped due to error: no decode handler for opcode 0xff
+  // 0xff is skipped due to error: invalid opcode: 0xff
   exit
 "#
         );

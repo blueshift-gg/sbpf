@@ -2367,6 +2367,8 @@ dependencies = [
  "hex-literal",
  "num-derive",
  "num-traits",
+ "sbpf-common-derive",
+ "sbpf-common-tablegen",
  "sbpf-syscall-map",
  "serde",
  "thiserror 2.0.20",
