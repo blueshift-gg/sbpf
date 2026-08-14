@@ -1,5 +1,6 @@
 use {
     crate::{
+        OpcodeTable,
         errors::SBPFError,
         inst_param::{Number, Register},
         instruction::Instruction,

@@ -98,6 +98,7 @@ fn parse_opcode_attr(variant: &Variant, attr: &Attribute) -> syn::Result<OpcodeD
     let mut group: Option<Path> = None;
     let mut doc: Option<String> = None;
     let mut operator: Option<String> = None;
+    let mut size: Option<String> = None;
     let mut arch: Option<OpcodeArch> = None;
 
     attr.parse_nested_meta(|meta| {
@@ -123,6 +124,9 @@ fn parse_opcode_attr(variant: &Variant, attr: &Attribute) -> syn::Result<OpcodeD
             "operator" => {
                 parse_once(&mut operator, &meta, "operator", parse_string_value)?;
             }
+            "size" => {
+                parse_once(&mut size, &meta, "size", parse_string_value)?;
+            }
             "arch" => {
                 parse_once(&mut arch, &meta, "arch", parse_arch_value)?;
             }
@@ -146,6 +150,7 @@ fn parse_opcode_attr(variant: &Variant, attr: &Attribute) -> syn::Result<OpcodeD
         group,
         doc,
         operator,
+        size,
         arch,
         span,
     })

@@ -454,6 +454,11 @@ mod tests {
         assert!(s.contains("OpcodeTable for O"));
         assert!(s.contains("type Group = G"));
         assert!(s.contains("fn to_str"));
+        assert!(s.contains("fn to_operator"));
+        assert!(s.contains("fn by_group"));
+        assert!(s.contains("fn to_size"));
+        assert!(s.contains("fn from_size"));
+        assert!(s.contains("fn is_32bit"));
         assert!(s.contains("fn group"));
         assert!(s.contains("fn try_from_sbpf_v3"));
         assert!(s.contains("fn all"));

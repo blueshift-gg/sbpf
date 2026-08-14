@@ -6,8 +6,7 @@ use {
         syscalls::SyscallHandler,
     },
     sbpf_common::{
-        errors::ExecutionError, execute::Vm, inst_handler::OPCODE_TO_HANDLER,
-        instruction::Instruction,
+        OpcodeGroup, OpcodeTable, errors::ExecutionError, execute::Vm, instruction::Instruction,
     },
     serde::{Deserialize, Serialize},
 };
@@ -148,12 +147,8 @@ impl<H: SyscallHandler> SbpfVm<H> {
     }
 
     fn execute_instruction(&mut self, inst: &Instruction) -> SbpfVmResult<()> {
-        if let Some(handler) = OPCODE_TO_HANDLER.get(&inst.opcode) {
-            (handler.execute)(self, inst)?;
-            Ok(())
-        } else {
-            Err(SbpfVmError::InvalidInstruction)
-        }
+        inst.opcode.group().execute_fn()(self, inst)?;
+        Ok(())
     }
 
     pub fn run(&mut self) -> SbpfVmResult<()> {

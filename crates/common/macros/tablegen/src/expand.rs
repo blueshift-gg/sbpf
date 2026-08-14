@@ -42,7 +42,7 @@ fn expand_from_str(def: &OpcodeTableDef) -> TokenStream {
             type Err = &'static str;
 
             fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
-                match s {
+                match s.to_lowercase().as_str() {
                     #(#arms,)*
                     _ => Err("Invalid opcode"),
                 }
@@ -135,6 +135,44 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
         })
         .collect();
 
+    let to_operator_arms: Vec<_> = def
+        .opcodes
+        .iter()
+        .map(|op| {
+            let variant = &op.variant;
+            match &op.operator {
+                Some(operator) => {
+                    quote! { #enum_name::#variant => ::core::option::Option::Some(#operator) }
+                }
+                None => quote! { #enum_name::#variant => ::core::option::Option::None },
+            }
+        })
+        .collect();
+
+    let to_size_arms: Vec<_> = def
+        .opcodes
+        .iter()
+        .map(|op| {
+            let variant = &op.variant;
+            match &op.size {
+                Some(size) => {
+                    quote! { #enum_name::#variant => ::core::option::Option::Some(#size) }
+                }
+                None => quote! { #enum_name::#variant => ::core::option::Option::None },
+            }
+        })
+        .collect();
+
+    let is_32bit_arms: Vec<_> = def
+        .opcodes
+        .iter()
+        .map(|op| {
+            let variant = &op.variant;
+            let is_32 = op.variant_name().contains("32");
+            quote! { #enum_name::#variant => #is_32 }
+        })
+        .collect();
+
     let v3_arms: Vec<_> = def
         .opcodes
         .iter()
@@ -158,6 +196,27 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
 
     let all_variants: Vec<_> = def.opcodes.iter().map(|op| &op.variant).collect();
 
+    let mut by_group_order: Vec<syn::Path> = Vec::new();
+    let mut by_group_map: std::collections::HashMap<String, Vec<&syn::Ident>> =
+        std::collections::HashMap::new();
+    for op in &def.opcodes {
+        let key = path_key(&op.group);
+        if !by_group_map.contains_key(&key) {
+            by_group_order.push(op.group.clone());
+        }
+        by_group_map.entry(key).or_default().push(&op.variant);
+    }
+    let by_group_arms: Vec<_> = by_group_order
+        .iter()
+        .map(|group_path| {
+            let key = path_key(group_path);
+            let variants = by_group_map.get(&key).expect("expected group key");
+            quote! {
+                #group_path => &[#(#enum_name::#variants),*]
+            }
+        })
+        .collect();
+
     quote! {
         impl ::sbpf_common_tablegen::OpcodeTable for #enum_name {
             type Group = #group_ty;
@@ -168,9 +227,40 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
                 }
             }
 
+            fn to_operator(&self) -> ::core::option::Option<&'static str> {
+                match self {
+                    #(#to_operator_arms,)*
+                }
+            }
+
+            fn to_size(&self) -> ::core::option::Option<&'static str> {
+                match self {
+                    #(#to_size_arms,)*
+                }
+            }
+
+            fn from_size(size: &str, group: Self::Group) -> ::core::option::Option<Self> {
+                Self::by_group(group)
+                    .iter()
+                    .copied()
+                    .find(|op| op.to_size() == ::core::option::Option::Some(size))
+            }
+
+            fn is_32bit(&self) -> bool {
+                match self {
+                    #(#is_32bit_arms,)*
+                }
+            }
+
             fn group(self) -> Self::Group {
                 match self {
                     #(#group_arms,)*
+                }
+            }
+
+            fn by_group(group: Self::Group) -> &'static [Self] {
+                match group {
+                    #(#by_group_arms,)*
                 }
             }
 
@@ -190,6 +280,14 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
             }
         }
     }
+}
+
+fn path_key(path: &Path) -> String {
+    path.segments
+        .iter()
+        .map(|s| s.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 fn group_enum_path(path: &Path) -> Path {

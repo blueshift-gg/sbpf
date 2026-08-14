@@ -16,7 +16,12 @@ pub trait OpcodeTable: Copy + Sized + 'static {
     type Group: OpcodeGroup;
 
     fn to_str(&self) -> &'static str;
+    fn to_operator(&self) -> Option<&'static str>;
+    fn to_size(&self) -> Option<&'static str>;
+    fn from_size(size: &str, group: Self::Group) -> Option<Self>;
+    fn is_32bit(&self) -> bool;
     fn group(self) -> Self::Group;
+    fn by_group(group: Self::Group) -> &'static [Self];
     fn try_from_sbpf_v3(opcode: u8) -> Result<Self, OpcodeError>;
     fn all() -> &'static [Self];
 }

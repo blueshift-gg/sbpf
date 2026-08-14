@@ -1,9 +1,10 @@
 use {
     crate::{
+        OpcodeGroup, OpcodeTable,
         errors::SBPFError,
-        inst_handler::{OPCODE_TO_HANDLER, OPCODE_TO_TYPE},
         inst_param::{Number, Register},
-        opcode::{Opcode, OperationType},
+        opcode::Opcode,
+        optype::OperationType,
         syscalls::REGISTERED_SYSCALLS,
     },
     core::ops::Range,
@@ -37,7 +38,7 @@ impl Instruction {
     }
 
     fn get_opcode_type(&self) -> OperationType {
-        *OPCODE_TO_TYPE.get(&self.opcode).unwrap()
+        self.opcode.group()
     }
 
     pub fn is_jump(&self) -> bool {
@@ -88,15 +89,7 @@ impl Instruction {
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode: Opcode = bytes[0].try_into()?;
-        if let Some(handler) = OPCODE_TO_HANDLER.get(&opcode) {
-            (handler.decode)(bytes)
-        } else {
-            Err(SBPFError::BytecodeError {
-                error: format!("no decode handler for opcode {}", opcode),
-                span: 0..1,
-                custom_label: Some("Invalid opcode".to_string()),
-            })
-        }
+        opcode.group().decode_fn()(bytes)
     }
 
     pub fn from_bytes_sbpf_v2(bytes: &[u8]) -> Result<Self, SBPFError> {
@@ -138,14 +131,7 @@ impl Instruction {
 
     pub fn from_bytes_sbpf_v3(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
-        OPCODE_TO_HANDLER
-            .get(&opcode)
-            .ok_or_else(|| SBPFError::BytecodeError {
-                error: format!("no decode handler for opcode {}", opcode),
-                span: 0..1,
-                custom_label: Some("Invalid opcode".to_string()),
-            })
-            .and_then(|handler| (handler.decode)(bytes))
+        opcode.group().decode_fn()(bytes)
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
@@ -189,72 +175,61 @@ impl Instruction {
     }
 
     fn to_default_asm(&self) -> Result<String, SBPFError> {
-        if let Some(handler) = OPCODE_TO_HANDLER.get(&self.opcode) {
-            match (handler.validate)(self) {
-                Ok(()) => {
-                    let mut asm = if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
-                        self.op_imm_bits()?
-                    } else {
-                        format!("{}", self.opcode)
-                    };
-                    let mut param = vec![];
+        self.opcode.group().validate_fn()(self)?;
 
-                    fn fmt_mem_off(r: &Register, off: &Either<String, i16>) -> String {
-                        format!("[r{}{}]", r.n, fmt_off(off))
-                    }
-
-                    if self.get_opcode_type() == OperationType::LoadMemory {
-                        param.push(format!("r{}", self.dst.as_ref().unwrap().n));
-                        param.push(fmt_mem_off(
-                            self.src.as_ref().unwrap(),
-                            self.off.as_ref().unwrap(),
-                        ));
-                    } else if self.get_opcode_type() == OperationType::StoreImmediate {
-                        param.push(fmt_mem_off(
-                            self.dst.as_ref().unwrap(),
-                            self.off.as_ref().unwrap(),
-                        ));
-                        param.push(fmt_imm(self.imm.as_ref().unwrap()));
-                    } else if self.get_opcode_type() == OperationType::StoreRegister {
-                        param.push(fmt_mem_off(
-                            self.dst.as_ref().unwrap(),
-                            self.off.as_ref().unwrap(),
-                        ));
-                        param.push(format!("r{}", self.src.as_ref().unwrap().n));
-                    } else {
-                        if let Some(dst) = &self.dst {
-                            param.push(format!("r{}", dst.n));
-                        }
-                        if let Some(src) = &self.src
-                            && self.opcode != Opcode::Call
-                        {
-                            param.push(format!("r{}", src.n));
-                        }
-                        if let Some(imm) = &self.imm
-                            && self.opcode != Opcode::Le
-                            && self.opcode != Opcode::Be
-                        {
-                            param.push(fmt_imm(imm));
-                        }
-                        if let Some(off) = &self.off {
-                            param.push(fmt_off(off));
-                        }
-                    }
-                    if !param.is_empty() {
-                        asm.push(' ');
-                        asm.push_str(&param.join(", "));
-                    }
-                    Ok(asm)
-                }
-                Err(e) => Err(e),
-            }
+        let mut asm = if self.opcode == Opcode::Le || self.opcode == Opcode::Be {
+            self.op_imm_bits()?
         } else {
-            Err(SBPFError::BytecodeError {
-                error: format!("no validate handler for opcode {}", self.opcode),
-                span: self.span.clone(),
-                custom_label: None,
-            })
+            format!("{}", self.opcode)
+        };
+        let mut param = vec![];
+
+        fn fmt_mem_off(r: &Register, off: &Either<String, i16>) -> String {
+            format!("[r{}{}]", r.n, fmt_off(off))
         }
+
+        if self.get_opcode_type() == OperationType::LoadMemory {
+            param.push(format!("r{}", self.dst.as_ref().unwrap().n));
+            param.push(fmt_mem_off(
+                self.src.as_ref().unwrap(),
+                self.off.as_ref().unwrap(),
+            ));
+        } else if self.get_opcode_type() == OperationType::StoreImmediate {
+            param.push(fmt_mem_off(
+                self.dst.as_ref().unwrap(),
+                self.off.as_ref().unwrap(),
+            ));
+            param.push(fmt_imm(self.imm.as_ref().unwrap()));
+        } else if self.get_opcode_type() == OperationType::StoreRegister {
+            param.push(fmt_mem_off(
+                self.dst.as_ref().unwrap(),
+                self.off.as_ref().unwrap(),
+            ));
+            param.push(format!("r{}", self.src.as_ref().unwrap().n));
+        } else {
+            if let Some(dst) = &self.dst {
+                param.push(format!("r{}", dst.n));
+            }
+            if let Some(src) = &self.src
+                && self.opcode != Opcode::Call
+            {
+                param.push(format!("r{}", src.n));
+            }
+            if let Some(imm) = &self.imm
+                && self.opcode != Opcode::Le
+                && self.opcode != Opcode::Be
+            {
+                param.push(fmt_imm(imm));
+            }
+            if let Some(off) = &self.off {
+                param.push(fmt_off(off));
+            }
+        }
+        if !param.is_empty() {
+            asm.push(' ');
+            asm.push_str(&param.join(", "));
+        }
+        Ok(asm)
     }
 
     fn to_llvm_asm(&self) -> Result<String, SBPFError> {
@@ -293,11 +268,7 @@ impl Instruction {
                 Ok(format!("r{} = {} r{}", dst, bits, dst))
             }
             OperationType::Unary => {
-                let prefix = if self.opcode == Opcode::Neg32 {
-                    "w"
-                } else {
-                    "r"
-                };
+                let prefix = if self.opcode.is_32bit() { "w" } else { "r" };
                 let dst = self.dst.as_ref().unwrap().n;
                 Ok(format!("{}{} = -{}{}", prefix, dst, prefix, dst))
             }
@@ -352,11 +323,7 @@ impl Instruction {
                 let op = self.opcode.to_operator().unwrap();
                 let imm = fmt_imm(self.imm.as_ref().unwrap());
                 let off = fmt_off(self.off.as_ref().unwrap());
-                let prefix = if is_jump32_opcode(self.opcode) {
-                    "w"
-                } else {
-                    "r"
-                };
+                let prefix = if self.opcode.is_32bit() { "w" } else { "r" };
                 Ok(format!("if {}{} {} {} goto {}", prefix, dst, op, imm, off))
             }
             OperationType::JumpRegister | OperationType::Jump32Register => {
@@ -364,11 +331,7 @@ impl Instruction {
                 let op = self.opcode.to_operator().unwrap();
                 let src = self.src.as_ref().unwrap().n;
                 let off = fmt_off(self.off.as_ref().unwrap());
-                let prefix = if is_jump32_opcode(self.opcode) {
-                    "w"
-                } else {
-                    "r"
-                };
+                let prefix = if self.opcode.is_32bit() { "w" } else { "r" };
                 Ok(format!(
                     "if {}{} {} {}{} goto {}",
                     prefix, dst, op, prefix, src, off
@@ -400,34 +363,6 @@ fn fmt_imm(imm: &Either<String, Number>) -> String {
             }
         }
     }
-}
-
-fn is_jump32_opcode(opcode: Opcode) -> bool {
-    matches!(
-        opcode,
-        Opcode::Jeq32Imm
-            | Opcode::Jeq32Reg
-            | Opcode::Jgt32Imm
-            | Opcode::Jgt32Reg
-            | Opcode::Jge32Imm
-            | Opcode::Jge32Reg
-            | Opcode::Jlt32Imm
-            | Opcode::Jlt32Reg
-            | Opcode::Jle32Imm
-            | Opcode::Jle32Reg
-            | Opcode::Jset32Imm
-            | Opcode::Jset32Reg
-            | Opcode::Jne32Imm
-            | Opcode::Jne32Reg
-            | Opcode::Jsgt32Imm
-            | Opcode::Jsgt32Reg
-            | Opcode::Jsge32Imm
-            | Opcode::Jsge32Reg
-            | Opcode::Jslt32Imm
-            | Opcode::Jslt32Reg
-            | Opcode::Jsle32Imm
-            | Opcode::Jsle32Reg
-    )
 }
 
 #[cfg(test)]
