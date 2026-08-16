@@ -107,14 +107,6 @@ pub struct OpcodeTableDef {
 }
 
 impl OpcodeTableDef {
-    /// Get opcodes by group variant.
-    pub fn opcodes_in_group(&self, group_variant: &str) -> Vec<&OpcodeDef> {
-        self.opcodes
-            .iter()
-            .filter(|o| o.group_variant_name().as_deref() == Some(group_variant))
-            .collect()
-    }
-
     /// Get a mapping of all group variants and their opcodes.
     pub fn opcodes_by_group(&self) -> BTreeMap<String, Vec<&OpcodeDef>> {
         let mut map: BTreeMap<String, Vec<&OpcodeDef>> = BTreeMap::new();

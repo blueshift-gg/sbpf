@@ -41,3 +41,6 @@ release:
 	done
 release-npm: build
 	cd npm && npm publish --access public
+
+gen-opcode-docs:
+	cargo run --package xtask -- gen-opcode-docs

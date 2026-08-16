@@ -196,21 +196,12 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
 
     let all_variants: Vec<_> = def.opcodes.iter().map(|op| &op.variant).collect();
 
-    let mut by_group_order: Vec<syn::Path> = Vec::new();
-    let mut by_group_map: std::collections::HashMap<String, Vec<&syn::Ident>> =
-        std::collections::HashMap::new();
-    for op in &def.opcodes {
-        let key = path_key(&op.group);
-        if !by_group_map.contains_key(&key) {
-            by_group_order.push(op.group.clone());
-        }
-        by_group_map.entry(key).or_default().push(&op.variant);
-    }
-    let by_group_arms: Vec<_> = by_group_order
-        .iter()
-        .map(|group_path| {
-            let key = path_key(group_path);
-            let variants = by_group_map.get(&key).expect("expected group key");
+    let by_group_arms: Vec<_> = def
+        .opcodes_by_group()
+        .into_values()
+        .map(|ops| {
+            let group_path = &ops[0].group;
+            let variants = ops.iter().map(|op| &op.variant);
             quote! {
                 #group_path => &[#(#enum_name::#variants),*]
             }
@@ -280,14 +271,6 @@ fn expand_opcode_table_trait(def: &OpcodeTableDef) -> TokenStream {
             }
         }
     }
-}
-
-fn path_key(path: &Path) -> String {
-    path.segments
-        .iter()
-        .map(|s| s.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::")
 }
 
 fn group_enum_path(path: &Path) -> Path {

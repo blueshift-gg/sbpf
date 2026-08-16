@@ -50,6 +50,7 @@ members = [
     "crates/syscall-map",
     "crates/vm",
     "examples/*",
+    "xtask",
 ]
 exclude = []
 
