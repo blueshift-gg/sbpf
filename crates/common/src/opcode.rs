@@ -1116,7 +1116,7 @@ pub enum Opcode {
         mnemonic = "callx",
         code = 0x8d,
         group = OperationType::CallRegister,
-        doc = "callx src",
+        doc = "callx dst",
     )]
     Callx,
     #[opcode(
