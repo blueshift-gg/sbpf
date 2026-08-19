@@ -135,6 +135,14 @@ impl Instruction {
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SBPFError> {
+        self.to_bytes_inner(false)
+    }
+
+    pub fn to_bytes_sbpf_v3(&self) -> Result<Vec<u8>, SBPFError> {
+        self.to_bytes_inner(true)
+    }
+
+    fn to_bytes_inner(&self, is_v3: bool) -> Result<Vec<u8>, SBPFError> {
         let dst_val = self.dst.as_ref().map(|r| r.n).unwrap_or(0);
         let src_val = self.src.as_ref().map(|r| r.n).unwrap_or(0);
         let off_val = match &self.off {
@@ -153,7 +161,7 @@ impl Instruction {
         };
         // fix callx encoding in sbpf
         let (dst_val, imm_val) = match self.opcode {
-            Opcode::Callx => (0, dst_val as i64), // callx: dst register encoded in imm
+            Opcode::Callx if !is_v3 => (0, dst_val as i64), // callx: dst register encoded in imm (only in v0)
             _ => (dst_val, imm_val),
         };
 
@@ -763,7 +771,7 @@ mod test {
 
     #[test]
     fn test_to_bytes_callx() {
-        // callx r5 - dst register encoded in imm
+        // callx r5
         let inst = Instruction {
             opcode: Opcode::Callx,
             dst: Some(Register { n: 5 }),
@@ -772,9 +780,18 @@ mod test {
             imm: None,
             span: 0..8,
         };
-        let bytes = inst.to_bytes().unwrap();
-        assert_eq!(bytes[0], 0x8d);
-        assert_eq!(bytes[4], 5);
+
+        // v0: dst register encoded in imm
+        let bytes_v0 = inst.to_bytes().unwrap();
+        assert_eq!(bytes_v0[0], 0x8d);
+        assert_eq!(bytes_v0[1], 0); // dst
+        assert_eq!(bytes_v0[4], 5); // imm
+
+        // v3: dst register unchanged
+        let bytes_v3 = inst.to_bytes_sbpf_v3().unwrap();
+        assert_eq!(bytes_v3[0], 0x8d);
+        assert_eq!(bytes_v3[1], 5); // dst
+        assert_eq!(bytes_v3[4], 0); // imm
     }
 
     #[test]
