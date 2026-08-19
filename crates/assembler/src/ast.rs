@@ -189,7 +189,8 @@ pub fn build_program(
         Err(errors)
     } else {
         Ok(ProgramLayout {
-            code_section: CodeSection::new(std::mem::take(&mut ast.nodes), ast.text_size),
+            code_section: CodeSection::new(std::mem::take(&mut ast.nodes), ast.text_size)
+                .with_arch(arch),
             data_section: DataSection::new(std::mem::take(&mut ast.rodata_nodes), ast.rodata_size),
             dynamic_symbols: label_resolution.dynamic_symbols,
             relocation_data: label_resolution.relocations,

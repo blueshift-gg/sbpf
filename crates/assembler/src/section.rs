@@ -1,4 +1,5 @@
 use crate::{
+    SbpfArch,
     astnode::{ASTNode, ROData},
     dynsym::{DynamicSymbol, RelDyn},
     header::SectionHeader,
@@ -33,6 +34,7 @@ pub struct CodeSection {
     size: u64,
     offset: u64,
     vaddr: u64,
+    arch: SbpfArch,
 }
 
 impl CodeSection {
@@ -43,7 +45,13 @@ impl CodeSection {
             size,
             offset: 0,
             vaddr: 0,
+            arch: SbpfArch::default(),
         }
+    }
+
+    pub fn with_arch(mut self, arch: SbpfArch) -> Self {
+        self.arch = arch;
+        self
     }
 
     pub fn get_nodes(&self) -> &Vec<ASTNode> {
@@ -89,7 +97,13 @@ impl Section for CodeSection {
     fn bytecode(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
         for node in &self.nodes {
-            if let Some(node_bytes) = node.bytecode() {
+            let node_bytes = match node {
+                ASTNode::Instruction { instruction, .. } if self.arch.is_v3() => {
+                    Some(instruction.to_bytes_sbpf_v3().unwrap())
+                }
+                _ => node.bytecode(),
+            };
+            if let Some(node_bytes) = node_bytes {
                 bytecode.extend(node_bytes);
             }
         }
