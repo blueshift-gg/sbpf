@@ -430,6 +430,12 @@ impl Program {
         // Emit section headers (omitted when there is no section header table,
         // e.g. v3 binaries).
         if self.elf_header.e_shoff != 0 {
+            debug_assert_eq!(
+                bytes.len() as u64,
+                self.elf_header.e_shoff,
+                "emitted byte length does not match e_shoff; a section's size() likely disagrees \
+                 with its bytecode().len()"
+            );
             for section in &self.sections {
                 bytes.extend(section.section_header_bytecode());
             }

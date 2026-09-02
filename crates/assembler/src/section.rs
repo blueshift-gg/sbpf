@@ -299,7 +299,8 @@ impl Section for ShStrTabSection {
 
         section_name_size += 1; // null section
 
-        section_name_size as u64 // Return the calculated size
+        // Align to 8 bytes, matching bytecode() output
+        ((section_name_size + 7) & !7) as u64
     }
 }
 
@@ -1103,5 +1104,25 @@ mod tests {
             assert_eq!(section.bytecode().len(), 8);
             assert!(!section.section_header_bytecode().is_empty());
         }
+    }
+
+    #[test]
+    fn test_shstrtab_section_size_matches_bytecode_len() {
+        // Section names whose size are not a multiple of 8 before alignment
+        let names = vec![
+            ".text".to_string(),
+            ".debug_info".to_string(),
+            ".debug_line".to_string(),
+        ];
+        let section = ShStrTabSection::new(0, names);
+
+        let size = section.size();
+        let bytecode_len = section.bytecode().len() as u64;
+
+        assert_eq!(
+            size, bytecode_len,
+            "ShStrTabSection::size() must equal bytecode().len() to prevent e_shoff mismatch"
+        );
+        assert_eq!(size % 8, 0, "ShStrTabSection size must be 8-byte aligned");
     }
 }
