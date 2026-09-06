@@ -42,16 +42,17 @@ concurrency:
 
 jobs:
   sbpf-linker:
-    name: sbpf-linker (HEAD) against local sbpf crates
+    name: sbpf-linker against local sbpf crates
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
-      - name: Checkout sbpf-linker (default branch HEAD)
+      - name: Checkout sbpf-linker 
         uses: actions/checkout@v5
         with:
-          repository: blueshift-gg/sbpf-linker
+          repository: BretasArthur1/sbpf-linker
+          ref: downstream-consumer
           path: sbpf-linker
 
       - uses: dtolnay/rust-toolchain@master
@@ -81,7 +82,7 @@ jobs:
           done
           {
             echo ""
-            echo "[patch.crates-io]"
+            echo '[patch."https://github.com/blueshift-gg/sbpf.git"]'
             echo "sbpf-assembler = { path = \"../crates/assembler\" }"
             echo "sbpf-common = { path = \"../crates/common\" }"
           } >> Cargo.toml
@@ -96,7 +97,7 @@ jobs:
             exit 1
           fi
           if echo "${tree}" | grep -v "(/"; then
-            echo "::error::sbpf crates still resolve to crates.io — the [patch] was discarded"
+          echo "::error::sbpf crates do not resolve to local paths — the [patch] was not applied"
             exit 1
           fi
 
