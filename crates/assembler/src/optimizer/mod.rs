@@ -6,7 +6,7 @@ pub(crate) use canonicalize::{
 use {
     crate::{ast::AST, astnode::ASTNode},
     sbpf_analyze::remove_dead_functions,
-    sbpf_ir::{Cfg, InputNode, control_flow_graph},
+    sbpf_ir::{Cfg, CfgRodata, InputNode, control_flow_graph},
     std::collections::HashSet,
 };
 
@@ -107,7 +107,21 @@ fn cfg_for_ast(ast: &AST) -> Cfg {
         ASTNode::Instruction { instruction, .. } => InputNode::Instruction(instruction),
         _ => InputNode::Other,
     });
-    control_flow_graph(nodes, &function_entries, entry_label)
+    let mut cfg = control_flow_graph(nodes, &function_entries, entry_label);
+    if !ast.rodata_nodes.is_empty() {
+        let rodata = ast.rodata_nodes.iter().filter_map(|node| {
+            let ASTNode::ROData { rodata, offset } = node else {
+                return None;
+            };
+            Some(CfgRodata::new(&rodata.name, *offset, rodata.get_size()))
+        });
+        let references = ast
+            .rodata_relocations()
+            .iter()
+            .map(|relocation| (relocation.offset, relocation.target.as_str()));
+        cfg.set_rodata(rodata, references);
+    }
+    cfg
 }
 
 fn function_entries(ast: &AST) -> HashSet<String> {
@@ -118,9 +132,16 @@ fn function_entries(ast: &AST) -> HashSet<String> {
 mod tests {
     use {
         super::*,
-        crate::astnode::{GlobalDecl, Label},
+        crate::{
+            astnode::{GlobalDecl, Label, ROData},
+            parser::Token,
+        },
         either::Either,
-        sbpf_common::{inst_param::Register, instruction::Instruction, opcode::Opcode},
+        sbpf_common::{
+            inst_param::{Number, Register},
+            instruction::Instruction,
+            opcode::Opcode,
+        },
     };
 
     #[test]
@@ -242,6 +263,58 @@ mod tests {
             ast.nodes
                 .iter()
                 .any(|node| matches!(node, ASTNode::Label { label, .. } if label.name == "helper"))
+        );
+        assert!(
+            !ast.nodes
+                .iter()
+                .any(|node| matches!(node, ASTNode::Label { label, .. } if label.name == "dead"))
+        );
+    }
+
+    #[test]
+    fn test_optimizer_preserves_function_targeted_by_rodata_relocation() {
+        let mut ast = AST::new();
+        ast.add_function_entry("entrypoint".to_string());
+        ast.add_function_entry("target".to_string());
+        ast.add_function_entry("dead".to_string());
+        ast.nodes = vec![
+            ASTNode::GlobalDecl {
+                global_decl: GlobalDecl {
+                    entry_label: "entrypoint".to_string(),
+                    span: 0..0,
+                },
+            },
+            label_node("entrypoint", 0),
+            instruction_node(Opcode::Exit, None, 0, None),
+            label_node("target", 8),
+            instruction_node(Opcode::Exit, None, 8, None),
+            label_node("dead", 16),
+            instruction_node(Opcode::Exit, None, 16, None),
+        ];
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: ROData {
+                name: "pointer".to_string(),
+                args: vec![
+                    Token::Directive("quad".to_string(), 0..0),
+                    Token::VectorLiteral(vec![Number::Int(0)], 0..0),
+                ],
+                span: 0..0,
+            },
+            offset: 0,
+        });
+        ast.set_text_size(24);
+        ast.set_rodata_size(8);
+        ast.add_rodata_relocation(0, "target".to_string());
+
+        eliminate_unreachable_functions(&mut ast);
+
+        assert!(ast.nodes.iter().any(
+            |node| matches!(node, ASTNode::Label { label, .. } if label.name == "entrypoint")
+        ));
+        assert!(
+            ast.nodes
+                .iter()
+                .any(|node| matches!(node, ASTNode::Label { label, .. } if label.name == "target"))
         );
         assert!(
             !ast.nodes

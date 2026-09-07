@@ -9,6 +9,25 @@ use {
 pub type BlockId = usize;
 pub type FunctionId = usize;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CfgRodata {
+    pub name: String,
+    pub section_offset: u64,
+    pub size: u64,
+    pub referenced_blocks: Vec<BlockId>,
+}
+
+impl CfgRodata {
+    pub fn new(name: impl Into<String>, section_offset: u64, size: u64) -> Self {
+        Self {
+            name: name.into(),
+            section_offset,
+            size,
+            referenced_blocks: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum InputNode<'a> {
     Label(&'a str),
@@ -75,6 +94,7 @@ pub struct Cfg {
     pub functions: Vec<CfgFunction>,
     pub successors: Vec<SmallVec<[BlockId; 3]>>,
     pub predecessors: Vec<SmallVec<[BlockId; 3]>>,
+    pub rodata: Vec<CfgRodata>,
 }
 
 /// Builds a CFG in source order. If `entry_label` names a known function entry,
@@ -93,6 +113,7 @@ pub fn control_flow_graph<'a>(
         functions,
         successors: vec![SmallVec::new(); n_blocks],
         predecessors: vec![SmallVec::new(); n_blocks],
+        rodata: Vec::new(),
     };
 
     for (from, to) in collect_edges(&cfg) {
@@ -105,6 +126,35 @@ pub fn control_flow_graph<'a>(
 impl Cfg {
     pub fn functions(&self) -> &[CfgFunction] {
         &self.functions
+    }
+
+    pub fn rodata(&self) -> &[CfgRodata] {
+        &self.rodata
+    }
+
+    /// Store rodata objects and resolve their references to blocks.
+    pub fn set_rodata<'a>(
+        &mut self,
+        rodata: impl IntoIterator<Item = CfgRodata>,
+        references: impl IntoIterator<Item = (u64, &'a str)>,
+    ) {
+        self.rodata = rodata.into_iter().collect();
+
+        let label_to_block = label_to_block_map(self);
+        for (offset, target) in references {
+            let Some(target) = label_to_block.get(target).copied() else {
+                continue;
+            };
+            let Some(data) = self.rodata.iter_mut().find(|data| {
+                offset >= data.section_offset
+                    && offset
+                        .checked_add(8)
+                        .is_some_and(|end| end <= data.section_offset.saturating_add(data.size))
+            }) else {
+                continue;
+            };
+            data.referenced_blocks.push(target);
+        }
     }
 
     /// Returns a block by its global BlockId.
