@@ -23,8 +23,16 @@ A simple scaffold to bootstrap sBPF Assembly programs.
 
 ### Installation
 
+You can install this package with cargo directly:
+
 ```sh
-cargo install --git https://github.com/blueshift-gg/sbpf.git
+cargo install sbpf
+```
+
+or install from source:
+
+```sh
+cargo install --git https://github.com/blueshift-gg/sbpf.git sbpf
 ```
 
 ### Usage
