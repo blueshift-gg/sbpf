@@ -203,32 +203,34 @@ pub fn reuse_debug_sections(
     let mut sections = Vec::default();
     for mut debug_section in parsed_debug_sections.into_iter() {
         debug_section.set_name_offset(calc_name_offset(section_names));
-        section_names.push(debug_section.name().to_string());
         debug_section.set_offset(*current_offset);
-        *current_offset += debug_section.size();
-        if debug_section.name() == SectionId::DebugAbbrev.name() {
-            sections.push(SectionType::DebugAbbrev(debug_section));
+        let section = if debug_section.name() == SectionId::DebugAbbrev.name() {
+            SectionType::DebugAbbrev(debug_section)
         } else if debug_section.name() == SectionId::DebugInfo.name() {
-            sections.push(SectionType::DebugInfo(debug_section));
+            SectionType::DebugInfo(debug_section)
         } else if debug_section.name() == SectionId::DebugLine.name() {
-            sections.push(SectionType::DebugLine(debug_section));
+            SectionType::DebugLine(debug_section)
         } else if debug_section.name() == SectionId::DebugLineStr.name() {
-            sections.push(SectionType::DebugLineStr(debug_section));
+            SectionType::DebugLineStr(debug_section)
         } else if debug_section.name() == SectionId::DebugStr.name() {
-            sections.push(SectionType::DebugStr(debug_section));
+            SectionType::DebugStr(debug_section)
         } else if debug_section.name() == SectionId::DebugFrame.name() {
-            sections.push(SectionType::DebugFrame(debug_section));
+            SectionType::DebugFrame(debug_section)
         } else if debug_section.name() == SectionId::DebugLoc.name() {
-            sections.push(SectionType::DebugLoc(debug_section));
+            SectionType::DebugLoc(debug_section)
         } else if debug_section.name() == SectionId::DebugRanges.name() {
-            sections.push(SectionType::DebugRanges(debug_section));
+            SectionType::DebugRanges(debug_section)
         } else {
             eprintln!(
                 "Unimplemented debug section: {}, consider adding it",
                 debug_section.name()
             );
             continue;
-        }
+        };
+
+        section_names.push(section.name().to_string());
+        *current_offset += section.size();
+        sections.push(section);
     }
     sections
 }
@@ -262,5 +264,50 @@ mod tests {
         for section in &sections {
             assert!(!section.bytecode().is_empty());
         }
+    }
+
+    #[test]
+    fn test_reuse_debug_sections_skips_unknown_without_offset_drift() {
+        let mut section_names = vec![".text".to_string()];
+        let mut offset = 100u64;
+
+        // 3 sections: recognized, UNRECOGNIZED, recognized
+        let parsed = vec![
+            DebugSection::new(SectionId::DebugAbbrev.name(), 0, vec![1; 10]),
+            DebugSection::new(".debug_str_offsets", 0, vec![2; 20]), // unknown to enum
+            DebugSection::new(SectionId::DebugInfo.name(), 0, vec![3; 30]),
+        ];
+
+        let abbrev_size = DebugSection::new("", 0, vec![0; 10]).size(); // 16 (padded)
+        let info_size = DebugSection::new("", 0, vec![0; 30]).size(); // 32 (padded)
+
+        let result = reuse_debug_sections(parsed, &mut section_names, &mut offset);
+
+        // the unknown section should be dropped
+        assert_eq!(result.len(), 2, "unknown section should be dropped");
+        assert_eq!(result[0].name(), ".debug_abbrev");
+        assert_eq!(result[1].name(), ".debug_info");
+
+        assert_eq!(
+            result[0].offset(),
+            100,
+            "first section starts at initial offset"
+        );
+        assert_eq!(
+            result[1].offset(),
+            100 + abbrev_size,
+            "second section must follow first with no gap from dropped section"
+        );
+
+        assert_eq!(
+            offset,
+            100 + abbrev_size + info_size,
+            "current_offset must not include dropped section's size"
+        );
+
+        assert!(
+            !section_names.contains(&".debug_str_offsets".to_string()),
+            "dropped section name must not pollute section_names"
+        );
     }
 }
