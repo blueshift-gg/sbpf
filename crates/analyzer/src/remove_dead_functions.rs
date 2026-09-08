@@ -1,4 +1,5 @@
 use {
+    sbpf_common::opcode::Opcode,
     sbpf_ir::{
         BlockId, Cfg, CfgFunction, FunctionId,
         graph_engine::{WorklistEngine, WorklistVisitor},
@@ -15,8 +16,8 @@ pub struct RemovedFunction {
     pub node_ids: Vec<usize>,
 }
 
-/// Removes functions not reachable from `functions()[0]` via `call imm` edges and returns
-/// their names and byte ranges. Dead functions' blocks and instructions are dropped automatically
+/// Removes functions not reachable from `functions()[0]` via `call imm` edges and not referenced by lddw/rodata,
+/// and returns their names and byte ranges. Dead functions' blocks and instructions are dropped automatically
 /// via Rust ownership. Successor/predecessor relationships between live blocks are
 /// unchanged and are NOT rebuilt.
 pub fn remove_dead_functions(cfg: &mut Cfg) -> Vec<RemovedFunction> {
@@ -89,13 +90,46 @@ fn reachable_functions(cfg: &Cfg) -> HashSet<FunctionId> {
         }
     }
 
+    let mut enqueued_funcs = HashSet::from([entry_fi]);
+    let mut initial_blocks = cfg.functions()[entry_fi].block_ids().to_vec();
+
+    // Include functions that are referenced by rodata.
+    for fi in cfg
+        .rodata()
+        .iter()
+        .flat_map(|data| data.referenced_blocks.iter().copied())
+        .filter_map(|block_id| cfg.function_of_block(block_id))
+    {
+        if enqueued_funcs.insert(fi) {
+            initial_blocks.extend_from_slice(cfg.functions()[fi].block_ids());
+        }
+    }
+
+    // Include functions that are referenced by lddw.
+    for fi in cfg
+        .all_blocks()
+        .flat_map(|(_, block)| block.instructions())
+        .filter_map(|node| node.instruction())
+        .filter(|instruction| instruction.opcode == Opcode::Lddw)
+        .filter_map(|instruction| instruction.imm.as_ref()?.as_ref().left())
+        .filter_map(|label| {
+            cfg.functions()
+                .iter()
+                .position(|function| function.name() == label)
+        })
+    {
+        if enqueued_funcs.insert(fi) {
+            initial_blocks.extend_from_slice(cfg.functions()[fi].block_ids());
+        }
+    }
+
     let mut visitor = EnqueueFunctionBlocks {
         cfg,
-        enqueued_funcs: HashSet::from([entry_fi]),
+        enqueued_funcs,
     };
 
     let mut engine = WorklistEngine::new(cfg);
-    engine.initialize(cfg.functions()[entry_fi].block_ids().iter().copied());
+    engine.initialize(initial_blocks);
     engine.run(&mut visitor);
 
     // Every function that had at least one block visited is reachable.
@@ -145,6 +179,66 @@ mod tests {
         assert_eq!(cfg.functions().len(), 2);
         assert_eq!(cfg.functions()[0].name(), "entrypoint");
         assert_eq!(cfg.functions()[1].name(), "callee");
+    }
+
+    #[test]
+    fn test_remove_dead_functions_keeps_rodata_function_target() {
+        let entry_exit = instruction(Opcode::Exit, None);
+        let target_exit = instruction(Opcode::Exit, None);
+        let dead_exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&entry_exit),
+            InputNode::Label("target"),
+            InputNode::Instruction(&target_exit),
+            InputNode::Label("dead"),
+            InputNode::Instruction(&dead_exit),
+        ];
+        let function_entries = HashSet::from([
+            "entrypoint".to_string(),
+            "target".to_string(),
+            "dead".to_string(),
+        ]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+        cfg.set_rodata([sbpf_ir::CfgRodata::new("pointer", 0, 8)], [(0, "target")]);
+        assert_eq!(cfg.rodata()[0].referenced_blocks, [1]);
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].name, "dead");
+        assert!(cfg.functions().iter().any(|f| f.name() == "entrypoint"));
+        assert!(cfg.functions().iter().any(|f| f.name() == "target"));
+    }
+
+    #[test]
+    fn test_remove_dead_functions_keeps_lddw_function_target() {
+        let lddw = lddw_instruction("target");
+        let entry_exit = instruction(Opcode::Exit, None);
+        let target_exit = instruction(Opcode::Exit, None);
+        let dead_exit = instruction(Opcode::Exit, None);
+        let nodes = [
+            InputNode::Label("entrypoint"),
+            InputNode::Instruction(&lddw),
+            InputNode::Instruction(&entry_exit),
+            InputNode::Label("target"),
+            InputNode::Instruction(&target_exit),
+            InputNode::Label("dead"),
+            InputNode::Instruction(&dead_exit),
+        ];
+        let function_entries = HashSet::from([
+            "entrypoint".to_string(),
+            "target".to_string(),
+            "dead".to_string(),
+        ]);
+        let mut cfg = control_flow_graph(nodes, &function_entries, None);
+
+        let removed = remove_dead_functions(&mut cfg);
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].name, "dead");
+        assert!(cfg.functions().iter().any(|f| f.name() == "entrypoint"));
+        assert!(cfg.functions().iter().any(|f| f.name() == "target"));
     }
 
     #[test]
@@ -212,6 +306,17 @@ mod tests {
     fn call_instruction(target: &str) -> Instruction {
         Instruction {
             opcode: Opcode::Call,
+            dst: None,
+            src: None,
+            off: None,
+            imm: Some(Either::Left(target.to_string())),
+            span: 0..0,
+        }
+    }
+
+    fn lddw_instruction(target: &str) -> Instruction {
+        Instruction {
+            opcode: Opcode::Lddw,
             dst: None,
             src: None,
             off: None,

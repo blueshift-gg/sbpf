@@ -7,13 +7,18 @@ use {
         errors::DisassemblerError,
         program::{Disassembly, Program},
     },
-    std::{collections::HashSet, fs::File, io::Read},
+    std::{
+        collections::HashSet,
+        fs::{self, File},
+        io::Read,
+        path::PathBuf,
+    },
 };
 
 #[derive(Args)]
 pub struct DisassembleArgs {
     #[arg(help = "Path to the ELF file (.so) to disassemble")]
-    pub filename: String,
+    pub filepath: PathBuf,
     #[arg(short, long, help = "Output full JSON debug information")]
     pub debug: bool,
     #[arg(
@@ -29,10 +34,13 @@ pub struct DisassembleArgs {
         help = "Output raw instructions without labels or formatting"
     )]
     pub raw: bool,
+
+    #[arg(short, long, help = "Emit the input program's disassembly to a file")]
+    pub emit: bool,
 }
 
 pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
-    let mut file = File::open(&args.filename)?;
+    let mut file = File::open(&args.filepath)?;
     let mut b = vec![];
     file.read_to_end(&mut b)?;
 
@@ -77,16 +85,43 @@ pub fn disassemble(args: DisassembleArgs) -> Result<(), Error> {
 
     report(&disassembled.errors);
 
-    print!(
-        "{}",
-        render_asm(
+    if args.emit {
+        let file_name = args
+            .filepath
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .expect("we should have a file");
+
+        let asm = render_asm(
             disassembled.value,
             entrypoint_offset,
             &text,
             format,
-            args.raw
-        )?
-    );
+            args.raw,
+        )?;
+
+        let mut content = String::new();
+        content.push_str(&format!(
+            "# Generated with sbpf v{}\n# Generated on: {date}\n\n",
+            env!("CARGO_PKG_VERSION"),
+            date = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+        content.push_str(asm.as_str());
+
+        fs::write(format!("{file_name}.s"), content)?;
+    } else {
+        print!(
+            "{}",
+            render_asm(
+                disassembled.value,
+                entrypoint_offset,
+                &text,
+                format,
+                args.raw,
+            )?
+        );
+    }
+
     Ok(())
 }
 

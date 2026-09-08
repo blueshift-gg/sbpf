@@ -22,6 +22,7 @@ serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 codespan-reporting = "0.13.1"
 termcolor = "1.4"
+chrono = { version = "0.4", default-features = false, features = ["now"] }
 
 sbpf-assembler = { workspace = true }
 sbpf-common = { workspace = true }

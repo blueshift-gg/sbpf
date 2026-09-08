@@ -5,7 +5,7 @@ use {
         dynsym::{DynamicSymbolMap, RelDynMap, RelocationType},
         header::ProgramHeader,
         optimizer,
-        parser::ProgramLayout,
+        parser::{ProgramLayout, Token},
         section::{CodeSection, DataSection},
     },
     either::Either,
@@ -23,6 +23,14 @@ use {
 
 type LabelOffsetMap = HashMap<String, u64>;
 type NumericLabel = (String, u64, usize);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RodataRelocation {
+    // Offset of the relocation in rodata
+    pub offset: u64,
+    // Target label whose address should be written at the relocation offset
+    pub target: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OptimizationConfig {
@@ -63,6 +71,7 @@ pub struct AST {
     function_entries: HashSet<String>,
     text_size: u64,
     rodata_size: u64,
+    rodata_relocations: Vec<RodataRelocation>,
 }
 
 impl AST {
@@ -74,8 +83,17 @@ impl AST {
         self.function_entries.insert(name);
     }
 
+    pub fn add_rodata_relocation(&mut self, offset: u64, target: String) {
+        self.rodata_relocations
+            .push(RodataRelocation { offset, target });
+    }
+
     pub(crate) fn function_entries(&self) -> &HashSet<String> {
         &self.function_entries
+    }
+
+    pub(crate) fn rodata_relocations(&self) -> &[RodataRelocation] {
+        &self.rodata_relocations
     }
 
     //
@@ -165,11 +183,12 @@ pub fn build_program(
 
     let (label_offset_map, numeric_labels) = label_offset_map(&ast);
     let program_is_static = arch.is_v3()
-        || !ast.nodes.iter().any(|node| {
-            matches!(node, ASTNode::Instruction { instruction: inst, .. }
-                if inst.is_syscall()
-                || (inst.opcode == Opcode::Lddw && matches!(&inst.imm, Some(Either::Left(_)))))
-        });
+        || (ast.rodata_relocations.is_empty()
+            && !ast.nodes.iter().any(|node| {
+                matches!(node, ASTNode::Instruction { instruction: inst, .. }
+                    if inst.is_syscall()
+                    || (inst.opcode == Opcode::Lddw && matches!(&inst.imm, Some(Either::Left(_)))))
+            }));
 
     let label_resolution = resolve_label_references(
         &mut ast,
@@ -380,6 +399,72 @@ fn resolve_label_references(
         dynamic_symbols.add_entry_point(entry_label, *offset);
     }
 
+    // Resolve rodata relocations and write their target addresses.
+    for relocation in &ast.rodata_relocations {
+        let Some(&target_offset) = label_offset_map.get(&relocation.target) else {
+            errors.push(CompileError::UndefinedLabel {
+                label: relocation.target.clone(),
+                span: 0..0,
+                custom_label: None,
+            });
+            continue;
+        };
+        let value = if arch.is_v3() {
+            if target_offset >= ast.text_size {
+                ProgramHeader::V3_RODATA_VADDR + target_offset - ast.text_size
+            } else {
+                ProgramHeader::V3_BYTECODE_VADDR + target_offset
+            }
+        } else {
+            let ph_count = if program_is_static { 1 } else { 3 };
+            (64 + ph_count * 56 + target_offset) << 32
+        };
+
+        let mut written = false;
+        for node in &mut ast.rodata_nodes {
+            let ASTNode::ROData { rodata, offset } = node else {
+                continue;
+            };
+            let Some(Token::VectorLiteral(bytes, _)) = rodata.args.get_mut(1) else {
+                continue;
+            };
+            let Some(relocation_offset_in_node) = relocation.offset.checked_sub(*offset) else {
+                continue;
+            };
+
+            // Write the target address at the relocation offset.
+            if let Some(relocation_bytes) = bytes
+                .get_mut(relocation_offset_in_node as usize..relocation_offset_in_node as usize + 8)
+            {
+                for (byte, value) in relocation_bytes.iter_mut().zip(value.to_le_bytes()) {
+                    *byte = Number::Int(i64::from(value));
+                }
+                written = true;
+                break;
+            }
+        }
+
+        if !written {
+            errors.push(CompileError::BytecodeError {
+                error: format!(
+                    "could not apply rodata relocation at offset {}",
+                    relocation.offset
+                ),
+                span: 0..0,
+                custom_label: None,
+            });
+            continue;
+        }
+
+        if !arch.is_v3() {
+            relocations.add_rel_dyn(
+                ast.text_size + relocation.offset,
+                RelocationType::RSbf64Relative,
+                String::new(),
+            );
+        }
+    }
+
     LabelResolution {
         dynamic_symbols,
         relocations,
@@ -411,7 +496,7 @@ fn label_offset_map(ast: &AST) -> (LabelOffsetMap, Vec<NumericLabel>) {
 mod tests {
     use {
         super::*,
-        crate::{astnode::Label, parser::Token},
+        crate::{astnode::Label, parser::Token, section::Section},
     };
 
     #[test]
@@ -703,6 +788,89 @@ mod tests {
         assert!(!parse_result.relocation_data.get_rel_dyns().is_empty());
     }
 
+    #[test]
+    fn test_build_program_rodata_data_relocation_v0() {
+        let result = build_program(
+            rodata_data_relocation_ast(),
+            SbpfArch::V0,
+            OptimizationConfig::default(),
+        );
+        assert!(result.is_ok());
+        let layout = result.unwrap();
+        assert!(!layout.prog_is_static);
+        let target_address: u64 = 64 + 3 * 56 + 8 + 8;
+        assert_eq!(
+            &layout.data_section.bytecode()[..8],
+            &(target_address << 32).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn test_build_program_rodata_data_relocation_v3() {
+        let result = build_program(
+            rodata_data_relocation_ast(),
+            SbpfArch::V3,
+            OptimizationConfig::default(),
+        );
+        assert!(result.is_ok());
+        let layout = result.unwrap();
+        assert!(layout.prog_is_static);
+        assert_eq!(
+            &layout.data_section.bytecode()[..8],
+            &(ProgramHeader::V3_RODATA_VADDR + 8).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn test_build_program_rodata_fn_relocation_v0() {
+        let result = build_program(
+            rodata_fn_relocation_ast(),
+            SbpfArch::V0,
+            OptimizationConfig::default(),
+        );
+        assert!(result.is_ok());
+        let layout = result.unwrap();
+        assert!(!layout.prog_is_static);
+        let target_address: u64 = 64 + 3 * 56;
+        assert_eq!(
+            &layout.data_section.bytecode()[..8],
+            &(target_address << 32).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn test_build_program_rodata_fn_relocation_v3() {
+        let result = build_program(
+            rodata_fn_relocation_ast(),
+            SbpfArch::V3,
+            OptimizationConfig::default(),
+        );
+        assert!(result.is_ok());
+        let layout = result.unwrap();
+        assert!(layout.prog_is_static);
+        assert_eq!(
+            &layout.data_section.bytecode()[..8],
+            &ProgramHeader::V3_BYTECODE_VADDR.to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn test_build_program_rodata_relocation_undefined_label() {
+        let mut ast = AST::new();
+        ast.nodes
+            .push(instruction_node(Opcode::Exit, 0, None, None));
+        ast.add_rodata_relocation(8, "invalid".to_string());
+        ast.set_text_size(8);
+        let result = build_program(ast, SbpfArch::V0, OptimizationConfig::default());
+        let Err(errors) = result else {
+            panic!("expected undefined label");
+        };
+        assert!(matches!(
+            &errors[..],
+            [CompileError::UndefinedLabel { label, .. }] if label == "invalid"
+        ));
+    }
+
     fn label_node(name: &str, offset: u64) -> ASTNode {
         ASTNode::Label {
             label: Label {
@@ -744,5 +912,61 @@ mod tests {
             },
             offset,
         }
+    }
+
+    // Test AST with a rodata relocation targeting data in the rodata section.
+    fn rodata_data_relocation_ast() -> AST {
+        let mut ast = AST::new();
+        ast.nodes
+            .push(instruction_node(Opcode::Exit, 0, None, None));
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: ROData {
+                name: "ptr".to_string(),
+                args: vec![
+                    Token::Directive("byte".to_string(), 0..1),
+                    Token::VectorLiteral(vec![Number::Int(0); 8], 0..1),
+                ],
+                span: 0..1,
+            },
+            offset: 0,
+        });
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: ROData {
+                name: "data".to_string(),
+                args: vec![
+                    Token::Directive("byte".to_string(), 0..1),
+                    Token::VectorLiteral(vec![Number::Int(0); 8], 0..1),
+                ],
+                span: 0..1,
+            },
+            offset: 8,
+        });
+        ast.add_rodata_relocation(0, "data".to_string());
+        ast.set_text_size(8);
+        ast.set_rodata_size(16);
+        ast
+    }
+
+    // Test AST with a rodata relocation targeting a function in the text section.
+    fn rodata_fn_relocation_ast() -> AST {
+        let mut ast = AST::new();
+        ast.nodes.push(label_node("fn", 0));
+        ast.nodes
+            .push(instruction_node(Opcode::Exit, 0, None, None));
+        ast.rodata_nodes.push(ASTNode::ROData {
+            rodata: ROData {
+                name: "ptr".to_string(),
+                args: vec![
+                    Token::Directive("byte".to_string(), 0..1),
+                    Token::VectorLiteral(vec![Number::Int(0); 8], 0..1),
+                ],
+                span: 0..1,
+            },
+            offset: 0,
+        });
+        ast.add_rodata_relocation(0, "fn".to_string());
+        ast.set_text_size(8);
+        ast.set_rodata_size(8);
+        ast
     }
 }

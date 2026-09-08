@@ -69,7 +69,7 @@ impl Relocation {
         let mut relocations = Vec::new();
 
         // Parse relocation entries
-        for chunk in rel_dyn_data.chunks_exact(16) {
+        for chunk in rel_dyn_data.as_chunks::<16>().0 {
             let offset = u64::from_le_bytes(chunk[0..8].try_into().unwrap());
             let rel_type_val = u32::from_le_bytes(chunk[8..12].try_into().unwrap());
             let rel_type = match RelocationType::try_from(rel_type_val) {
