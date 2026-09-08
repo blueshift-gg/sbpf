@@ -202,38 +202,35 @@ pub fn reuse_debug_sections(
     // reuse debug sections that came from byteparsing
     let mut sections = Vec::default();
     for mut debug_section in parsed_debug_sections.into_iter() {
-        let section_type_fn: Option<fn(DebugSection) -> SectionType> =
-            if debug_section.name() == SectionId::DebugAbbrev.name() {
-                Some(SectionType::DebugAbbrev)
-            } else if debug_section.name() == SectionId::DebugInfo.name() {
-                Some(SectionType::DebugInfo)
-            } else if debug_section.name() == SectionId::DebugLine.name() {
-                Some(SectionType::DebugLine)
-            } else if debug_section.name() == SectionId::DebugLineStr.name() {
-                Some(SectionType::DebugLineStr)
-            } else if debug_section.name() == SectionId::DebugStr.name() {
-                Some(SectionType::DebugStr)
-            } else if debug_section.name() == SectionId::DebugFrame.name() {
-                Some(SectionType::DebugFrame)
-            } else if debug_section.name() == SectionId::DebugLoc.name() {
-                Some(SectionType::DebugLoc)
-            } else if debug_section.name() == SectionId::DebugRanges.name() {
-                Some(SectionType::DebugRanges)
-            } else {
-                eprintln!(
-                    "Unimplemented debug section: {}, consider adding it",
-                    debug_section.name()
-                );
-                None
-            };
+        debug_section.set_name_offset(calc_name_offset(section_names));
+        debug_section.set_offset(*current_offset);
+        let section = if debug_section.name() == SectionId::DebugAbbrev.name() {
+            SectionType::DebugAbbrev(debug_section)
+        } else if debug_section.name() == SectionId::DebugInfo.name() {
+            SectionType::DebugInfo(debug_section)
+        } else if debug_section.name() == SectionId::DebugLine.name() {
+            SectionType::DebugLine(debug_section)
+        } else if debug_section.name() == SectionId::DebugLineStr.name() {
+            SectionType::DebugLineStr(debug_section)
+        } else if debug_section.name() == SectionId::DebugStr.name() {
+            SectionType::DebugStr(debug_section)
+        } else if debug_section.name() == SectionId::DebugFrame.name() {
+            SectionType::DebugFrame(debug_section)
+        } else if debug_section.name() == SectionId::DebugLoc.name() {
+            SectionType::DebugLoc(debug_section)
+        } else if debug_section.name() == SectionId::DebugRanges.name() {
+            SectionType::DebugRanges(debug_section)
+        } else {
+            eprintln!(
+                "Unimplemented debug section: {}, consider adding it",
+                debug_section.name()
+            );
+            continue;
+        };
 
-        if let Some(wrap) = section_type_fn {
-            debug_section.set_name_offset(calc_name_offset(section_names));
-            section_names.push(debug_section.name().to_string());
-            debug_section.set_offset(*current_offset);
-            *current_offset += debug_section.size();
-            sections.push(wrap(debug_section));
-        }
+        section_names.push(section.name().to_string());
+        *current_offset += section.size();
+        sections.push(section);
     }
     sections
 }
