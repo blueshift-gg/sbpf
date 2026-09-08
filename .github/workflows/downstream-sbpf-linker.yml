@@ -1,15 +1,14 @@
 name: downstream
 
-# Builds and tests sbpf-linker at its default-branch HEAD against the sbpf
+# Builds and tests sbpf-linker at downstream-consumer HEAD against the sbpf
 # crates in this checkout, so API breakage in the crates the linker consumes
 # (sbpf-assembler, sbpf-common and their workspace dependencies) is caught
 # here before a release is published.
 #
-# The version rewrite in the patch step is load-bearing: the linker pins the
-# published crate versions, and a bare [patch.crates-io] whose local version
-# does not satisfy that requirement is silently discarded by cargo — the build
-# would fall back to crates.io and test the wrong code. See the verify step,
-# which fails the job if that ever happens.
+# The git-source patch below replaces the linker's sbpf dependencies with this
+# checkout. The version rewrite keeps local versions compatible with explicit
+# version requirements. Verification checks both crates resolved manifest paths
+# so an unused patch cannot silently result in testing the wrong code.
 
 on:
   push:
@@ -90,17 +89,41 @@ jobs:
       - name: Verify the patch took effect
         working-directory: sbpf-linker
         run: |
-          tree="$(cargo tree --prefix none --edges normal | grep -E '^sbpf-(assembler|common) ' | sort -u)"
-          echo "${tree}"
-          if [ -z "${tree}" ]; then
-            echo "::error::sbpf-assembler/sbpf-common not found in the linker dependency tree"
-            exit 1
-          fi
-          if echo "${tree}" | grep -v "(/"; then
-          echo "::error::sbpf crates do not resolve to local paths — the [patch] was not applied"
-            exit 1
-          fi
+          cargo metadata --format-version 1 > "$RUNNER_TEMP/linker-metadata.json"
+          checkout_root="$(realpath ..)"
+          for crate in assembler common; do
+            expected_manifest="$checkout_root/crates/$crate/Cargo.toml"
+            if ! jq -e --arg name "sbpf-$crate" --arg manifest "$expected_manifest" '
+              [.resolve.nodes[].id] as $resolved
+              | [.packages[]
+                 | select(.id as $id | $resolved | index($id))
+                 | select(.name == $name)]
+              | length > 0 and all(.[]; .source == null and .manifest_path == $manifest)
+            ' "$RUNNER_TEMP/linker-metadata.json"; then
+              echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the dependency source and [patch] configuration"
+              exit 1
+            fi
+          done
 
       - name: Run sbpf-linker test suite
+        id: linker-tests
         working-directory: sbpf-linker
         run: cargo test -- --nocapture
+
+      - name: Explain downstream compatibility requirements
+        if: ${{ failure() && steps.linker-tests.outcome == 'failure' }}
+        run: |
+          echo "::error title=Downstream sbpf-linker tests failed::If this failure is caused by an sbpf API change, a companion sbpf-linker PR is required. See the job summary and CONTRIBUTING.md for instructions."
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Downstream compatibility check failed
+
+          This job tests sbpf-linker against the sbpf crates from this checkout.
+
+          Review the test logs to identify the cause. If your changes introduce an API incompatibility, you must submit a PR to adapt sbpf-linker to these changes.
+          Opening a companion PR does not automatically make this check pass: this
+          workflow tests BretasArthur1/sbpf-linker's downstream-consumer branch, not
+          your companion PR branch. Coordinate with a maintainer to validate both changes.
+
+          See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
+          EOF
