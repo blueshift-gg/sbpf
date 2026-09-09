@@ -1,0 +1,111 @@
+name: downstream
+
+# Build and test sbpf-linker at sbpf-linker-next HEAD against the sbpf
+# crates in this checkout, so API breakage is caught here before a release is published.
+#
+# The git-source patch below replaces the linker's sbpf dependencies with this
+# checkout. The version rewrite keeps local versions compatible with explicit
+# version requirements. Verification checks both crates resolved manifest paths
+# so an unused patch cannot silently result in testing the wrong code.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbpf-linker:
+    name: sbpf-linker against local sbpf crates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Checkout sbpf-linker 
+        uses: actions/checkout@v5
+        with:
+          repository: blueshift-gg/sbpf-linker
+          ref: sbpf-linker-next
+          path: sbpf-linker
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sbpf-linker
+          cache-on-failure: true
+
+      - name: Install FileCheck
+        run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
+
+      - name: Patch sbpf crates to this checkout
+        working-directory: sbpf-linker
+        run: |
+          sbpf_ver="$(cargo metadata --manifest-path ../Cargo.toml --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "sbpf-common") | .version')"
+          echo "patching sbpf-assembler and sbpf-common to =${sbpf_ver} (local path)"
+          for crate in sbpf-assembler sbpf-common; do
+            sed -E -i'' \
+              -e "s|^(${crate} = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
+              -e "s|^(${crate} = \{ version = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
+              Cargo.toml
+          done
+          {
+            echo ""
+            echo '[patch."https://github.com/blueshift-gg/sbpf.git"]'
+            echo "sbpf-assembler = { path = \"../crates/assembler\" }"
+            echo "sbpf-common = { path = \"../crates/common\" }"
+          } >> Cargo.toml
+
+      - name: Verify the patch took effect
+        working-directory: sbpf-linker
+        run: |
+          cargo metadata --format-version 1 > "$RUNNER_TEMP/linker-metadata.json"
+          checkout_root="$(realpath ..)"
+          for crate in assembler common; do
+            expected_manifest="$checkout_root/crates/$crate/Cargo.toml"
+            if ! jq -e --arg name "sbpf-$crate" --arg manifest "$expected_manifest" '
+              [.resolve.nodes[].id] as $resolved
+              | [.packages[]
+                 | select(.id as $id | $resolved | index($id))
+                 | select(.name == $name)]
+              | length > 0 and all(.[]; .source == null and .manifest_path == $manifest)
+            ' "$RUNNER_TEMP/linker-metadata.json"; then
+              echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the dependency source and [patch] configuration"
+              exit 1
+            fi
+          done
+
+      - name: Run sbpf-linker test suite
+        id: linker-tests
+        working-directory: sbpf-linker
+        run: cargo test -- --nocapture
+
+      - name: Explain downstream compatibility requirements
+        if: ${{ failure() && steps.linker-tests.outcome == 'failure' }}
+        run: |
+          echo "::error title=Downstream sbpf-linker tests failed::If this failure is caused by an sbpf API change, a companion sbpf-linker PR is required. See the job summary and CONTRIBUTING.md for instructions."
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Downstream compatibility check failed
+
+          This job tests sbpf-linker against the sbpf crates from this checkout.
+
+          Review the test logs to identify the cause. If your changes introduce an API incompatibility, 
+          you must submit a PR to adapt sbpf-linker to these changes.
+          Opening a companion PR does not automatically make this check pass, 
+          this workflow tests against sbpf-linker-next branch, not your companion PR branch. 
+          Coordinate with a maintainer to validate both changes.
+
+          See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
+          EOF
