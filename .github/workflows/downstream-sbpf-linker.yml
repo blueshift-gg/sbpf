@@ -1,9 +1,7 @@
 name: downstream
 
-# Builds and tests sbpf-linker at downstream-consumer HEAD against the sbpf
-# crates in this checkout, so API breakage in the crates the linker consumes
-# (sbpf-assembler, sbpf-common and their workspace dependencies) is caught
-# here before a release is published.
+# Build and test sbpf-linker at sbpf-linker-next HEAD against the sbpf
+# crates in this checkout, so API breakage is caught here before a release is published.
 #
 # The git-source patch below replaces the linker's sbpf dependencies with this
 # checkout. The version rewrite keeps local versions compatible with explicit
@@ -13,24 +11,7 @@ name: downstream
 on:
   push:
     branches: [master]
-    paths:
-      - "crates/assembler/**"
-      - "crates/common/**"
-      - "crates/analyzer/**"
-      - "crates/sbpf_ir/**"
-      - "crates/sbpf-syscall-map/**"
-      - "Cargo.toml"
-      - ".github/workflows/downstream-sbpf-linker.yml"
   pull_request:
-    paths:
-      - "crates/assembler/**"
-      - "crates/common/**"
-      - "crates/analyzer/**"
-      - "crates/sbpf_ir/**"
-      - "crates/sbpf-syscall-map/**"
-      - "Cargo.toml"
-      - ".github/workflows/downstream-sbpf-linker.yml"
-  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -50,8 +31,8 @@ jobs:
       - name: Checkout sbpf-linker 
         uses: actions/checkout@v5
         with:
-          repository: BretasArthur1/sbpf-linker
-          ref: downstream-consumer
+          repository: blueshift-gg/sbpf-linker
+          ref: sbpf-linker-next
           path: sbpf-linker
 
       - uses: dtolnay/rust-toolchain@master
@@ -120,10 +101,11 @@ jobs:
 
           This job tests sbpf-linker against the sbpf crates from this checkout.
 
-          Review the test logs to identify the cause. If your changes introduce an API incompatibility, you must submit a PR to adapt sbpf-linker to these changes.
-          Opening a companion PR does not automatically make this check pass: this
-          workflow tests BretasArthur1/sbpf-linker's downstream-consumer branch, not
-          your companion PR branch. Coordinate with a maintainer to validate both changes.
+          Review the test logs to identify the cause. If your changes introduce an API incompatibility, 
+          you must submit a PR to adapt sbpf-linker to these changes.
+          Opening a companion PR does not automatically make this check pass, 
+          this workflow tests against sbpf-linker-next branch, not your companion PR branch. 
+          Coordinate with a maintainer to validate both changes.
 
           See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
           EOF
