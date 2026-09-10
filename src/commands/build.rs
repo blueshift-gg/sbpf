@@ -33,6 +33,8 @@ pub struct BuildArgs {
     arch: ArchArg,
     #[arg(short = 'd', long, help = "Output deploy directory")]
     pub deploy_dir: Option<String>,
+    #[arg(short = 'p', long, help = "Path to the file to be assembled")]
+    pub path: Option<String>,
 }
 
 #[derive(Clone, Copy, ValueEnum, Default)]
@@ -165,136 +167,154 @@ fn build_expansion_notes(origin: &SourceOrigin, registry: &FileRegistry, notes: 
     }
 }
 
-pub fn build(args: BuildArgs) -> Result<()> {
-    // Set src/out directory
-    let src = "src";
-    let deploy = args.deploy_dir.as_deref().unwrap_or("deploy");
+// Function to compile assembly with preprocessing (includes + macros)
+fn compile_assembly(src: &str, deploy: Option<&str>, debug: bool, arch: SbpfArch) -> Result<()> {
+    let source_code = std::fs::read_to_string(src)
+        .map_err(|e| Error::msg(format!("Failed to read '{}': {}", src, e)))?;
 
-    // Create necessary directories
-    create_dir_all(deploy)?;
-    // Function to compile assembly with preprocessing (includes + macros)
-    fn compile_assembly(src: &str, deploy: &str, debug: bool, arch: SbpfArch) -> Result<()> {
-        let source_code = std::fs::read_to_string(src)
-            .map_err(|e| Error::msg(format!("Failed to read '{}': {}", src, e)))?;
-
-        // Build assembler options
-        let debug_mode = if debug {
-            let filename = Path::new(src)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown.s");
-            let directory = Path::new(src)
-                .parent()
-                .and_then(|p| p.canonicalize().ok())
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| ".".to_string());
-            Some(DebugMode {
-                filename: filename.to_string(),
-                directory,
-            })
-        } else {
-            None
-        };
-
-        let options = AssemblerOption {
-            arch,
-            debug_mode,
-            ..AssemblerOption::default()
-        };
-        let assembler = Assembler::new(options);
-        let resolver = FsFileResolver::new();
-
-        let result = assembler.assemble_with_preprocess(&source_code, src, Some(&resolver));
-
-        let bytecode = match result {
-            Ok(bytecode) => bytecode,
-            Err(assemble_errors) => {
-                emit_assembler_errors(&assemble_errors)?;
-                return Err(Error::msg("Compilation failed"));
-            }
-        };
-
-        // write bytecode to <filename>.so
-        let output_path = Path::new(deploy).join(
-            Path::new(src)
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .replace(".s", ".so"),
-        );
-
-        std::fs::write(output_path, bytecode)?;
-        Ok(())
-    }
-
-    // Function to check if keypair file exists.
-    fn has_keypair_file(dir: &Path) -> bool {
-        if dir.exists() && dir.is_dir() {
-            match fs::read_dir(dir) {
-                Ok(entries) => entries.filter_map(Result::ok).any(|entry| {
-                    entry
-                        .path()
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(|name| name.ends_with("-keypair.json"))
-                        .unwrap_or(false)
-                }),
-                Err(_) => false,
-            }
-        } else {
-            false
-        }
-    }
-
-    // Check if keypair file exists. If not, create one.
-    let deploy_path = Path::new(deploy);
-    if !has_keypair_file(deploy_path) {
-        let project_path = std::env::current_dir()?;
-        let project_name = project_path
+    // Build assembler options
+    let debug_mode = if debug {
+        let filename = Path::new(src)
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or("program");
-        let mut rng = rand::rng();
-        fs::write(
-            deploy_path.join(format!("{}-keypair.json", project_name)),
-            serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..]).to_string(),
-        )?;
-    }
+            .unwrap_or("unknown.s");
+        let directory = Path::new(src)
+            .parent()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
+        Some(DebugMode {
+            filename: filename.to_string(),
+            directory,
+        })
+    } else {
+        None
+    };
 
-    // Processing directories
-    let src_path = Path::new(src);
-    let entries = src_path.read_dir().map_err(|e| {
-        Error::msg(format!(
-            "Failed to read '{}' directory: {}. Run this command from the root of an sbpf project \
-             (the directory containing 'src'), or create one with `sbpf init`.",
-            src, e
-        ))
-    })?;
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir()
-            && let Some(subdir) = path.file_name().and_then(|name| name.to_str())
-        {
-            let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
-            if Path::new(&asm_file).exists() {
-                println!(
-                    "⚡️ Building \"{}\"{}",
-                    subdir,
-                    if args.debug { " (debug)" } else { "" }
-                );
-                let start = Instant::now();
-                compile_assembly(&asm_file, deploy, args.debug, args.arch.into())?;
-                let duration = start.elapsed();
-                println!(
-                    "✅ \"{}\" built successfully in {}ms!",
-                    subdir,
-                    duration.as_micros() as f64 / 1000.0
-                );
+    let options = AssemblerOption {
+        arch,
+        debug_mode,
+        ..AssemblerOption::default()
+    };
+    let assembler = Assembler::new(options);
+    let resolver = FsFileResolver::new();
+
+    let result = assembler.assemble_with_preprocess(&source_code, src, Some(&resolver));
+
+    let bytecode = match result {
+        Ok(bytecode) => bytecode,
+        Err(assemble_errors) => {
+            emit_assembler_errors(&assemble_errors)?;
+            return Err(Error::msg("Compilation failed"));
+        }
+    };
+
+    let file_name = Path::new(src).file_name().unwrap();
+
+    // write bytecode to <filename>.so or <deploypath>/<filename>.so
+    let output_path = Path::new(deploy.unwrap_or("."))
+        .join(file_name)
+        .with_extension("so");
+
+    std::fs::write(output_path, bytecode)?;
+    Ok(())
+}
+
+// Function to check if keypair file exists.
+fn has_keypair_file(dir: &Path) -> bool {
+    if dir.exists() && dir.is_dir() {
+        match fs::read_dir(dir) {
+            Ok(entries) => entries.filter_map(Result::ok).any(|entry| {
+                entry
+                    .path()
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.ends_with("-keypair.json"))
+                    .unwrap_or(false)
+            }),
+            Err(_) => false,
+        }
+    } else {
+        false
+    }
+}
+
+pub fn build(args: BuildArgs) -> Result<()> {
+    match args.path {
+        Some(path) => {
+            println!(
+                "⚡️ Building \"{}\"{}",
+                path,
+                if args.debug { " (debug)" } else { "" }
+            );
+            let start = Instant::now();
+            compile_assembly(&path, None, args.debug, args.arch.into())?;
+            let duration = start.elapsed();
+            println!(
+                "✅ \"{}\" built successfully in {}ms!",
+                path,
+                duration.as_micros() as f64 / 1000.0
+            );
+        }
+        None => {
+            // Set src/out directory
+            let src = "src";
+            let deploy = args.deploy_dir.as_deref().unwrap_or("deploy");
+
+            // Create necessary directories
+            create_dir_all(deploy)?;
+
+            // Check if keypair file exists. If not, create one.
+            let deploy_path = Path::new(deploy);
+            if !has_keypair_file(deploy_path) {
+                let project_path = std::env::current_dir()?;
+                let project_name = project_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("program");
+                let mut rng = rand::rng();
+                fs::write(
+                    deploy_path.join(format!("{}-keypair.json", project_name)),
+                    serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..])
+                        .to_string(),
+                )?;
+            }
+
+            // Processing directories
+            let src_path = Path::new(src);
+            let entries = src_path.read_dir().map_err(|e| {
+                Error::msg(format!(
+                    "Failed to read '{}' directory: {}. Run this command from the root of an sbpf \
+                     project (the directory containing 'src'), or create one with `sbpf init`.",
+                    src, e
+                ))
+            })?;
+
+            for entry in entries {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir()
+                    && let Some(subdir) = path.file_name().and_then(|name| name.to_str())
+                {
+                    let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
+                    if Path::new(&asm_file).exists() {
+                        println!(
+                            "⚡️ Building \"{}\"{}",
+                            subdir,
+                            if args.debug { " (debug)" } else { "" }
+                        );
+                        let start = Instant::now();
+                        compile_assembly(&asm_file, Some(deploy), args.debug, args.arch.into())?;
+                        let duration = start.elapsed();
+                        println!(
+                            "✅ \"{}\" built successfully in {}ms!",
+                            subdir,
+                            duration.as_micros() as f64 / 1000.0
+                        );
+                    }
+                }
             }
         }
     }
-
     Ok(())
 }
