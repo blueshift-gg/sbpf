@@ -220,6 +220,12 @@ pub fn reuse_debug_sections(
             SectionType::DebugLoc(debug_section)
         } else if debug_section.name() == SectionId::DebugRanges.name() {
             SectionType::DebugRanges(debug_section)
+        } else if debug_section.name() == ".debug_str_offsets" {
+            eprintln!(
+                ".debug_str_offsets is not supported by the SVM; the section will be skipped and \
+                 omitted from the bytecode."
+            );
+            continue;
         } else {
             eprintln!(
                 "Unimplemented debug section: {}, consider adding it",
