@@ -31,10 +31,17 @@ pub struct BuildArgs {
         help = "Target architecture (v0 or v3)"
     )]
     arch: ArchArg,
-    #[arg(short = 'd', long, help = "Output deploy directory")]
+    #[arg(
+        short = 'd',
+        long,
+        help = "Output deploy directory; ignored when files are given"
+    )]
     pub deploy_dir: Option<String>,
-    #[arg(short = 'p', long, help = "Path to the file to be assembled")]
-    pub path: Option<String>,
+    #[arg(
+        help = "Files to be assembled. If omitted, builds every file matching the pattern \
+                src/<subdir>/<subdir>.s"
+    )]
+    pub path: Vec<String>,
 }
 
 #[derive(Clone, Copy, ValueEnum, Default)]
@@ -239,79 +246,86 @@ fn has_keypair_file(dir: &Path) -> bool {
     }
 }
 
+fn compile_result(path: &str, deploy: Option<&str>, debug: bool, arch: SbpfArch) -> Result<()> {
+    println!(
+        "⚡️ Building \"{}\"{}",
+        path,
+        if debug { " (debug)" } else { "" }
+    );
+    let start = Instant::now();
+    compile_assembly(path, deploy, debug, arch)?;
+    let duration = start.elapsed();
+    println!(
+        "✅ \"{}\" built successfully in {}ms!",
+        path,
+        duration.as_micros() as f64 / 1000.0
+    );
+    Ok(())
+}
+
 pub fn build(args: BuildArgs) -> Result<()> {
-    match args.path {
-        Some(path) => {
-            println!(
-                "⚡️ Building \"{}\"{}",
-                path,
-                if args.debug { " (debug)" } else { "" }
-            );
-            let start = Instant::now();
-            compile_assembly(&path, None, args.debug, args.arch.into())?;
-            let duration = start.elapsed();
-            println!(
-                "✅ \"{}\" built successfully in {}ms!",
-                path,
-                duration.as_micros() as f64 / 1000.0
-            );
-        }
-        None => {
-            // Set src/out directory
-            let src = "src";
-            let deploy = args.deploy_dir.as_deref().unwrap_or("deploy");
+    if !args.path.is_empty() {
+        let mut outputs = HashMap::new();
+        for path in &args.path {
+            let Some(name) = Path::new(path).file_stem() else {
+                continue; // let read_to_string report the real problem
+            };
 
-            // Create necessary directories
-            create_dir_all(deploy)?;
-
-            // Check if keypair file exists. If not, create one.
-            let deploy_path = Path::new(deploy);
-            if !has_keypair_file(deploy_path) {
-                let project_path = std::env::current_dir()?;
-                let project_name = project_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("program");
-                let mut rng = rand::rng();
-                fs::write(
-                    deploy_path.join(format!("{}-keypair.json", project_name)),
-                    serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..])
-                        .to_string(),
-                )?;
+            if let Some(seen) = outputs.insert(name, path) {
+                return Err(Error::msg(format!(
+                    "'{}' and '{}' would both be written to '{}.so'",
+                    seen,
+                    path,
+                    name.display()
+                )));
             }
+        }
+        for path in &args.path {
+            compile_result(path, None, args.debug, args.arch.into())?;
+        }
+    } else {
+        // Set src/out directory
+        let src = "src";
+        let deploy = args.deploy_dir.as_deref().unwrap_or("deploy");
 
-            // Processing directories
-            let src_path = Path::new(src);
-            let entries = src_path.read_dir().map_err(|e| {
-                Error::msg(format!(
-                    "Failed to read '{}' directory: {}. Run this command from the root of an sbpf \
-                     project (the directory containing 'src'), or create one with `sbpf init`.",
-                    src, e
-                ))
-            })?;
+        // Create necessary directories
+        create_dir_all(deploy)?;
 
-            for entry in entries {
-                let entry = entry?;
-                let path = entry.path();
-                if path.is_dir()
-                    && let Some(subdir) = path.file_name().and_then(|name| name.to_str())
-                {
-                    let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
-                    if Path::new(&asm_file).exists() {
-                        println!(
-                            "⚡️ Building \"{}\"{}",
-                            subdir,
-                            if args.debug { " (debug)" } else { "" }
-                        );
-                        let start = Instant::now();
-                        compile_assembly(&asm_file, Some(deploy), args.debug, args.arch.into())?;
-                        let duration = start.elapsed();
-                        println!(
-                            "✅ \"{}\" built successfully in {}ms!",
-                            subdir,
-                            duration.as_micros() as f64 / 1000.0
-                        );
-                    }
+        // Check if keypair file exists. If not, create one.
+        let deploy_path = Path::new(deploy);
+        if !has_keypair_file(deploy_path) {
+            let project_path = std::env::current_dir()?;
+            let project_name = project_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("program");
+            let mut rng = rand::rng();
+            fs::write(
+                deploy_path.join(format!("{}-keypair.json", project_name)),
+                serde_json::json!(SigningKey::generate(&mut rng).to_keypair_bytes()[..])
+                    .to_string(),
+            )?;
+        }
+
+        // Processing directories
+        let src_path = Path::new(src);
+        let entries = src_path.read_dir().map_err(|e| {
+            Error::msg(format!(
+                "Failed to read '{}' directory: {}. Run this command from the root of an sbpf \
+                 project (the directory containing 'src'), or create one with `sbpf init`.",
+                src, e
+            ))
+        })?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir()
+                && let Some(subdir) = path.file_name().and_then(|name| name.to_str())
+            {
+                let asm_file = format!("{}/{}/{}.s", src, subdir, subdir);
+                if Path::new(&asm_file).exists() {
+                    compile_result(&asm_file, Some(deploy), args.debug, args.arch.into())?;
                 }
             }
         }
