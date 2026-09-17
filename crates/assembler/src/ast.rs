@@ -335,12 +335,6 @@ fn resolve_label_references(
                 if let Some(target_offset) = target_offset {
                     let rel_offset = (target_offset as i64 - *offset as i64) / 8 - 1;
                     inst.off = Some(Either::Right(rel_offset as i16));
-                } else {
-                    errors.push(CompileError::UndefinedLabel {
-                        label: label.clone(),
-                        span: inst.span.clone(),
-                        custom_label: None,
-                    });
                 }
             } else if inst.opcode == Opcode::Call
                 && let Some(Either::Left(label)) = &inst.imm
@@ -374,13 +368,23 @@ fn resolve_label_references(
                     };
                     // Replace label with immediate value
                     inst.imm = Some(Either::Right(Number::Addr(abs_offset)));
-                } else {
-                    errors.push(CompileError::UndefinedLabel {
-                        label: name.clone(),
-                        span: inst.span.clone(),
-                        custom_label: None,
-                    });
                 }
+            }
+
+            // Check if any identifier in `inst.off` or `inst.imm` is unresolved.
+            if let Some(Either::Left(label)) = &inst.off {
+                errors.push(CompileError::UndefinedLabel {
+                    label: label.clone(),
+                    span: inst.span.clone(),
+                    custom_label: None,
+                });
+            }
+            if let Some(Either::Left(label)) = &inst.imm {
+                errors.push(CompileError::UndefinedLabel {
+                    label: label.clone(),
+                    span: inst.span.clone(),
+                    custom_label: None,
+                });
             }
         }
     }

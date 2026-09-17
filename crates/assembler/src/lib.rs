@@ -496,6 +496,57 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_undefined_label_error() {
+        let instructions = [
+            "mov64 r1, UNDEF",
+            "jeq r1, UNDEF, done",
+            "jeq32 r1, UNDEF, done",
+            "stb [r1+0], UNDEF",
+            "stb [r1+UNDEF], 0x1",
+            "stxb [r1+UNDEF], r2",
+            "ldxb r1, [r2+UNDEF]",
+            "call UNDEF",
+            "lddw r1, UNDEF",
+            "ja UNDEF",
+            "jeq r1, 0x1, UNDEF",
+            "jeq r1, r2, UNDEF",
+            "jeq32 r1, 0x1, UNDEF",
+            "jeq32 r1, r2, UNDEF",
+        ];
+
+        for instruction in instructions {
+            let source = format!(
+                r#"
+                .globl e
+                e:
+                    {instruction}
+                    exit
+                done:
+                    exit
+                "#
+            );
+            let instruction_start = source.find(instruction).unwrap();
+            let instruction_end = instruction_start + instruction.len();
+            let errors = assemble(&source).unwrap_err();
+
+            assert_eq!(errors.len(), 1, "unexpected errors for `{instruction}`");
+            match &errors[0] {
+                CompileError::UndefinedLabel { label, span, .. } => {
+                    assert_eq!(label, "UNDEF", "unexpected label for `{instruction}`");
+                    assert_eq!(
+                        span,
+                        &(instruction_start..instruction_end),
+                        "unexpected span for `{instruction}`"
+                    );
+                }
+                error => {
+                    panic!("unexpected error for `{instruction}`: {error:?}")
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_assemble_extern_directive() {
         let source = r#"
         .globl entrypoint
