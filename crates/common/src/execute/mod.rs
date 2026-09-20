@@ -64,6 +64,10 @@ pub trait Vm {
     fn get_stack_frame_size(&self) -> u64;
 
     fn handle_syscall(&mut self, name: &str) -> ExecutionResult<u64>;
+
+    fn resolve_call_target(&self, target: u64) -> ExecutionResult<usize> {
+        Ok(target as usize)
+    }
 }
 
 pub fn execute_binary_immediate(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionResult<()> {

@@ -4,6 +4,11 @@
 .rodata
   msg: .ascii "Hello world."
 
+.rodata
+  a: .quad 0x3
+  b: .quad a          # points to a in .rodata
+  c: .quad func       # points to func in .text
+
 .text
 .globl entrypoint
 entrypoint:
@@ -17,4 +22,17 @@ entrypoint:
   lddw r1, msg
   lddw r2, 12
   call sol_log_
+
+  lddw r4, b          # Load b into r4
+  ldxdw r4, [r4+0x0]  # Load address of a from b
+  ldxdw r1, [r4+0x0]  # Load value of a (0x3) into r1
+  lddw r8, c          # Load c into r8
+  ldxdw r8, [r8+0x0]  # Load func address into r8
+  callx r8            # Call func
+
   exit
+
+func:
+  call sol_log_64_
+  exit
+

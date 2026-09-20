@@ -73,7 +73,7 @@ directive_short = { (".short" | ".half") ~ number ~ ("," ~ number)* }
 directive_word  = { ".word" ~ number ~ ("," ~ number)* }
 directive_int   = { ".int" ~ number ~ ("," ~ number)* }
 directive_long  = { ".long" ~ number ~ ("," ~ number)* }
-directive_quad  = { ".quad" ~ number ~ ("," ~ number)* }
+directive_quad  = { ".quad" ~ (number | symbol) ~ ("," ~ (number | symbol))* }
 
 directive_inner = {
     directive_globl

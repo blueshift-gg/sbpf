@@ -373,15 +373,15 @@ impl Program {
 
         // Parse rodata section
         let rodata = if let Some((data, base_addr)) = rodata_info {
-            let mut section = RodataSection::parse(data, base_addr, &rodata_refs);
             let (data_relocs, text_relocs) = self.classify_relocations(
-                &section.data,
+                &data,
                 base_addr,
-                text_section_offset,
                 text_section.data.len() as u64,
                 text_sh_addr,
                 &slot_to_idx,
+                &mut rodata_refs,
             );
+            let mut section = RodataSection::parse(data, base_addr, &rodata_refs);
             section.data_relocations = data_relocs;
             section.text_relocations = text_relocs;
             Some(section)
@@ -492,10 +492,10 @@ impl Program {
         &self,
         rodata_data: &[u8],
         rodata_base: u64,
-        text_offset: u64,
         text_len: u64,
         text_sh_addr: u64,
         slot_to_idx: &[usize],
+        rodata_refs: &mut BTreeSet<u64>,
     ) -> (Vec<usize>, Vec<(usize, usize)>) {
         let rodata_len = rodata_data.len();
         let text_end_addr = text_sh_addr + text_len;
@@ -506,14 +506,13 @@ impl Program {
             if r.rel_type != crate::relocation::RelocationType::R_BPF_64_RELATIVE {
                 continue;
             }
-            if r.offset >= text_offset && r.offset < text_offset + text_len {
-                continue;
-            }
             if r.offset < rodata_base || r.offset + 8 > rodata_base + rodata_len as u64 {
                 continue;
             }
             let offset_in_blob = (r.offset - rodata_base) as usize;
             data_relocs.push(offset_in_blob);
+            rodata_refs.insert(r.offset);
+            rodata_refs.insert(r.offset + 8);
 
             let imm_offset = offset_in_blob + 4;
             if imm_offset + 4 <= rodata_len {
@@ -525,6 +524,8 @@ impl Program {
                     if target_slot < slot_to_idx.len() {
                         text_relocs.push((offset_in_blob, slot_to_idx[target_slot]));
                     }
+                } else if ptr >= rodata_base && ptr < rodata_base + rodata_len as u64 {
+                    rodata_refs.insert(ptr);
                 }
             }
         }

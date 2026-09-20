@@ -44,7 +44,7 @@ pub fn execute_call_register(vm: &mut dyn Vm, inst: &Instruction) -> ExecutionRe
     if reg_num >= 10 {
         return Err(ExecutionError::InvalidOperand);
     }
-    let target = vm.get_register(reg_num) as usize;
+    let target = vm.resolve_call_target(vm.get_register(reg_num))?;
 
     if vm.get_call_depth() >= vm.max_call_depth() {
         return Err(ExecutionError::CallDepthExceeded(vm.max_call_depth()));

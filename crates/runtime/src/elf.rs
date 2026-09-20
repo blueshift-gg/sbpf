@@ -66,7 +66,7 @@ fn apply_relocations(instructions: &mut [Instruction], rodata: &mut [u8], sectio
     // 2. Apply data relocations.
     for &offset in &section.data_relocations {
         if offset + 8 <= rodata.len() {
-            let ptr = u64::from_le_bytes(rodata[offset..offset + 8].try_into().unwrap());
+            let ptr = u64::from_le_bytes(rodata[offset..offset + 8].try_into().unwrap()) >> 32;
             if ptr >= elf_base && ptr < elf_end {
                 let relocated = Memory::RODATA_START + (ptr - elf_base);
                 rodata[offset..offset + 8].copy_from_slice(&relocated.to_le_bytes());
