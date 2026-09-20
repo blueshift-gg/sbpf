@@ -374,7 +374,7 @@ fn rodata_directive_size(pair: &Pair<Rule>) -> u64 {
             Rule::directive_quad => {
                 return inner
                     .into_inner()
-                    .filter(|p| p.as_rule() == Rule::number)
+                    .filter(|p| matches!(p.as_rule(), Rule::number | Rule::symbol))
                     .count() as u64
                     * 8;
             }
@@ -525,7 +525,13 @@ fn process_label(pair: Pair<Rule>, ctx: &mut ParseContext) {
 
             // Handle rodata label with directive
             if let Some(dir_pair) = directive_opt {
-                match process_rodata_directive(label_name.clone(), label_span.clone(), dir_pair) {
+                match process_rodata_directive(
+                    label_name.clone(),
+                    label_span.clone(),
+                    dir_pair,
+                    ctx.ast,
+                    ctx.rodata_offset,
+                ) {
                     Ok(rodata) => {
                         let size = rodata.get_size();
                         ctx.ast.rodata_nodes.push(ASTNode::ROData {

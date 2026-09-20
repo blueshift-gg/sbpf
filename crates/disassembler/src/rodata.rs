@@ -1,6 +1,6 @@
 use {
     serde::{Deserialize, Serialize},
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,13 +75,20 @@ impl RodataSection {
         !self.items.is_empty()
     }
 
-    pub fn to_asm(&self) -> String {
+    pub fn to_asm(&self, rodata_relocation_labels: &HashMap<usize, String>) -> String {
         if self.items.is_empty() {
             return String::new();
         }
 
         let mut output = String::from(".rodata\n");
         for item in &self.items {
+            let offset = item.offset as usize;
+            if item.data.len() == 8
+                && let Some(label) = rodata_relocation_labels.get(&offset)
+            {
+                output.push_str(&format!("  {}: .quad {}\n", item.label, label));
+                continue;
+            }
             output.push_str(&format!("  {}\n", item.to_asm()));
         }
         output
@@ -117,7 +124,7 @@ fn parse_rodata_items(
     let mut offsets: Vec<u64> = references
         .iter()
         .filter_map(|&addr| {
-            if addr >= base_address && addr < base_address + data.len() as u64 {
+            if addr >= base_address && addr <= base_address + data.len() as u64 {
                 Some(addr - base_address)
             } else {
                 None
@@ -127,13 +134,9 @@ fn parse_rodata_items(
 
     // Treat entire rodata as one item if there are no references.
     if offsets.is_empty() {
-        let trimmed = trim_trailing_zeros(data);
-        if trimmed.is_empty() {
-            return Vec::new();
-        }
-        let data_type = infer_type(trimmed);
+        let data_type = infer_type(data);
         let label = generate_label(0, &data_type);
-        return vec![RodataItem::new(label, 0, trimmed.to_vec(), data_type)];
+        return vec![RodataItem::new(label, 0, data.to_vec(), data_type)];
     }
 
     // Add offset 0 if the first reference isn't at the start.
@@ -153,8 +156,7 @@ fn parse_rodata_items(
         let end = if i + 1 < offsets.len() {
             (offsets[i + 1] as usize).min(data.len())
         } else {
-            let remaining = &data[start..];
-            start + trim_trailing_zeros(remaining).len()
+            data.len()
         };
 
         if start < end {
@@ -166,12 +168,6 @@ fn parse_rodata_items(
     }
 
     items
-}
-
-#[inline]
-fn trim_trailing_zeros(data: &[u8]) -> &[u8] {
-    let end = data.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
-    &data[..end]
 }
 
 fn infer_type(data: &[u8]) -> RodataType {
@@ -192,8 +188,9 @@ fn infer_type(data: &[u8]) -> RodataType {
 
 #[inline]
 fn is_ascii(s: &str) -> bool {
-    s.chars()
-        .all(|c| c.is_ascii_graphic() || c == ' ' || c == '\t' || c == '\n' || c == '\r')
+    s.chars().all(|c| {
+        c != '"' && (c.is_ascii_graphic() || c == ' ' || c == '\t' || c == '\n' || c == '\r')
+    })
 }
 
 fn generate_label(offset: u64, data_type: &RodataType) -> String {
@@ -319,7 +316,7 @@ mod tests {
     #[test]
     fn test_rodata_section_empty() {
         let section = RodataSection::parse(Vec::new(), 0x100, &BTreeSet::new());
-        assert!(section.to_asm().is_empty());
+        assert!(section.to_asm(&HashMap::new()).is_empty());
     }
 
     #[test]
@@ -339,13 +336,5 @@ mod tests {
 
         let section_empty = RodataSection::parse(Vec::new(), 0x100, &BTreeSet::new());
         assert!(!section_empty.has_items());
-    }
-
-    #[test]
-    fn test_trim_trailing_zeros() {
-        assert_eq!(trim_trailing_zeros(&[1, 2, 3, 0, 0]), &[1, 2, 3]);
-        assert_eq!(trim_trailing_zeros(&[0, 0, 0]), &[] as &[u8]);
-        assert_eq!(trim_trailing_zeros(&[1, 0, 2, 0]), &[1, 0, 2]);
-        assert_eq!(trim_trailing_zeros(&[]), &[] as &[u8]);
     }
 }

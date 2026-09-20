@@ -161,10 +161,10 @@ debug_hash_v0 = "f0d33e22aa0e40e6bf264dca8ee629ff538a1462f671c07f5c680652ddd26d9
 
 [cases.rodata]
 file = "rodata.s"
-hash = "d1134d7ee118811ed52a86b5aa3980e8d2acf7522830544ca2dc14b8caea5c64"
-debug_hash = "4dda6240805b5eec5da2c5341266d257c8775e9031974cbd7976336980402a50"
-hash_v0 = "1220a8e5abe1346012bb5ca02b7000627fdbdaffb3465b4b45c5d91ec931eddc"
-debug_hash_v0 = "3927b5d5bfc535e48f24f0abb2edccacf6be74bc33a0966af11028af7cc2e1f8"
+hash = "0fb869488ce2413bb5606ebf99fe8a0cba6e0bb3f09a1ea3dfd6d5b9d2b213b3"
+debug_hash = "ecc2154775910200da1b58528a0c38e80a4de2b1296ff8c2cfad8ed7b68ef54f"
+hash_v0 = "69301ed535d0ae93abd007024eab2cc118c8368a036e0cac3af298bab3aad9c2"
+debug_hash_v0 = "9617636c44419e0de435346e1aa166a0dc85f1ddfe66760420d95bad7a3f0df2"
 
 [cases.store_imm]
 file = "store_imm.s"

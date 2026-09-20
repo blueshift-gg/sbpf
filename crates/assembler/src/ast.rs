@@ -429,6 +429,10 @@ fn resolve_label_references(
             let ASTNode::ROData { rodata, offset } = node else {
                 continue;
             };
+            let is_quad = match rodata.args.first() {
+                Some(Token::Directive(directive, _)) => directive == "quad",
+                _ => continue,
+            };
             let Some(Token::VectorLiteral(bytes, _)) = rodata.args.get_mut(1) else {
                 continue;
             };
@@ -437,14 +441,27 @@ fn resolve_label_references(
             };
 
             // Write the target address at the relocation offset.
-            if let Some(relocation_bytes) = bytes
-                .get_mut(relocation_offset_in_node as usize..relocation_offset_in_node as usize + 8)
-            {
-                for (byte, value) in relocation_bytes.iter_mut().zip(value.to_le_bytes()) {
-                    *byte = Number::Int(i64::from(value));
+            if is_quad {
+                // Replace one 8-byte element
+                if relocation_offset_in_node % 8 == 0
+                    && let Some(relocation_value) =
+                        bytes.get_mut((relocation_offset_in_node / 8) as usize)
+                {
+                    *relocation_value = Number::Int(value as i64);
+                    written = true;
+                    break;
                 }
-                written = true;
-                break;
+            } else {
+                // Replace individual byte elements
+                if let Some(relocation_bytes) = bytes.get_mut(
+                    relocation_offset_in_node as usize..relocation_offset_in_node as usize + 8,
+                ) {
+                    for (byte, value) in relocation_bytes.iter_mut().zip(value.to_le_bytes()) {
+                        *byte = Number::Int(i64::from(value));
+                    }
+                    written = true;
+                    break;
+                }
             }
         }
 

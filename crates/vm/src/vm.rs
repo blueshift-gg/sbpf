@@ -292,6 +292,25 @@ impl<H: SyscallHandler> Vm for SbpfVm<H> {
             )
             .map_err(|e| ExecutionError::SyscallError(e.to_string()))
     }
+
+    fn resolve_call_target(&self, target: u64) -> Result<usize, ExecutionError> {
+        const V3_BYTECODE_VADDR: u64 = 1 << 32;
+
+        if target < V3_BYTECODE_VADDR {
+            return Ok(target as usize);
+        }
+
+        // Resolve the v3 virtual address to an instruction index.
+        let target_offset = target - V3_BYTECODE_VADDR;
+        let mut offset = 0;
+        for (index, instruction) in self.program.iter().enumerate() {
+            if offset == target_offset {
+                return Ok(index);
+            }
+            offset += instruction.get_size();
+        }
+        Err(ExecutionError::InvalidOperand)
+    }
 }
 
 #[cfg(test)]

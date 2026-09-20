@@ -505,7 +505,12 @@ impl Program {
 mod tests {
     use {
         super::*,
-        crate::{SbpfArch, parser::parse},
+        crate::{
+            SbpfArch,
+            astnode::ASTNode,
+            parser::{Token, parse},
+        },
+        sbpf_common::inst_param::Number,
     };
 
     #[test]
@@ -642,6 +647,87 @@ entrypoint:
         // second header: bytecode (PF_X, vaddr=1<<32)
         assert_eq!(headers[1].p_flags, ProgramHeader::PF_X);
         assert_eq!(headers[1].p_vaddr, ProgramHeader::V3_BYTECODE_VADDR);
+    }
+
+    #[test]
+    fn test_v0_with_rodata_relocations() {
+        let source = r#"
+        .rodata
+        data_0000: .byte 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11
+        data_0008: .quad data_0000
+        data_0010: .quad target_fn
+        .text
+        .globl entrypoint
+        entrypoint:
+            exit
+        target_fn:
+            exit
+        "#;
+
+        // Parse and check rodata nodes (arch v0)
+        let v0 = parse(source, SbpfArch::V0).unwrap();
+        let ASTNode::ROData { rodata, offset } = &v0.data_section.get_nodes()[1] else {
+            panic!("expected rodata node");
+        };
+        assert_eq!(rodata.name, "data_0008");
+        assert_eq!(*offset, 8);
+        assert!(matches!(
+            (&rodata.args[0], &rodata.args[1]),
+            (Token::Directive(directive, _), Token::VectorLiteral(values, _))
+                if directive == "quad"
+                    && matches!(values.as_slice(), [Number::Int(value)]
+                        if *value as u64 == (64 + 3 * 56 + 16) << 32)
+        ));
+        let ASTNode::ROData { rodata, offset } = &v0.data_section.get_nodes()[2] else {
+            panic!("expected rodata node");
+        };
+        assert_eq!(rodata.name, "data_0010");
+        assert_eq!(*offset, 16);
+        assert!(matches!(
+            (&rodata.args[0], &rodata.args[1]),
+            (Token::Directive(directive, _), Token::VectorLiteral(values, _))
+                if directive == "quad"
+                    && matches!(values.as_slice(), [Number::Int(value)]
+                        if *value as u64 == (64 + 3 * 56 + 8) << 32)
+        ));
+
+        // v0 should have 2 dynamic relocations.
+        assert_eq!(
+            v0.relocation_data.get_rel_dyns(),
+            vec![
+                (24, RelocationType::RSbf64Relative, String::new()),
+                (32, RelocationType::RSbf64Relative, String::new()),
+            ]
+        );
+
+        // Parse and check rodata nodes (arch v3)
+        let v3 = parse(source, SbpfArch::V3).unwrap();
+        let ASTNode::ROData { rodata, offset } = &v3.data_section.get_nodes()[1] else {
+            panic!("expected rodata node");
+        };
+        assert_eq!(rodata.name, "data_0008");
+        assert_eq!(*offset, 8);
+        assert!(matches!(
+            (&rodata.args[0], &rodata.args[1]),
+            (Token::Directive(directive, _), Token::VectorLiteral(values, _))
+                if directive == "quad"
+                    && matches!(values.as_slice(), [Number::Int(0)])
+        ));
+        let ASTNode::ROData { rodata, offset } = &v3.data_section.get_nodes()[2] else {
+            panic!("expected rodata node");
+        };
+        assert_eq!(rodata.name, "data_0010");
+        assert_eq!(*offset, 16);
+        assert!(matches!(
+            (&rodata.args[0], &rodata.args[1]),
+            (Token::Directive(directive, _), Token::VectorLiteral(values, _))
+                if directive == "quad"
+                    && matches!(values.as_slice(), [Number::Int(value)]
+                        if *value as u64 == ProgramHeader::V3_BYTECODE_VADDR + 8)
+        ));
+
+        // v3 should have no dynamic relocations.
+        assert!(v3.relocation_data.get_rel_dyns().is_empty());
     }
 
     #[test]

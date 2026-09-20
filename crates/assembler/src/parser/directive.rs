@@ -1,6 +1,7 @@
 use {
     super::{ParseContext, Rule, Token, common::parse_number},
     crate::{
+        ast::AST,
         astnode::{ASTNode, ExternDecl, GlobalDecl, ROData, RodataDecl},
         errors::CompileError,
     },
@@ -101,7 +102,13 @@ pub fn process_directive_inner(pair: Pair<Rule>, ctx: &mut ParseContext) {
                 if ctx.rodata_phase
                     && let Some((label_name, label_span)) = ctx.pending_rodata_label.take()
                 {
-                    match process_rodata_directive(label_name, label_span, pair_clone) {
+                    match process_rodata_directive(
+                        label_name,
+                        label_span,
+                        pair_clone,
+                        ctx.ast,
+                        ctx.rodata_offset,
+                    ) {
                         Ok(rodata) => {
                             let size = rodata.get_size();
                             ctx.ast.rodata_nodes.push(ASTNode::ROData {
@@ -124,6 +131,8 @@ pub fn process_rodata_directive(
     label_name: String,
     label_span: std::ops::Range<usize>,
     pair: Pair<Rule>,
+    ast: &mut AST,
+    rodata_offset: u64,
 ) -> Result<ROData, CompileError> {
     let inner_pair = if pair.as_rule() == Rule::directive_inner {
         pair
@@ -184,9 +193,19 @@ pub fn process_rodata_directive(
                 };
 
                 let mut values = Vec::new();
-                for byte_inner in inner.into_inner() {
-                    if byte_inner.as_rule() == Rule::number {
-                        values.push(parse_number(byte_inner)?);
+                for operand in inner.into_inner() {
+                    match operand.as_rule() {
+                        Rule::number => values.push(parse_number(operand)?),
+                        Rule::symbol if directive_name == "quad" => {
+                            // Add rodata relocation to AST
+                            ast.add_rodata_relocation(
+                                rodata_offset + values.len() as u64 * 8,
+                                operand.as_str().to_string(),
+                            );
+                            // Placeholder value which will be resolved later
+                            values.push(Number::Int(0));
+                        }
+                        _ => {}
                     }
                 }
 
