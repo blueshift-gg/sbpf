@@ -22,10 +22,27 @@ concurrency:
 
 jobs:
   sbpf-linker:
-    name: sbpf-linker against local sbpf crates
+    name: Sbpf-linker against local sbpf crates
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read # checkouts
+      statuses: write # pending/success/failure
     steps:
+      # the comment workflow can't report before it is triggered, so spawn its status row here
+      - name: Sbpf-linker fork test 
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'pending',
+              context: 'Test sbpf-linker fork',
+              description: 'Comment /test-sbpf-linker <owner>/<repo> <ref> to run',
+            });
+
       - uses: actions/checkout@v5
 
       - name: Checkout sbpf-linker 
@@ -34,57 +51,8 @@ jobs:
           repository: blueshift-gg/sbpf-linker
           ref: sbpf-linker-next
           path: sbpf-linker
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly
-          components: rust-src
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: sbpf-linker
-          cache-on-failure: true
-
-      - name: Install FileCheck
-        run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
-
-      - name: Patch sbpf crates to this checkout
-        working-directory: sbpf-linker
-        run: |
-          sbpf_ver="$(cargo metadata --manifest-path ../Cargo.toml --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.name == "sbpf-common") | .version')"
-          echo "patching sbpf-assembler and sbpf-common to =${sbpf_ver} (local path)"
-          for crate in sbpf-assembler sbpf-common; do
-            sed -E -i'' \
-              -e "s|^(${crate} = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
-              -e "s|^(${crate} = \{ version = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
-              Cargo.toml
-          done
-          {
-            echo ""
-            echo '[patch."https://github.com/blueshift-gg/sbpf.git"]'
-            echo "sbpf-assembler = { path = \"../crates/assembler\" }"
-            echo "sbpf-common = { path = \"../crates/common\" }"
-          } >> Cargo.toml
-
-      - name: Verify the patch took effect
-        working-directory: sbpf-linker
-        run: |
-          cargo metadata --format-version 1 > "$RUNNER_TEMP/linker-metadata.json"
-          checkout_root="$(realpath ..)"
-          for crate in assembler common; do
-            expected_manifest="$checkout_root/crates/$crate/Cargo.toml"
-            if ! jq -e --arg name "sbpf-$crate" --arg manifest "$expected_manifest" '
-              [.resolve.nodes[].id] as $resolved
-              | [.packages[]
-                 | select(.id as $id | $resolved | index($id))
-                 | select(.name == $name)]
-              | length > 0 and all(.[]; .source == null and .manifest_path == $manifest)
-            ' "$RUNNER_TEMP/linker-metadata.json"; then
-              echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the dependency source and [patch] configuration"
-              exit 1
-            fi
-          done
+          
+      - uses: ./.github/actions/setup-sbpf-linker
 
       - name: Run sbpf-linker test suite
         id: linker-tests
