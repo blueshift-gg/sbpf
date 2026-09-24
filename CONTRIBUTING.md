@@ -24,11 +24,20 @@ Feel free to directly [open a PR](https://github.com/blueshift-gg/sbpf/compare).
 
 ## Compatibility with sbpf-linker
 
-[sbpf-linker](https://github.com/blueshift-gg/sbpf-linker) is a downstream consumer of the sbpf API. It relinks BPF binaries into it's sbpf compatible form, so changes to this repository must account for compatibility with the linker.
+[sbpf-linker](https://github.com/blueshift-gg/sbpf-linker) is a downstream consumer of the sbpf API. It relinks BPF binaries into its sbpf-compatible form, so changes to this repository must account for compatibility with the linker.
 
-The [downstream CI job](https://github.com/blueshift-gg/sbpf/blob/master/.github/workflows/downstream-sbpf-linker.yml) runs on every PR to detect if a compatibility break was introduced. If so, you’ll need to submit a PR to sbpf-linker porting the changes, to do that you'll follow this flow:
+The [downstream CI job](https://github.com/blueshift-gg/sbpf/blob/master/.github/workflows/downstream-sbpf-linker.yml) runs on every PR against sbpf-linker. If your changes break compatibility, submit a PR to sbpf-linker that ports the changes, following these steps:
 
 1. Clone sbpf-linker and create a feature branch based on the [downstream gate branch](https://github.com/blueshift-gg/sbpf-linker/tree/sbpf-linker-next).
 2. Update both [sbpf dependencies](https://github.com/blueshift-gg/sbpf-linker/blob/8edec876120bcc3e0679d5636b724ddd994df1cc/Cargo.toml#L18-L19) to point to your sbpf crates version (you can also specify a commit with rev tag).
 3. Adapt the linker to your changes and verify that its tests pass.
 4. Open a companion PR and link it from your sbpf PR so maintainers can coordinate merging both.
+
+### Other Possible Failures: 
+
+1. If the checkout or setup step fails, your change isn't the cause. Re-run the job, and ping a maintainer if it keeps failing.
+2. Bug in your PR that your own tests missed. Fix the PR, and add a test to sbpf.
+3. Your change exposed an old sbpf bug. Fix sbpf, possibly as a separate PR.
+4. Your change exposed an old sbpf-linker bug. Fix sbpf-linker.
+
+*For test failures: Does the failing test pass against sbpf master? If yes, your change caused or exposed it.*

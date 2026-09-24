@@ -2,11 +2,6 @@ name: downstream
 
 # Build and test sbpf-linker at sbpf-linker-next HEAD against the sbpf
 # crates in this checkout, so API breakage is caught here before a release is published.
-#
-# The git-source patch below replaces the linker's sbpf dependencies with this
-# checkout. The version rewrite keeps local versions compatible with explicit
-# version requirements. Verification checks both crates resolved manifest paths
-# so an unused patch cannot silently result in testing the wrong code.
 
 on:
   push:
@@ -31,34 +26,89 @@ jobs:
       - uses: actions/checkout@v5 # put sbpf repo into the workspace
 
       - name: Checkout sbpf-linker 
+        id: linker-checkout
         uses: actions/checkout@v5
         with:
           repository: blueshift-gg/sbpf-linker
           ref: sbpf-linker-next
           path: sbpf-linker
           
+      - name: Checkout failed
+        if: ${{ failure() && steps.linker-checkout.outcome == 'failure' }}
+        run: |
+          echo "::error title=sbpf-linker checkout failed::See the job summary for likely causes."
+  
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Sbpf-linker Checkout failed 
+  
+          This job checks out sbpf-linker and puts it in the workspace.
+  
+          Review the action logs to identify the cause. Possible reasons are:
+           1. sbpf-linker-next ref is missing 
+           2. GitHub internal issue
+          EOF
+    
       - uses: ./.github/actions/setup-sbpf-linker
-
+        id: linker-setup
+        
+      - name: Setup failed
+        if: ${{ failure() && steps.linker-setup.outcome == 'failure' }}
+        run: |
+          echo "::error title=sbpf-linker setup failed::See the job summary for likely causes."
+  
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Configuring sbpf-linker failed 
+  
+          This job installs required workspace dependencies and overrides sbpf-linker sbpf deps with the versions in this checkout, then verifies if the patch worked.  
+  
+          Review the action logs to identify the cause. Possible reasons are:
+           1. The `[patch]` didn't take.
+           2. The version sed missed.
+           3. Toolchain setup failed.
+          EOF
+          
+      - name: Run sbpf-linker compilation
+        id: linker-compilation
+        working-directory: sbpf-linker
+        run: cargo test --no-run  
+        
+      - name: Sbpf-linker compilation failed
+        if: ${{ failure() && steps.linker-compilation.outcome == 'failure' }}
+        run: |
+          echo "::error title=sbpf-linker compilation failed::See the job summary for likely causes."
+  
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Compiling sbpf-linker failed 
+  
+          This job tries to compile sbpf-linker with the sbpf crates from this checkout.
+  
+          If your changes touched sbpf API level, they could have broken compatibility with sbpf-linker. Review the logs to identify the cause. 
+          If so, you must submit a PR to adapt sbpf-linker to these changes.
+          
+          See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
+          EOF
+    
       - name: Run sbpf-linker test suite
         id: linker-tests
         working-directory: sbpf-linker
         run: cargo test -- --nocapture
 
-      - name: Explain downstream compatibility requirements
+      - name: Sbpf-linker test suite failed
         if: ${{ failure() && steps.linker-tests.outcome == 'failure' }}
         run: |
-          echo "::error title=Downstream sbpf-linker tests failed::If this failure is caused by an sbpf API change, a companion sbpf-linker PR is required. See the job summary and CONTRIBUTING.md for instructions."
+          echo "::error title=sbpf-linker tests failed::See the job summary for likely causes."
 
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ## Downstream compatibility check failed
-
+          ## Sbpf-linker test suite failed
+            
           This job tests sbpf-linker against the sbpf crates from this checkout.
 
-          Review the test logs to identify the cause. If your changes introduce an API incompatibility, 
-          you must submit a PR to adapt sbpf-linker to these changes.
-          Opening a companion PR does not automatically make this check pass, 
-          this workflow tests against sbpf-linker-next branch, not your companion PR branch. 
-          Coordinate with a maintainer to validate both changes.
+          The possible reasons for this failure are:
 
-          See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
+          1. API breakage. If your changes touched sbpf API level, they could have broken compatibility with sbpf-linker. See [Compatibility with sbpf-linker](https://github.com/blueshift-gg/sbpf/blob/master/CONTRIBUTING.md#compatibility-with-sbpf-linker) for the contribution process.
+          2. Bug in your PR that your own tests missed. Fix the PR, and add a test to sbpf.
+          3. Your change exposed an old sbpf bug. Fix sbpf, possibly as a separate PR.
+          4. Your change exposed an old sbpf-linker bug. Fix sbpf-linker.
+          
+          Triage hint: Does the failing test pass against sbpf master? If yes, your change caused or exposed it. 
           EOF
