@@ -1,0 +1,49 @@
+name: Set up sbpf-linker against checkout sbpf crates
+description: >
+  Installs the toolchain, points the sbpf-linker checkout in ./sbpf-linker
+  at the sbpf crates from the workspace root, then verifies they resolve locally.
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly
+        components: rust-src
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: sbpf-linker
+        cache-on-failure: true
+
+    - name: Install FileCheck
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
+
+    - name: Point sbpf deps at this checkout
+      shell: bash
+      working-directory: sbpf-linker
+      run: |
+        for crate in assembler common; do
+          cargo add --path "../crates/$crate"
+        done
+
+    - name: Verify sbpf deps resolve locally
+      shell: bash
+      working-directory: sbpf-linker
+      run: |
+        cargo metadata --format-version 1 > "$RUNNER_TEMP/linker-metadata.json"
+        checkout_root="$(realpath ..)"
+        for crate in assembler common; do
+          expected_manifest="$checkout_root/crates/$crate/Cargo.toml"
+          if ! jq -e --arg name "sbpf-$crate" --arg manifest "$expected_manifest" '
+            [.resolve.nodes[].id] as $resolved
+            | [.packages[]
+               | select(.id as $id | $resolved | index($id))
+               | select(.name == $name)]
+            | length > 0 and all(.[]; .source == null and .manifest_path == $manifest)
+          ' "$RUNNER_TEMP/linker-metadata.json"; then
+            echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the cargo add --path step"
+            exit 1
+          fi
+        done
