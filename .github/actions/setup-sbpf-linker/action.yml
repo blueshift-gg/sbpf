@@ -1,7 +1,7 @@
 name: Set up sbpf-linker against checkout sbpf crates
 description: >
-  Installs the toolchain and patches sbpf-linker checkout in ./sbpf-linker
-  to use the sbpf crates from the workspace root, then verifies the patch took effect.
+  Installs the toolchain, points the sbpf-linker checkout in ./sbpf-linker
+  at the sbpf crates from the workspace root, then verifies they resolve locally.
 
 runs:
   using: composite
@@ -20,27 +20,15 @@ runs:
       shell: bash
       run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
 
-    - name: Patch sbpf crates to this checkout
+    - name: Point sbpf deps at this checkout
       shell: bash
       working-directory: sbpf-linker
       run: |
-        sbpf_ver="$(cargo metadata --manifest-path ../Cargo.toml --no-deps --format-version 1 \
-          | jq -r '.packages[] | select(.name == "sbpf-common") | .version')"
-        echo "patching sbpf-assembler and sbpf-common to =${sbpf_ver} (local path)"
-        for crate in sbpf-assembler sbpf-common; do
-          sed -E -i'' \
-            -e "s|^(${crate} = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
-            -e "s|^(${crate} = \{ version = \")[=<>^~]*[0-9.]+([^\"]*\".*)|\1=${sbpf_ver}\2|" \
-            Cargo.toml
+        for crate in assembler common; do
+          cargo add --path "../crates/$crate"
         done
-        {
-          echo ""
-          echo '[patch."https://github.com/blueshift-gg/sbpf.git"]'
-          echo "sbpf-assembler = { path = \"../crates/assembler\" }"
-          echo "sbpf-common = { path = \"../crates/common\" }"
-        } >> Cargo.toml
 
-    - name: Verify the patch took effect
+    - name: Verify sbpf deps resolve locally
       shell: bash
       working-directory: sbpf-linker
       run: |
@@ -55,7 +43,7 @@ runs:
                | select(.name == $name)]
             | length > 0 and all(.[]; .source == null and .manifest_path == $manifest)
           ' "$RUNNER_TEMP/linker-metadata.json"; then
-            echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the dependency source and [patch] configuration"
+            echo "::error::sbpf-$crate must resolve only to $expected_manifest — check the cargo add --path step"
             exit 1
           fi
         done

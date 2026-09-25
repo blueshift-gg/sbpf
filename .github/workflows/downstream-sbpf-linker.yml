@@ -59,12 +59,11 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           ## Configuring sbpf-linker failed 
   
-          This job installs required workspace dependencies and overrides sbpf-linker sbpf deps with the versions in this checkout, then verifies if the patch worked.  
+          This job installs required workspace dependencies and points sbpf-linker's sbpf deps at this checkout, then verifies they resolve locally.
   
           Review the action logs to identify the cause. Possible reasons are:
-           1. The `[patch]` didn't take.
-           2. The version sed missed.
-           3. Toolchain setup failed.
+           1. Toolchain or FileCheck install failed.
+           2. Sbpf deps didn't resolve to this checkout.
           EOF
           
       - name: Run sbpf-linker compilation
