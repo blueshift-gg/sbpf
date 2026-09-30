@@ -35,7 +35,13 @@ pub struct RodataRelocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OptimizationConfig {
     Disabled,
-    Enabled { cfg_dump_dir: Option<PathBuf> },
+    /// Runs all optimizations: dead-function elimination, then the ALU32
+    /// extension fix-up. The fix-up assumes the input follows eBPF semantics
+    /// (LLVM / sbpf-linker output), where every ALU32 op zero-extends, and
+    /// rewrites `add32`/`sub32`/`mul32` to keep that behaviour under SBPF.
+    Enabled {
+        cfg_dump_dir: Option<PathBuf>,
+    },
 }
 
 impl Default for OptimizationConfig {
@@ -243,9 +249,9 @@ fn run_optimizations(ast: &mut AST, config: &OptimizationConfig) -> Optimization
             let mut dump_errors = Vec::new();
             if let Err(error) = std::fs::create_dir_all(dump_dir) {
                 dump_errors.push((dump_dir.to_path_buf(), error));
-                optimizer::eliminate_unreachable_functions(ast);
+                optimizer::optimize(ast);
             } else {
-                optimizer::eliminate_unreachable_functions_with_observer(ast, |stage, cfg| {
+                optimizer::optimize_with_observer(ast, |stage, cfg| {
                     let path = dump_dir.join(stage.file_name());
                     if let Err(error) = std::fs::write(&path, sbpf_analyze::dump_cfg(cfg)) {
                         dump_errors.push((path, error));
@@ -260,7 +266,7 @@ fn run_optimizations(ast: &mut AST, config: &OptimizationConfig) -> Optimization
                 });
             }
         } else {
-            optimizer::eliminate_unreachable_functions(ast);
+            optimizer::optimize(ast);
         }
     }
 

@@ -2,7 +2,7 @@ use {
     sbpf_common::opcode::Opcode,
     sbpf_ir::{
         BlockId, Cfg, CfgFunction, FunctionId,
-        graph_engine::{WorklistEngine, WorklistVisitor},
+        graph_engine::{BfsEngine, BfsVisitor},
     },
     std::collections::HashSet,
 };
@@ -74,7 +74,7 @@ fn reachable_functions(cfg: &Cfg) -> HashSet<FunctionId> {
         enqueued_funcs: HashSet<FunctionId>,
     }
 
-    impl<'a> WorklistVisitor<BlockId> for EnqueueFunctionBlocks<'a> {
+    impl<'a> BfsVisitor<BlockId> for EnqueueFunctionBlocks<'a> {
         fn visit(&mut self, block_id: BlockId, enqueue: &mut dyn FnMut(BlockId)) {
             let caller_fi = self.cfg.function_of_block(block_id);
             for &succ in self.cfg.successors(block_id) {
@@ -128,7 +128,7 @@ fn reachable_functions(cfg: &Cfg) -> HashSet<FunctionId> {
         enqueued_funcs,
     };
 
-    let mut engine = WorklistEngine::new(cfg);
+    let mut engine = BfsEngine::new(cfg);
     engine.initialize(initial_blocks);
     engine.run(&mut visitor);
 
