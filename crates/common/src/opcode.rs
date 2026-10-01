@@ -1128,6 +1128,21 @@ pub enum Opcode {
     Exit,
 }
 
+impl Opcode {
+    /// ALU ops that operate on the low 32 bits of their operands, including the
+    /// 32-bit PQR ops. Unlike `is_32bit`, excludes the `jmp32` family.
+    pub fn is_alu32(&self) -> bool {
+        use crate::OpcodeTable;
+        self.is_32bit()
+            && matches!(
+                self.group(),
+                OperationType::BinaryImmediate
+                    | OperationType::BinaryRegister
+                    | OperationType::Unary
+            )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::OpcodeTable, core::str::FromStr};
