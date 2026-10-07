@@ -245,8 +245,14 @@ impl RangeAnalysis {
                 Some(b) => Range::bounded(dst().lo - b.hi, dst().hi - b.lo),
                 None => Range::TOP,
             },
+            // Two 64-bit bounds multiply to ~2^128, past i128; overflow is TOP.
             Opcode::Mul64Imm | Opcode::Mul64Reg => match rhs() {
-                Some(b) if b.lo >= 0 => Range::bounded(dst().lo * b.lo, dst().hi * b.hi),
+                Some(b) if b.lo >= 0 => {
+                    match (dst().lo.checked_mul(b.lo), dst().hi.checked_mul(b.hi)) {
+                        (Some(lo), Some(hi)) => Range::bounded(lo, hi),
+                        _ => Range::TOP,
+                    }
+                }
                 _ => Range::TOP,
             },
             Opcode::And64Imm => match imm {
@@ -398,6 +404,24 @@ mod tests {
         let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
 
         assert_eq!(ranges(&cfg, &analysis)[3], Some(Range { lo: 5, hi: 100 }));
+    }
+
+    #[test]
+    fn test_mul64_of_wide_ranges_is_top_without_overflow() {
+        // Both inputs are unknown 64-bit values: the bound product (~2^128)
+        // does not fit in i128 and must become TOP, not panic or wrap.
+        let cfg = build(&[
+            Src::Label("entrypoint"),
+            inst(Opcode::Mul64Reg, 1, Some(2), None),
+            inst(Opcode::Ldxb, 3, Some(10), None),
+            inst(Opcode::Mul64Imm, 3, None, Some(1000)),
+            exit(),
+        ]);
+        let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
+
+        let r = ranges(&cfg, &analysis);
+        assert_eq!(r[0], Some(Range::TOP));
+        assert_eq!(r[2], Some(Range { lo: 0, hi: 255_000 }));
     }
 
     #[test]
