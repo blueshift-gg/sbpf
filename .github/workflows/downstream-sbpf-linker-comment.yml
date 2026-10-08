@@ -1,0 +1,123 @@
+name: Test sbpf-linker fork
+
+# Worflow for testing the specified sbpf-linker fork against the PR's sbpf crates.
+# Usage: `/test-sbpf-linker <owner>/<repo> <ref>`
+
+on:
+  issue_comment:
+    types: [created]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-contributor-fork:
+    name: Test contributor fork of sbpf-linker
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read # checkouts
+      statuses: write # pending/success/failure on the PR head commit
+      pull-requests: write # result comment on the PR
+    if: >
+      github.event.issue.pull_request &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+      startsWith(github.event.comment.body, '/test-sbpf-linker')
+
+    steps:
+      - name: Parse and validate command
+        id: parse
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          read -r command repository ref extra <<< "$COMMENT"
+
+          if [[ "$command" != "/test-sbpf-linker" ]]; then
+            echo "Invalid command"
+            exit 1
+          fi
+
+          if [[ -z "$repository" || -z "$ref" || -n "$extra" ]]; then
+            echo "Usage: /test-sbpf-linker <owner>/<repo> <ref>"
+            exit 1
+          fi
+
+          if [[ ! "$repository" =~ ^[A-Za-z0-9_-.]+/[A-Za-z0-9_-.]+$ ]]; then
+            echo "Invalid repository: $repository"
+            exit 1
+          fi
+
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      # we need this to get into the PR branch or else github.event.issue runs on default branch
+      - name: Get PR head
+        uses: actions/github-script@v9
+        id: comment-branch
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            core.setOutput('head_sha', pr.data.head.sha);
+
+      # same logic as above but for the commit, and put the status as pending as a remembering
+      - name: Set latest commit status as pending
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: '${{ steps.comment-branch.outputs.head_sha }}',
+              state: 'pending',
+              context: context.workflow,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.comment-branch.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Checkout sbpf-linker
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.parse.outputs.repository }}
+          ref: ${{ steps.parse.outputs.ref }}
+          path: sbpf-linker
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-sbpf-linker
+
+      - name: Run sbpf-linker test suite
+        working-directory: sbpf-linker
+        run: cargo test -- --nocapture
+
+      - name: Set latest commit status as ${{ job.status }}
+        uses: actions/github-script@v9
+        if: always()
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: '${{ steps.comment-branch.outputs.head_sha }}',
+              state: '${{ job.status == 'success' && 'success' || 'failure' }}',
+              context: context.workflow,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });
+
+      - name: Add a comment to PR
+        uses: actions/github-script@v9
+        if: always()
+        with:
+          script: |
+            const name = '${{ github.workflow }}';
+            const url = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const success = '${{ job.status }}' === 'success';
+            const body = `${name}: ${success ? 'succeeded ✅' : 'failed ❌'}\n${url}`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            })

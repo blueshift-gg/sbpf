@@ -1,0 +1,44 @@
+name: Mark failed downstream linker test
+
+on:
+  workflow_run:
+    workflows: [downstream]
+    types: [completed]
+
+permissions:
+  actions: read
+  statuses: write # write commit status
+
+jobs:
+  set-status:
+    if: >-
+      ${{ github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const { data } = await github.rest.actions.listJobsForWorkflowRun({
+              ...context.repo,
+              run_id: run.id,
+            });
+
+            const linkerJob = data.jobs.find(
+              job => job.name === 'Sbpf-linker against local sbpf crates'
+            );
+            const linkerTestFailed = linkerJob?.steps?.some(
+              step => step.name === 'Run sbpf-linker test suite' &&
+                      step.conclusion === 'failure'
+            );
+
+            if (!linkerTestFailed) return;
+
+            await github.rest.repos.createCommitStatus({
+              ...context.repo,
+              sha: run.head_sha,
+              state: 'pending',
+              context: 'Test sbpf-linker fork',
+              description: 'Dispatches a test workflow to test against users fork',
+            });
