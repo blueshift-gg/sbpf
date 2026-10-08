@@ -150,9 +150,7 @@ pub const fn compute_syscall_entries_const<'a, const N: usize>(
         let mut j = 0;
         while j < N - i - 1 {
             if entries[j].0 > entries[j + 1].0 {
-                let temp = entries[j];
-                entries[j] = entries[j + 1];
-                entries[j + 1] = temp;
+                entries.swap(j, j + 1);
             }
             j += 1;
         }
