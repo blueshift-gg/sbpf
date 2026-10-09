@@ -865,25 +865,37 @@ mod tests {
         errors::ExecutionError,
         execute::{
             ExecutionResult as ExecResult, execute_binary_immediate, execute_binary_register,
-            execute_load_immediate,
+            execute_jump, execute_jump_immediate, execute_jump_register, execute_load_immediate,
         },
     };
 
-    /// Runs a straight-line program (ending in `exit`) and returns r0. With
+    /// Runs a program (ending in `exit`) and returns r0. With
     /// `ebpf`, results of `add32/sub32/mul32` are zero-extended as eBPF requires;
     /// otherwise the SBPF executor's own semantics apply.
     fn execute(program: &[Instruction], inputs: [u64; 4], ebpf: bool) -> u64 {
+        const MAX_STEPS: usize = 1_000;
+
         let mut vm = RegVm {
             regs: [0; 11],
             pc: 0,
         };
         vm.regs[1..5].copy_from_slice(&inputs);
-        for inst in program {
+        for _ in 0..MAX_STEPS {
+            let inst = program
+                .get(vm.pc)
+                .unwrap_or_else(|| panic!("program counter {} is out of bounds", vm.pc));
             let result = match inst.opcode.group() {
-                OperationType::Exit => break,
+                OperationType::Exit => return vm.regs[0],
                 OperationType::LoadImmediate => execute_load_immediate(&mut vm, inst),
                 OperationType::BinaryImmediate => execute_binary_immediate(&mut vm, inst),
                 OperationType::BinaryRegister => execute_binary_register(&mut vm, inst),
+                OperationType::Jump => execute_jump(&mut vm, inst),
+                OperationType::JumpImmediate | OperationType::Jump32Immediate => {
+                    execute_jump_immediate(&mut vm, inst)
+                }
+                OperationType::JumpRegister | OperationType::Jump32Register => {
+                    execute_jump_register(&mut vm, inst)
+                }
                 other => panic!("unsupported in differential test: {other:?}"),
             };
             result.unwrap();
@@ -892,7 +904,7 @@ mod tests {
                 vm.regs[dst] &= u32::MAX as u64;
             }
         }
-        vm.regs[0]
+        panic!("program did not exit within {MAX_STEPS} steps")
     }
 
     fn instructions(program: &[Src]) -> Vec<Instruction> {
@@ -903,6 +915,57 @@ mod tests {
                 Src::Label(_) => None,
             })
             .collect()
+    }
+
+    fn executable_instructions(cfg: &Cfg) -> Vec<Instruction> {
+        let labels: HashMap<&str, usize> = cfg
+            .all_blocks()
+            .flat_map(|(block_id, block)| {
+                let target = cfg.block_inst_offset(block_id);
+                block
+                    .labels()
+                    .iter()
+                    .map(move |(label, _)| (label.as_str(), target))
+            })
+            .collect();
+
+        cfg.all_instructions()
+            .map(|(pc, node)| {
+                let mut inst = node.instruction().unwrap().clone();
+                if let Some(Either::Left(label)) = &inst.off {
+                    let target = *labels
+                        .get(label.as_str())
+                        .unwrap_or_else(|| panic!("unknown jump target {label}"));
+                    let offset = i16::try_from(target as isize - pc as isize - 1)
+                        .expect("test jump offset fits in i16");
+                    inst.off = Some(Either::Right(offset));
+                }
+                inst
+            })
+            .collect()
+    }
+
+    fn assert_rewrite_matches(program: &[Src], inputs: &[[u64; 4]]) {
+        let original = executable_instructions(&build(program));
+        let rewritten = rewritten_instructions(program);
+
+        for &input in inputs {
+            let original_opcodes = original.iter().map(|inst| inst.opcode).collect::<Vec<_>>();
+            let rewritten_opcodes = rewritten.iter().map(|inst| inst.opcode).collect::<Vec<_>>();
+            assert_eq!(
+                execute(&rewritten, input, false),
+                execute(&original, input, true),
+                "inputs {input:x?}\noriginal {:?}\nrewritten {:?}",
+                original_opcodes,
+                rewritten_opcodes,
+            );
+        }
+    }
+
+    fn rewritten_instructions(program: &[Src]) -> Vec<Instruction> {
+        let mut cfg = build(program);
+        fix_alu32_extension(&mut cfg);
+        executable_instructions(&cfg)
     }
 
     #[test]
@@ -1011,5 +1074,239 @@ mod tests {
         let inputs = [0x8000_0000, 0, 0, 0];
         assert_eq!(execute(&program, inputs, true), 0x8000_0000);
         assert_eq!(execute(&program, inputs, false), 0xFFFF_FFFF_8000_0000);
+    }
+
+    #[test]
+    fn test_differential_executor_follows_control_flow() {
+        let program = instructions(&[
+            Src::Label("entrypoint"),
+            inst(Opcode::Mov64Imm, Some(0), None, Some(1)),
+            Src::Inst(Instruction {
+                opcode: Opcode::Ja,
+                dst: None,
+                src: None,
+                off: Some(Either::Right(1)),
+                imm: None,
+                span: 0..0,
+            }),
+            inst(Opcode::Mov64Imm, Some(0), None, Some(2)),
+            exit(),
+        ]);
+
+        assert_eq!(execute(&program, [0; 4], false), 1);
+    }
+
+    #[test]
+    fn test_differential_executor_follows_register_jump() {
+        let program = instructions(&[
+            Src::Label("entrypoint"),
+            inst(Opcode::Mov64Imm, Some(1), None, Some(7)),
+            inst(Opcode::Mov64Imm, Some(2), None, Some(7)),
+            Src::Inst(Instruction {
+                opcode: Opcode::Jeq32Reg,
+                dst: Some(Register { n: 1 }),
+                src: Some(Register { n: 2 }),
+                off: Some(Either::Right(1)),
+                imm: None,
+                span: 0..0,
+            }),
+            inst(Opcode::Mov64Imm, Some(0), None, Some(2)),
+            inst(Opcode::Mov64Imm, Some(0), None, Some(1)),
+            exit(),
+        ]);
+
+        assert_eq!(execute(&program, [0; 4], false), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "unsupported in differential test: Call")]
+    fn test_differential_executor_rejects_unsupported_instruction() {
+        let program = instructions(&[
+            Src::Label("entrypoint"),
+            Src::Inst(Instruction {
+                opcode: Opcode::Call,
+                dst: None,
+                src: None,
+                off: None,
+                imm: Some(Either::Right(Number::Int(0))),
+                span: 0..0,
+            }),
+            exit(),
+        ]);
+
+        execute(&program, [0; 4], false);
+    }
+
+    #[test]
+    #[should_panic(expected = "program did not exit within 1000 steps")]
+    fn test_differential_executor_limits_steps() {
+        let program = instructions(&[
+            Src::Label("entrypoint"),
+            Src::Inst(Instruction {
+                opcode: Opcode::Ja,
+                dst: None,
+                src: None,
+                off: Some(Either::Right(-1)),
+                imm: None,
+                span: 0..0,
+            }),
+        ]);
+
+        execute(&program, [0; 4], false);
+    }
+
+    #[test]
+    #[should_panic(expected = "program counter 2 is out of bounds")]
+    fn test_differential_executor_rejects_invalid_program_counter() {
+        let program = instructions(&[
+            Src::Label("entrypoint"),
+            Src::Inst(Instruction {
+                opcode: Opcode::Ja,
+                dst: None,
+                src: None,
+                off: Some(Either::Right(1)),
+                imm: None,
+                span: 0..0,
+            }),
+        ]);
+
+        execute(&program, [0; 4], false);
+    }
+
+    #[test]
+    fn test_rewritten_branch_and_join_match_ebpf_semantics() {
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Add32Reg, Some(1), Some(2), None),
+            jump(Opcode::Jeq32Imm, 3, None, Some(0), "low32"),
+            inst(Opcode::Add64Reg, Some(1), Some(4), None),
+            inst(Opcode::Mov64Reg, Some(0), Some(1), None),
+            jump(Opcode::Ja, 0, None, None, "done"),
+            Src::Label("low32"),
+            inst(Opcode::And64Imm, Some(1), None, Some(0xffff)),
+            inst(Opcode::Mov64Reg, Some(0), Some(1), None),
+            Src::Label("done"),
+            exit(),
+        ];
+        let rewritten = rewritten_instructions(&program);
+        assert!(
+            rewritten.windows(2).any(
+                |pair| pair[0].opcode == Opcode::Add32Reg && pair[1].opcode == Opcode::Mov32Reg
+            )
+        );
+
+        assert_rewrite_matches(
+            &program,
+            &[
+                [0x8000_0000, 0, 1, 0x1234_0000_0000_0000],
+                [u64::MAX, 1, 0, 0],
+            ],
+        );
+    }
+
+    #[test]
+    fn test_rewritten_loop_matches_ebpf_semantics() {
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Mov32Imm, Some(2), None, Some(0)),
+            Src::Label("loop"),
+            inst(Opcode::Add32Reg, Some(1), Some(3), None),
+            inst(Opcode::Add32Imm, Some(2), None, Some(1)),
+            jump(Opcode::Jne32Imm, 2, None, Some(3), "loop"),
+            inst(Opcode::Mov64Reg, Some(0), Some(1), None),
+            exit(),
+        ];
+        let rewritten = rewritten_instructions(&program);
+        assert_eq!(rewritten[4].opcode, Opcode::Mov32Reg);
+
+        assert_rewrite_matches(
+            &program,
+            &[
+                [0, 0, 0x4000_0000, 0],
+                [0x7fff_ffff, 0, 1, 0],
+                [0x8000_0000, 0, u64::MAX, 0],
+            ],
+        );
+    }
+
+    #[test]
+    fn test_rewritten_branch_narrows_copies() {
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Add32Reg, Some(1), Some(2), None),
+            jump(Opcode::Jeq32Imm, 3, None, Some(0), "copy_r5"),
+            inst(Opcode::Mov64Reg, Some(4), Some(1), None),
+            inst(Opcode::Mov64Reg, Some(0), Some(4), None),
+            jump(Opcode::Ja, 0, None, None, "done"),
+            Src::Label("copy_r5"),
+            inst(Opcode::Mov64Reg, Some(5), Some(1), None),
+            inst(Opcode::Mov64Reg, Some(0), Some(5), None),
+            Src::Label("done"),
+            exit(),
+        ];
+        let rewritten = rewritten_instructions(&program);
+        assert_eq!(
+            rewritten
+                .iter()
+                .filter(|inst| inst.opcode == Opcode::Mov32Reg)
+                .count(),
+            2
+        );
+
+        assert_rewrite_matches(&program, &[[0x8000_0000, 0, 1, 0], [u64::MAX, 1, 0, 0]]);
+    }
+
+    #[test]
+    fn test_rewritten_branch_promotes_range_proven_operations() {
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Lddw, Some(1), None, Some(0x9000_0000)),
+            jump(Opcode::Jeq32Imm, 3, None, Some(0), "subtract_two"),
+            inst(Opcode::Sub32Imm, Some(1), None, Some(1)),
+            jump(Opcode::Ja, 0, None, None, "done_math"),
+            Src::Label("subtract_two"),
+            inst(Opcode::Sub32Imm, Some(1), None, Some(2)),
+            Src::Label("done_math"),
+            inst(Opcode::Add64Reg, Some(1), Some(4), None),
+            inst(Opcode::Mov64Reg, Some(0), Some(1), None),
+            exit(),
+        ];
+        let rewritten = rewritten_instructions(&program);
+        assert_eq!(
+            rewritten
+                .iter()
+                .filter(|inst| inst.opcode == Opcode::Sub64Imm)
+                .count(),
+            2
+        );
+
+        assert_rewrite_matches(&program, &[[0, 0, 0, 0], [0, 0, 1, 0x1234_5678_0000_0000]]);
+    }
+
+    #[test]
+    fn test_rewritten_branch_keeps_low_demand_operation() {
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Mul32Reg, Some(1), Some(2), None),
+            jump(Opcode::Jeq32Imm, 3, None, Some(0), "low_byte"),
+            inst(Opcode::And64Imm, Some(1), None, Some(0xffff)),
+            jump(Opcode::Ja, 0, None, None, "done"),
+            Src::Label("low_byte"),
+            inst(Opcode::And64Imm, Some(1), None, Some(0xff)),
+            Src::Label("done"),
+            inst(Opcode::Mov64Reg, Some(0), Some(1), None),
+            exit(),
+        ];
+        let rewritten = rewritten_instructions(&program);
+        assert_eq!(rewritten[0].opcode, Opcode::Mul32Reg);
+        assert_eq!(
+            rewritten.len(),
+            executable_instructions(&build(&program)).len()
+        );
+
+        assert_rewrite_matches(
+            &program,
+            &[[0x8000_0000, 1, 0, 0], [0xffff_ffff, 0xffff_ffff, 1, 0]],
+        );
     }
 }
