@@ -21,3 +21,9 @@ For minor bugs that are solvable in a single-issue PR, feel free to immediately 
 
 ## Nits/Typos
 Feel free to directly [open a PR](https://github.com/blueshift-gg/sbpf/compare).
+
+## Compatibility with sbpf-linker
+
+[sbpf-linker](https://github.com/blueshift-gg/sbpf-linker) is an important consumer of `sbpf`. It relinks BPF binaries into its sBPF-compatible form, so changes to this repository must account for compatibility with the linker.
+
+Your PR is tested against the [`sbpf-linker-next`](https://github.com/blueshift-gg/sbpf-linker/tree/sbpf-linker-next) branch of sbpf-linker. If the tests fail, a PR must be opened against that branch in sbpf-linker with the fixes before your PR can be considered for merging.
