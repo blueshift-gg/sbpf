@@ -1,6 +1,3 @@
-// RETEST-LIVE-TEST-INJECTED-FAILURE
-compile_error!("RETEST-LIVE-TEST: deliberate incompatibility");
-
 pub mod decode;
 pub mod errors;
 pub mod execute;
