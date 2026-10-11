@@ -62,7 +62,7 @@ pr = linker_ref.removeprefix("refs/pull/").removesuffix("/head")
 
 body = TEMPLATES[f"{'linker-pr' if linker_pr else 'linker-next'}-{result}"](
     linker_ref=linker_ref, linker_repo=LINKER_REPO,
-    pr=pr, subject=f"{LINKER} PR #{pr}" if linker_pr else LINKER,
+    pr=pr, subject=f"{LINKER_REPO}#{pr}" if linker_pr else LINKER,
 )
 
 parts = [args.comment_marker] if args.comment_marker else []
