@@ -38,6 +38,9 @@ override.write_text("".join(
     ["[patch.crates-io]\n"] + [f'{n} = {{ path = "{supplied[n]}" }}\n' for n in sorted(needed)]))
 print(override.read_text(), end="")
 
+subprocess.run(["cargo", "update", *[f"-p={n}" for n in sorted(needed)]],
+               check=False, capture_output=True, text=True)
+
 for p in metadata("--config", str(override))["packages"]:
     if p["name"] in needed and (p["source"] or Path(p["manifest_path"]).parent != supplied[p["name"]]):
         sys.exit(f"{p['name']} did not resolve to this checkout")
