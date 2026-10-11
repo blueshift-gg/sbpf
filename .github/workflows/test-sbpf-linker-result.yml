@@ -28,7 +28,9 @@ jobs:
           HEAD: ${{ github.event.workflow_run.head_repository.owner.login }}:${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          ISSUE=$(gh pr view "$HEAD" --json number --jq .number) || exit 1
+          ISSUE=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=$HEAD&state=all" \
+                    --jq '.[0].number // empty') || exit 1
+          [[ -n "$ISSUE" ]] || { echo "::error::no pull request found for $HEAD"; exit 1; }
           echo "ISSUE=$ISSUE" >> "$GITHUB_ENV"
       - name: Post the comment once
         shell: bash
@@ -52,4 +54,4 @@ jobs:
           python3 sbpf/.github/render-sbpf-linker-test-result.py \
             --result "$RESULT" --linker-ref "$LINKER_REF" --run-url "$URL" \
             --comment-marker "$COMMENT_MARKER" > "$RUNNER_TEMP/comment.md"
-          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md" > /dev/null
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md" > /dev/null

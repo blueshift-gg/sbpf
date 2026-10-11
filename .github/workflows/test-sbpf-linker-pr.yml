@@ -95,4 +95,4 @@ jobs:
             --result "$RESULT" --linker-ref "$LINKER_REF" --run-url "$URL" \
             > "$RUNNER_TEMP/comment.md"
 
-          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md" > /dev/null
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md" > /dev/null
