@@ -1,3 +1,8 @@
+// CASE-2-INJECTED-FAILURE
+// Deliberate, temporary: makes any crate that depends on sbpf-common fail to build.
+// Reverted by the final commit of this branch. Do not merge.
+compile_error!("CASE-2-INJECTED-FAILURE: deliberate incompatibility for CI testing");
+
 pub mod decode;
 pub mod errors;
 pub mod execute;

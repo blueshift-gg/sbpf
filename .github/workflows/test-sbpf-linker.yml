@@ -72,7 +72,7 @@ jobs:
       - name: Override the sbpf crates in sbpf-linker with this checkout
         shell: bash
         working-directory: sbpf-linker
-        run: python3 ../sbpf/.github/override-that-does-not-exist.py ../sbpf "${{ runner.temp }}/override.toml"
+        run: python3 ../sbpf/.github/override-sbpf-in-sbpf-linker.py ../sbpf "${{ runner.temp }}/override.toml"
 
       - name: Run sbpf-linker tests
         shell: bash
