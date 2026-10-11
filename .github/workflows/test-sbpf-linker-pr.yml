@@ -1,0 +1,98 @@
+name: Test sbpf-linker against a PR
+
+# Run a specific sbpf-linker PR's test suite against the sBPF PR being commented, triggered by:
+#
+#     /test-sbpf-linker <pr>
+#
+# <pr> is a pull request number in blueshift-gg/sbpf-linker
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  resolve:
+    if: >
+      github.event.issue.pull_request &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+      startsWith(github.event.comment.body, '/test-sbpf-linker')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sbpf-sha: ${{ steps.parse.outputs.sbpf_sha }}
+      linker-ref: ${{ steps.parse.outputs.linker_ref }}
+    steps:
+      - name: Parse command and resolve commits
+        id: parse
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          PR_URL: ${{ github.event.issue.pull_request.url }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          perm=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$COMMENT_AUTHOR/permission" \
+                   --jq .permission 2>/dev/null || echo none)
+          case "$perm" in
+            admin|maintain|write) ;;
+            *) echo "::error::$COMMENT_AUTHOR has '$perm' access; only write, maintain or admin can retest"
+               exit 1 ;;
+          esac
+
+          read -r command pr extra <<< "$COMMENT"
+
+          [[ "$command" == "/test-sbpf-linker" ]] || { echo "Not a /test-sbpf-linker command"; exit 1; }
+          [[ -n "$pr" && -z "$extra" ]] || {
+            echo "::error::usage: /test-sbpf-linker <sbpf-linker-pr-number>"
+            exit 1
+          }
+          [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::error::not a PR number: $pr"; exit 1; }
+
+          sbpf_sha=$(gh api "$PR_URL" --jq .head.sha)
+          [[ -n "$sbpf_sha" ]] || { echo "::error::could not resolve this PR's head"; exit 1; }
+
+          {
+            echo "sbpf_sha=$sbpf_sha"
+            echo "linker_ref=refs/pull/$pr/head"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: resolve
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test-sbpf-linker.yml
+    with:
+      sbpf-ref: ${{ needs.resolve.outputs.sbpf-sha }}
+      linker-ref: ${{ needs.resolve.outputs.linker-ref }}
+
+  comment:
+    needs: [resolve, test]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      ISSUE: ${{ github.event.issue.number }}
+      LINKER_REF: ${{ needs.resolve.outputs.linker-ref }}
+      RESULT: ${{ needs.test.result }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sbpf
+      - name: Report test result as comment
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python3 sbpf/.github/render-sbpf-linker-test-result.py \
+            --result "$RESULT" --linker-ref "$LINKER_REF" --run-url "$URL" \
+            > "$RUNNER_TEMP/comment.md"
+
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md" > /dev/null

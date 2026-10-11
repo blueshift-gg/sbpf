@@ -1,0 +1,55 @@
+name: Test sbpf-linker result
+
+# Reports the result of a PR's test against sbpf-linker's `next` branch.
+
+on:
+  workflow_run:
+    workflows: [Test sbpf-linker compatibility]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  post:
+    if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sbpf
+      - name: Find the pull request this run tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.workflow_run.head_repository.owner.login }}:${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          ISSUE=$(gh pr view "$HEAD" --json number --jq .number) || exit 1
+          echo "ISSUE=$ISSUE" >> "$GITHUB_ENV"
+      - name: Post the comment once
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ github.event.workflow_run.conclusion }}
+          URL: ${{ github.event.workflow_run.html_url }}
+          LINKER_REF: sbpf-linker-next
+          COMMENT_MARKER: "<!-- sbpf-linker-test:sbpf-linker-next -->"
+        run: |
+          set -euo pipefail
+
+          # Only a failure is worth a comment, and only once per pull request: a green check
+          # says it passed, and a comment already there says what was wrong. Both exits come
+          # before rendering, so a passing run writes nothing.
+          [[ "$RESULT" == cancelled || "$RESULT" == success ]] && exit 0
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" --paginate --jq \
+                 ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\"))) | .id // empty")
+          [[ -n "$id" ]] && exit 0
+
+          python3 sbpf/.github/render-sbpf-linker-test-result.py \
+            --result "$RESULT" --linker-ref "$LINKER_REF" --run-url "$URL" \
+            --comment-marker "$COMMENT_MARKER" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md" > /dev/null

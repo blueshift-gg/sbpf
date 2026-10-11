@@ -1,0 +1,80 @@
+name: Test sbpf-linker compatibility
+
+# Runs sbpf-linker's test suite against a specific version of sbpf.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+    inputs:
+      sbpf-ref:
+        required: true
+        type: string
+      linker-ref:
+        required: false
+        type: string
+        default: sbpf-linker-next
+
+env:
+  DEFAULT_LINKER_REF: sbpf-linker-next
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sbpf-ref || github.sha }}
+          path: sbpf
+          persist-credentials: false
+
+      - uses: actions/checkout@v5
+        with:
+          repository: blueshift-gg/sbpf-linker
+          ref: ${{ inputs.linker-ref || env.DEFAULT_LINKER_REF }}
+          path: sbpf-linker
+          persist-credentials: false
+
+      - name: Use the linker's pinned toolchain
+        id: toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          file=sbpf-linker/rust-toolchain.toml
+          [[ -f "$file" ]] || { echo "::error::$file is missing"; exit 1; }
+          channel=$(yq -e '.toolchain.channel' "$file")
+
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sbpf-linker
+          cache-on-failure: true
+
+      - name: Install FileCheck
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y llvm-18-tools
+
+      - name: Override the sbpf crates in sbpf-linker with this checkout
+        shell: bash
+        working-directory: sbpf-linker
+        run: python3 ../sbpf/.github/override-sbpf-in-sbpf-linker.py ../sbpf "${{ runner.temp }}/override.toml"
+
+      - name: Run sbpf-linker tests
+        shell: bash
+        working-directory: sbpf-linker
+        run: cargo --config "${{ runner.temp }}/override.toml" test -- --nocapture

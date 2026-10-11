@@ -7,3 +7,7 @@ deploy
 .npmrc
 npm/dist/
 /lcov.info
+
+# Python bytecode from the scripts in .github/
+__pycache__/
+*.py[cod]
