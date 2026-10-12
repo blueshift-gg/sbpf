@@ -1,5 +1,8 @@
 use {
-    super::{ParseContext, Rule, Token, common::parse_number},
+    super::{
+        ParseContext, Rule, Token,
+        common::{fold_binary_ops, parse_number},
+    },
     crate::{
         ast::AST,
         astnode::{ASTNode, ExternDecl, GlobalDecl, ROData, RodataDecl},
@@ -239,55 +242,23 @@ fn eval_expression(
     let span = pair.as_span();
     let span_range = span.start()..span.end();
 
-    let mut stack = Vec::new();
-    let mut op_stack = Vec::new();
+    let mut terms = Vec::new();
+    let mut ops = Vec::new();
 
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::term => {
                 let val = eval_term(inner, const_map)?;
-                stack.push(val);
+                terms.push(val);
             }
             Rule::bin_op => {
-                op_stack.push(inner.as_str());
+                ops.push(inner.as_str());
             }
             _ => {}
         }
     }
 
-    // Apply operators
-    while let Some(op) = op_stack.pop() {
-        if stack.len() >= 2 {
-            let b = stack.pop().unwrap();
-            let a = stack.pop().unwrap();
-            let folded = match op {
-                "+" => a.checked_add(&b),
-                "-" => a.checked_sub(&b),
-                "*" => a.checked_mul(&b),
-                "/" => a.checked_div(&b),
-                _ => Some(a),
-            };
-            let result = folded.ok_or_else(|| {
-                let detail = if op == "/" && b.to_i64() == 0 {
-                    "division by zero in constant expression".to_string()
-                } else {
-                    format!("arithmetic overflow in constant expression ('{op}')")
-                };
-                CompileError::ArithmeticError {
-                    error: detail,
-                    span: span_range.clone(),
-                    custom_label: None,
-                }
-            })?;
-            stack.push(result);
-        }
-    }
-
-    stack.pop().ok_or_else(|| CompileError::ParseError {
-        error: "Invalid expression".to_string(),
-        span: span_range,
-        custom_label: None,
-    })
+    fold_binary_ops(terms, &ops, span_range)
 }
 
 fn eval_term(

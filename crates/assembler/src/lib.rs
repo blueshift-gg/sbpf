@@ -481,6 +481,39 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_const_expr_precedence() {
+        // `*` and `/` bind tighter than `+` and `-`, and equal precedence folds
+        // left to right, both in `.equ` and in operands.
+        let program = |expr: &str| {
+            let source = format!(
+                r#"
+        .globl entrypoint
+        .equ C, {expr}
+        entrypoint:
+            mov64 r1, C
+            mov64 r2, {expr}
+            exit
+        "#
+            );
+            assemble(&source).unwrap()
+        };
+        for (expr, value) in [
+            ("10 - 3 - 2", "5"),
+            ("100 / 10 / 5", "2"),
+            ("2 * 3 + 4", "10"),
+            ("2 + 3 * 4", "14"),
+            ("20 - 6 / 2", "17"),
+            ("(2 + 3) * 4", "20"),
+        ] {
+            assert_eq!(
+                program(expr),
+                program(value),
+                "{expr} should fold to {value}"
+            );
+        }
+    }
+
+    #[test]
     fn test_assemble_duplicate_label_error() {
         let source = r#"
         .globl entrypoint

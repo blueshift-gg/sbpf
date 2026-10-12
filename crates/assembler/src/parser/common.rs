@@ -8,7 +8,7 @@ use {
         instruction::Instruction,
         opcode::Opcode,
     },
-    std::collections::HashMap,
+    std::{collections::HashMap, ops::Range},
 };
 
 // Shared parse functions.
@@ -125,7 +125,6 @@ fn eval_operand_expression(
         }
     }
 
-    // Evaluate left-to-right
     if terms.is_empty() {
         return Err(CompileError::ParseError {
             error: "Invalid operand expression".to_string(),
@@ -134,33 +133,70 @@ fn eval_operand_expression(
         });
     }
 
-    let mut result = terms[0].clone();
-    for (i, op) in ops.iter().enumerate() {
-        if i + 1 < terms.len() {
-            let rhs = &terms[i + 1];
-            let folded = match *op {
-                "+" => result.checked_add(rhs),
-                "-" => result.checked_sub(rhs),
-                "*" => result.checked_mul(rhs),
-                "/" => result.checked_div(rhs),
-                _ => Some(result.clone()),
+    fold_binary_ops(terms, &ops, span_range).map(Either::Right)
+}
+
+/// Fold `terms[0] ops[0] terms[1] ...` into one value. `*` and `/` bind tighter
+/// than `+` and `-`, and operators of equal precedence fold left to right.
+pub(crate) fn fold_binary_ops(
+    terms: Vec<Number>,
+    ops: &[&str],
+    span: Range<usize>,
+) -> Result<Number, CompileError> {
+    let mut terms = terms.into_iter();
+    let mut product = terms.next().ok_or_else(|| CompileError::ParseError {
+        error: "Invalid expression".to_string(),
+        span: span.clone(),
+        custom_label: None,
+    })?;
+    // The left side of a pending `+` or `-`, folded once the `*`/`/` run on its
+    // right side is done.
+    let mut sum: Option<(Number, &str)> = None;
+
+    for (op, rhs) in ops.iter().copied().zip(terms) {
+        if matches!(op, "*" | "/") {
+            product = apply_binary_op(op, &product, &rhs, &span)?;
+        } else {
+            let lhs = match sum.take() {
+                Some((lhs, sum_op)) => apply_binary_op(sum_op, &lhs, &product, &span)?,
+                None => product,
             };
-            result = folded.ok_or_else(|| {
-                let detail = if *op == "/" && rhs.to_i64() == 0 {
-                    "division by zero in constant expression".to_string()
-                } else {
-                    format!("arithmetic overflow in constant expression ('{op}')")
-                };
-                CompileError::ArithmeticError {
-                    error: detail,
-                    span: span_range.clone(),
-                    custom_label: None,
-                }
-            })?;
+            sum = Some((lhs, op));
+            product = rhs;
         }
     }
 
-    Ok(Either::Right(result))
+    match sum {
+        Some((lhs, op)) => apply_binary_op(op, &lhs, &product, &span),
+        None => Ok(product),
+    }
+}
+
+fn apply_binary_op(
+    op: &str,
+    lhs: &Number,
+    rhs: &Number,
+    span: &Range<usize>,
+) -> Result<Number, CompileError> {
+    let folded = match op {
+        "+" => lhs.checked_add(rhs),
+        "-" => lhs.checked_sub(rhs),
+        "*" => lhs.checked_mul(rhs),
+        "/" => lhs.checked_div(rhs),
+        _ => Some(lhs.clone()),
+    };
+    folded.ok_or_else(|| {
+        let detail = if op == "/" && rhs.to_i64() == 0 {
+            "division by zero in constant expression".to_string()
+        } else {
+            format!("arithmetic overflow in constant expression ('{op}')")
+        };
+        CompileError::ArithmeticError {
+            error: detail,
+            span: span.clone(),
+            custom_label: None,
+        }
+    })
 }
 
 fn eval_operand_term(
