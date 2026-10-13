@@ -458,22 +458,34 @@ fn eval_rept_count(s: &str) -> Option<usize> {
 }
 
 /// Evaluate an expression, returning its value and the unconsumed remainder
-/// (with leading whitespace already stripped).
+/// (with leading whitespace already stripped). `*` and `/` bind tighter than
+/// `+` and `-`, and operators of equal precedence fold left to right.
 fn eval_const_expr(s: &str) -> Option<(i64, &str)> {
+    let (mut acc, mut rest) = eval_const_product(s)?;
+    loop {
+        let r = rest.trim_start();
+        let Some(op) = r.chars().next().filter(|c| matches!(c, '+' | '-')) else {
+            return Some((acc, r));
+        };
+        let (rhs, r) = eval_const_product(&r[1..])?;
+        acc = match op {
+            '+' => acc.checked_add(rhs)?,
+            _ => acc.checked_sub(rhs)?,
+        };
+        rest = r;
+    }
+}
+
+/// Evaluate a run of terms joined by `*` and `/`.
+fn eval_const_product(s: &str) -> Option<(i64, &str)> {
     let (mut acc, mut rest) = eval_const_term(s)?;
     loop {
         let r = rest.trim_start();
-        let Some(op) = r
-            .chars()
-            .next()
-            .filter(|c| matches!(c, '+' | '-' | '*' | '/'))
-        else {
+        let Some(op) = r.chars().next().filter(|c| matches!(c, '*' | '/')) else {
             return Some((acc, r));
         };
         let (rhs, r) = eval_const_term(&r[1..])?;
         acc = match op {
-            '+' => acc.checked_add(rhs)?,
-            '-' => acc.checked_sub(rhs)?,
             '*' => acc.checked_mul(rhs)?,
             _ => acc.checked_div(rhs)?,
         };
@@ -852,6 +864,10 @@ mod tests {
         assert_eq!(eval_rept_count("(1 + 2) * 2"), Some(6));
         assert_eq!(eval_rept_count("4 - 1"), Some(3));
         assert_eq!(eval_rept_count("6 / 2"), Some(3));
+        assert_eq!(eval_rept_count("2 + 3 * 4"), Some(14));
+        assert_eq!(eval_rept_count("20 - 6 / 2"), Some(17));
+        assert_eq!(eval_rept_count("10 - 3 - 2"), Some(5));
+        assert_eq!(eval_rept_count("100 / 10 / 5"), Some(2));
         assert_eq!(eval_rept_count("2 - 4"), None); // negative
         assert_eq!(eval_rept_count("1 / 0"), None);
         assert_eq!(eval_rept_count("foo"), None);
@@ -899,6 +915,7 @@ mod tests {
         assert_eq!(eval_if_condition("2 < 3"), Some(true));
         assert_eq!(eval_if_condition("2 >= 3"), Some(false));
         assert_eq!(eval_if_condition("0x10 <= 16"), Some(true));
+        assert_eq!(eval_if_condition("2 + 3 * 4 == 14"), Some(true));
         assert_eq!(eval_if_condition("foo"), None);
         assert_eq!(eval_if_condition("1 == foo"), None);
     }
