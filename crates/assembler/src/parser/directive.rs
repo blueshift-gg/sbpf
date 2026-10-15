@@ -213,7 +213,7 @@ pub fn process_rodata_directive(
                 }
 
                 let values_span = directive_span.start()..directive_span.end();
-                return Ok(ROData {
+                let rodata = ROData {
                     name: label_name,
                     args: vec![
                         Token::Directive(
@@ -223,7 +223,9 @@ pub fn process_rodata_directive(
                         Token::VectorLiteral(values, values_span),
                     ],
                     span: label_span,
-                });
+                };
+                rodata.verify()?;
+                return Ok(rodata);
             }
             _ => {}
         }
