@@ -649,6 +649,28 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_rodata_out_of_range_errors() {
+        for data in [
+            "data: .byte 256",
+            "data: .byte -129",
+            "data: .short 0x10000",
+            "data: .int 0x100000000",
+            "data:\n.byte 0x1ff",
+        ] {
+            let source = format!(".globl entrypoint\nentrypoint:\n    exit\n.rodata\n{data}\n");
+            let result = assemble(&source);
+            assert!(
+                matches!(
+                    result.as_ref().map_err(|e| e.first()),
+                    Err(Some(CompileError::OutOfRangeLiteral { .. }))
+                ),
+                "expected out of range error for '{data}', got {:?}",
+                result.err()
+            );
+        }
+    }
+
+    #[test]
     fn test_assemble_jump_operations() {
         let source = r#"
         .globl entrypoint
