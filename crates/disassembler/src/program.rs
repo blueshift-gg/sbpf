@@ -358,8 +358,9 @@ impl Program {
                     let addr = *imm as u64;
                     if rodata_info.is_some() && addr >= rodata_base && addr < rodata_end {
                         rodata_refs.insert(addr);
-                    } else if addr >= text_sh_addr && addr < text_end_addr {
+                    } else if !is_sbpf_v3 && addr >= text_sh_addr && addr < text_end_addr {
                         // Convert text address to instruction index for callx.
+                        // Not for v3: its code lives at 1 << 32 and the VM resolves it.
                         let byte_offset = addr - text_sh_addr;
                         let target_slot = (byte_offset / 8) as usize;
                         if target_slot < slot_to_idx.len() {
@@ -808,6 +809,29 @@ mod tests {
             ixs[0].as_ref().unwrap_left().opcode,
             sbpf_common::opcode::Opcode::Jset32Imm
         );
+    }
+
+    #[test]
+    fn test_to_ixs_sbpf_v3_keeps_lddw_constant() {
+        // .globl entrypoint
+        // entrypoint:
+        //   lddw r4, 0x80
+        //   exit
+        //
+        // Assembled for v3, .text starts at file offset 0x78, so 0x80 falls
+        // inside its file range. It is a plain constant and must stay 0x80.
+        let elf_bytes = hex!(
+            "7f454c460201010000000000000000000300f7000100000000000000010000004000000000000000"
+            "00000000000000000300000040003800010040000000000001000000010000007800000000000000"
+            "00000000010000000000000001000000180000000000000018000000000000000000000000000000"
+            "180400008000000000000000000000009500000000000000"
+        );
+
+        let parsed = Program::from_bytes(&elf_bytes).unwrap().to_ixs().unwrap();
+        assert!(parsed.errors.is_empty());
+        let lddw = parsed.value.instructions[0].as_ref().unwrap_left();
+        let expected = sbpf_common::inst_param::Number::Int(0x80);
+        assert_eq!(lddw.imm, Some(either::Either::Right(expected)));
     }
 
     #[test]
