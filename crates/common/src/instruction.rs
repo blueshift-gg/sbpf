@@ -365,7 +365,7 @@ fn fmt_imm(imm: &Either<String, Number>) -> String {
         Either::Left(label) => label.clone(),
         Either::Right(Number::Int(v)) | Either::Right(Number::Addr(v)) => {
             if *v < 0 {
-                format!("-0x{:x}", -v)
+                format!("-0x{:x}", v.unsigned_abs())
             } else {
                 format!("0x{:x}", v)
             }
@@ -402,6 +402,21 @@ mod test {
         assert_eq!(i.to_bytes().unwrap(), &b);
         assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "lddw r1, 0x0");
         assert_eq!(i.to_asm(AsmFormat::Llvm).unwrap(), "r1 = 0x0 ll");
+    }
+
+    #[test]
+    fn serialize_e2e_lddw_min() {
+        let b = hex!("18010000000000000000000000000080");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(
+            i.to_asm(AsmFormat::Default).unwrap(),
+            "lddw r1, -0x8000000000000000"
+        );
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "r1 = -0x8000000000000000 ll"
+        );
     }
 
     #[test]

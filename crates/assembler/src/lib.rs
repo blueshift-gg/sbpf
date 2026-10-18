@@ -671,6 +671,32 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_most_negative_offset_and_imm() {
+        // Negating 0x8000 or 0x8000000000000000 doesn't fit, so these must match the
+        // forms that never negate.
+        let assemble_ix = |ix: &str| {
+            let source = format!(".equ MIN, -32768\n.equ OFF, 0x8000\nentrypoint:\n{ix}\nexit\n");
+            assemble(&source)
+        };
+        for (ix, same_as) in [
+            ("ldxdw r2, [r1-32768]", "ldxdw r2, [r1+MIN]"),
+            ("ldxdw r2, [r1-0x8000]", "ldxdw r2, [r1+MIN]"),
+            ("ldxdw r2, [r1-OFF]", "ldxdw r2, [r1+MIN]"),
+            ("stxdw [r1-32768], r2", "stxdw [r1+MIN], r2"),
+            (
+                "lddw r1, -0x8000000000000000",
+                "lddw r1, -9223372036854775808",
+            ),
+        ] {
+            assert_eq!(
+                assemble_ix(ix).unwrap(),
+                assemble_ix(same_as).unwrap(),
+                "{ix}"
+            );
+        }
+    }
+
+    #[test]
     fn test_assemble_jump_operations() {
         let source = r#"
         .globl entrypoint

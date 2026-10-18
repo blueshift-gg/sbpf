@@ -304,13 +304,13 @@ pub fn parse_memory_ref(
                         Rule::number => {
                             let num = parse_number(offset_inner)?;
                             accumulated_offset =
-                                accumulated_offset.wrapping_add(sign * num.to_i16());
+                                accumulated_offset.wrapping_add(sign.wrapping_mul(num.to_i16()));
                         }
                         Rule::symbol => {
                             let name = offset_inner.as_str().to_string();
                             if let Some(value) = const_map.get(&name) {
-                                accumulated_offset =
-                                    accumulated_offset.wrapping_add(sign * value.to_i16());
+                                accumulated_offset = accumulated_offset
+                                    .wrapping_add(sign.wrapping_mul(value.to_i16()));
                             } else if unresolved_symbol.is_none() {
                                 unresolved_symbol = Some(name);
                             }
@@ -354,7 +354,7 @@ pub fn parse_number(pair: Pair<Rule>) -> Result<Number, CompileError> {
     if value.starts_with("0x") {
         let hex_str = value.trim_start_matches("0x");
         if let Ok(value) = u64::from_str_radix(hex_str, 16) {
-            return Ok(Number::Addr(sign * (value as i64)));
+            return Ok(Number::Addr(sign.wrapping_mul(value as i64)));
         }
     }
 
