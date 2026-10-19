@@ -10,6 +10,8 @@ use {
     },
     either::Either,
     sbpf_common::{
+        OpcodeGroup, OpcodeTable,
+        errors::SBPFError,
         inst_param::{Number, Register},
         instruction::Instruction,
         opcode::Opcode,
@@ -204,6 +206,11 @@ pub fn build_program(
         &numeric_labels,
     );
     errors.extend(label_resolution.errors);
+    // Only a program that is otherwise ready to encode is validated, so an
+    // unresolved label is not reported a second time as a malformed operand.
+    if errors.is_empty() {
+        errors.extend(validate_instructions(&ast));
+    }
 
     optimizer::remove_temp_control_flow_target_labels(
         &mut ast.nodes,
@@ -224,6 +231,32 @@ pub fn build_program(
             debug_sections: Vec::default(),
         })
     }
+}
+
+/// Checks every instruction's operands against its opcode group before
+/// encoding, so an instruction no pass rewrote (e.g. a signed `div` when the
+/// optimizer is disabled) is rejected instead of encoded with wrong semantics.
+fn validate_instructions(ast: &AST) -> Vec<CompileError> {
+    ast.nodes
+        .iter()
+        .filter_map(|node| match node {
+            ASTNode::Instruction { instruction, .. } => {
+                instruction.opcode.group().validate_fn()(instruction).err()
+            }
+            _ => None,
+        })
+        .map(
+            |SBPFError::BytecodeError {
+                 error,
+                 span,
+                 custom_label,
+             }| CompileError::BytecodeError {
+                error,
+                span,
+                custom_label,
+            },
+        )
+        .collect()
 }
 
 #[derive(Default)]
@@ -895,6 +928,73 @@ mod tests {
         assert!(matches!(
             &errors[..],
             [CompileError::UndefinedLabel { label, .. }] if label == "invalid"
+        ));
+    }
+
+    /// `entrypoint: <signed opcode> r0, <src register or imm>; exit`
+    fn signed_div_program(opcode: Opcode, src_or_imm: Either<u8, i64>) -> AST {
+        let mut ast = AST::new();
+        ast.add_function_entry("entrypoint".to_string());
+        ast.nodes = vec![
+            label_node("entrypoint", 0),
+            ASTNode::Instruction {
+                instruction: Instruction {
+                    opcode,
+                    dst: Some(Register { n: 0 }),
+                    src: src_or_imm.left().map(|n| Register { n }),
+                    off: Some(Either::Right(sbpf_common::opcode::SIGNED_DIV_OFF)),
+                    imm: src_or_imm.right().map(|v| Either::Right(Number::Int(v))),
+                    span: 0..8,
+                },
+                offset: 0,
+            },
+            instruction_node(Opcode::Exit, 8, None, None),
+        ];
+        ast.set_text_size(16);
+        ast
+    }
+
+    fn assert_rejected_as_unexpanded(result: Result<ProgramLayout, Vec<CompileError>>) {
+        let Err(errors) = result else {
+            panic!("an unexpanded signed div must not build");
+        };
+        assert!(matches!(
+            &errors[..],
+            [CompileError::BytecodeError { custom_label: Some(label), .. }]
+                if label == "Unexpanded signed division"
+        ));
+    }
+
+    #[test]
+    fn test_build_program_expands_signed_div() {
+        let layout = build_program(
+            signed_div_program(Opcode::Div64Reg, Either::Left(1)),
+            SbpfArch::V3,
+            OptimizationConfig::enabled(),
+        )
+        .unwrap();
+        assert!(!layout.code_section.get_nodes().iter().any(|node| matches!(
+            node,
+            ASTNode::Instruction { instruction, .. } if instruction.is_signed_div_or_mod()
+        )));
+    }
+
+    #[test]
+    fn test_build_program_rejects_unexpanded_signed_div() {
+        assert_rejected_as_unexpanded(build_program(
+            signed_div_program(Opcode::Div64Reg, Either::Left(1)),
+            SbpfArch::V3,
+            OptimizationConfig::disabled(),
+        ));
+    }
+
+    #[test]
+    fn test_build_program_rejects_signed_div_without_expansion() {
+        // The fixup has no expansion for 32-bit immediates, which LLVM never emits.
+        assert_rejected_as_unexpanded(build_program(
+            signed_div_program(Opcode::Div32Imm, Either::Right(-3)),
+            SbpfArch::V3,
+            OptimizationConfig::enabled(),
         ));
     }
 

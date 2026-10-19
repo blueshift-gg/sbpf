@@ -20,10 +20,9 @@ use {
         optype::OperationType,
     },
     sbpf_ir::{
-        BlockId, Cfg, CfgFunction, DefId, DefSite, InstKey, InstructionNode, OperandKind, Use,
-        graph_engine::WorklistEngine,
+        Cfg, CfgFunction, DefId, DefSite, InstKey, InstructionNode, OperandKind, Use,
+        graph_engine::WorklistEngine, reverse_postorder,
     },
-    std::collections::HashMap,
 };
 
 /// Runs the pass on every function. Returns whether anything changed.
@@ -360,43 +359,6 @@ impl<'a> Alu32Extension<'a> {
             _ => Demand::Full64,
         }
     }
-}
-
-/// The function's blocks, as indices into `blocks`, in reverse postorder over
-/// intra-function edges. Blocks unreachable from the entry follow in source order.
-fn reverse_postorder(cfg: &Cfg, function_id: usize) -> Vec<usize> {
-    let func = &cfg.functions()[function_id];
-    let local_of: HashMap<BlockId, usize> = func
-        .block_ids()
-        .iter()
-        .enumerate()
-        .map(|(local, &id)| (id, local))
-        .collect();
-    let mut visited = vec![false; func.blocks().len()];
-    let mut postorder = Vec::with_capacity(func.blocks().len());
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    if !func.blocks().is_empty() {
-        visited[0] = true;
-        stack.push((0, 0));
-    }
-    while let Some((local, next)) = stack.last_mut() {
-        let successors = cfg.intra_successors(func.block_ids()[*local]);
-        if let Some(&succ) = successors.get(*next) {
-            *next += 1;
-            if let Some(&succ_local) = local_of.get(&succ)
-                && !visited[succ_local]
-            {
-                visited[succ_local] = true;
-                stack.push((succ_local, 0));
-            }
-        } else {
-            postorder.push(*local);
-            stack.pop();
-        }
-    }
-    postorder.reverse();
-    postorder.extend((0..func.blocks().len()).filter(|&local| !visited[local]));
-    postorder
 }
 
 #[cfg(test)]

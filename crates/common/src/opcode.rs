@@ -1128,7 +1128,26 @@ pub enum Opcode {
     Exit,
 }
 
+/// `off` value that BPF v4 places on a `div`/`mod` to request signed semantics.
+pub const SIGNED_DIV_OFF: i16 = 1;
+
 impl Opcode {
+    /// Whether this is a `div`/`mod` whose `off` field marks it as signed (BPF v4).
+    pub fn is_signed_div_or_mod(&self, off: i16) -> bool {
+        off == SIGNED_DIV_OFF
+            && matches!(
+                self,
+                Opcode::Div32Imm
+                    | Opcode::Div32Reg
+                    | Opcode::Div64Imm
+                    | Opcode::Div64Reg
+                    | Opcode::Mod32Imm
+                    | Opcode::Mod32Reg
+                    | Opcode::Mod64Imm
+                    | Opcode::Mod64Reg
+            )
+    }
+
     /// ALU ops that operate on the low 32 bits of their operands, including the
     /// 32-bit PQR ops. Unlike `is_32bit`, excludes the `jmp32` family.
     pub fn is_alu32(&self) -> bool {

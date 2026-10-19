@@ -136,6 +136,44 @@ impl CfgFunction {
         node.set_opcode(opcode);
     }
 
+    /// Replaces the complete instruction at `k`. The opcode and all operands change.
+    /// Def-use chains are NOT updated; only call after all chain-based analysis.
+    pub fn replace_instruction(&mut self, k: InstKey, instruction: Instruction) {
+        self.node_mut(k).set_instruction(instruction);
+    }
+
+    /// Inserts `instructions` immediately after `k` as synthesized nodes (no AST
+    /// source). Each new node gets an `InstKey` appended to `key_index`. Nodes
+    /// after `k` in the same block have their stored block-position updated by +n
+    /// so `func.node(key)` continues to work for subsequent signed-div expansions.
+    /// Def-use chains are NOT updated; only call after all chain-based analysis.
+    pub fn insert_sequence_after(&mut self, k: InstKey, instructions: Vec<Instruction>) {
+        if instructions.is_empty() {
+            return;
+        }
+        let (block, idx) = self.key_index[k.index()];
+        let insert_at = idx as usize + 1;
+        let n = instructions.len();
+
+        let mut new_nodes = Vec::with_capacity(n);
+        for (i, instruction) in instructions.into_iter().enumerate() {
+            let key = InstKey(self.key_index.len() as u32);
+            let mut node = InstructionNode::synthesized(instruction);
+            node.set_key(key);
+            self.key_index.push((block, (insert_at + i) as u32));
+            new_nodes.push(node);
+        }
+
+        let block_instrs = &mut self.blocks[block as usize].instructions;
+        for (i, node) in new_nodes.into_iter().enumerate() {
+            block_instrs.insert(insert_at + i, node);
+        }
+
+        for node in &self.blocks[block as usize].instructions[insert_at + n..] {
+            self.key_index[node.key().index()].1 += n as u32;
+        }
+    }
+
     /// Inserts `instruction` right after the instruction defining `d`, and returns
     /// the new definition. `instruction` must read and write only `d`'s register
     /// (e.g. `mov32 rd, rd`). The chains are patched in place: the new use is
@@ -632,6 +670,45 @@ impl DfsGraph for Cfg {
     fn successors(&self, node: Self::Node) -> &[Self::Node] {
         self.successors(node)
     }
+}
+
+/// Returns the blocks of `function_id` as local indices into
+/// `cfg.functions()[function_id].blocks()`, in reverse postorder over the
+/// function's intra-function edges. Blocks unreachable from the entry are
+/// appended in source order.
+pub fn reverse_postorder(cfg: &Cfg, function_id: usize) -> Vec<usize> {
+    let func = &cfg.functions()[function_id];
+    let local_of: HashMap<BlockId, usize> = func
+        .block_ids()
+        .iter()
+        .enumerate()
+        .map(|(local, &id)| (id, local))
+        .collect();
+    let mut visited = vec![false; func.blocks().len()];
+    let mut postorder = Vec::with_capacity(func.blocks().len());
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    if !func.blocks().is_empty() {
+        visited[0] = true;
+        stack.push((0, 0));
+    }
+    while let Some((local, next)) = stack.last_mut() {
+        let successors = cfg.intra_successors(func.block_ids()[*local]);
+        if let Some(&succ) = successors.get(*next) {
+            *next += 1;
+            if let Some(&succ_local) = local_of.get(&succ)
+                && !visited[succ_local]
+            {
+                visited[succ_local] = true;
+                stack.push((succ_local, 0));
+            }
+        } else {
+            postorder.push(*local);
+            stack.pop();
+        }
+    }
+    postorder.reverse();
+    postorder.extend((0..func.blocks().len()).filter(|&local| !visited[local]));
+    postorder
 }
 
 fn collect_blocks<'a>(nodes: impl IntoIterator<Item = InputNode<'a>>) -> Vec<Block> {

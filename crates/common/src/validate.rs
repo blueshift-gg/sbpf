@@ -102,9 +102,23 @@ pub fn validate_endian(inst: &Instruction) -> Result<(), SBPFError> {
     }
 }
 
+/// SBPF v0/v3 has no signed `div`/`mod` encoding: the BPF v4 `off = 1` marker
+/// must be expanded away before the instruction is encoded.
+fn signed_div_or_mod_error(inst: &Instruction) -> SBPFError {
+    SBPFError::BytecodeError {
+        error: format!(
+            "signed {} (off = 1) has no SBPF encoding and must be expanded before encoding",
+            inst.opcode
+        ),
+        span: inst.span.clone(),
+        custom_label: Some("Unexpanded signed division".to_string()),
+    }
+}
+
 pub fn validate_binary_immediate(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
         (Some(_dst), None, None, Some(_imm)) => Ok(()),
+        _ if inst.is_signed_div_or_mod() => Err(signed_div_or_mod_error(inst)),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction requires destination register and immediate value",
@@ -119,6 +133,7 @@ pub fn validate_binary_immediate(inst: &Instruction) -> Result<(), SBPFError> {
 pub fn validate_binary_register(inst: &Instruction) -> Result<(), SBPFError> {
     match (&inst.dst, &inst.src, &inst.off, &inst.imm) {
         (Some(_dst), Some(_src), None, None) => Ok(()),
+        _ if inst.is_signed_div_or_mod() => Err(signed_div_or_mod_error(inst)),
         _ => Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction requires destination register and source register",
@@ -851,6 +866,33 @@ mod tests {
             span: 0..8,
         };
         assert!(validate_binary_register(&valid_inst).is_ok());
+    }
+
+    #[test]
+    fn test_validate_binary_rejects_signed_div_or_mod() {
+        let signed = |opcode, src, imm| Instruction {
+            opcode,
+            dst: Some(Register { n: 0 }),
+            src,
+            off: Some(Either::Right(crate::opcode::SIGNED_DIV_OFF)),
+            imm,
+            span: 0..8,
+        };
+        let results = [
+            validate_binary_register(&signed(Opcode::Div64Reg, Some(Register { n: 1 }), None)),
+            validate_binary_register(&signed(Opcode::Mod32Reg, Some(Register { n: 1 }), None)),
+            validate_binary_immediate(&signed(
+                Opcode::Div64Imm,
+                None,
+                Some(Either::Right(Number::Int(7))),
+            )),
+        ];
+        for result in results {
+            let Err(SBPFError::BytecodeError { custom_label, .. }) = result else {
+                panic!("signed div/mod must not validate: {result:?}");
+            };
+            assert_eq!(custom_label.as_deref(), Some("Unexpanded signed division"));
+        }
     }
 
     #[test]

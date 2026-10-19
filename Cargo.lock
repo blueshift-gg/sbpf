@@ -2304,6 +2304,7 @@ dependencies = [
  "either",
  "sbpf-common",
  "sbpf-ir",
+ "sbpf-vm",
  "smallvec",
 ]
 
