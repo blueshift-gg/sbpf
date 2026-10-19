@@ -28,7 +28,7 @@ impl CfgDumpStage {
 
 /// Runs every CFG optimization on a single CFG built from the AST, then writes
 /// the result back once: dead-function elimination, then the ALU32 extension
-/// fix-up.
+/// and signed division fix-ups.
 pub fn optimize(ast: &mut AST) {
     optimize_with_observer(ast, |_, _| {});
 }
@@ -45,6 +45,7 @@ where
     remove_dead_functions(&mut cfg);
     observe(CfgDumpStage::AfterDfe, &cfg);
     sbpf_analyze::fix_alu32_extension(&mut cfg);
+    sbpf_analyze::fix_signed_div(&mut cfg);
     write_cfg_to_ast(ast, &cfg);
 }
 

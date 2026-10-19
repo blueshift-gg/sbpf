@@ -14,9 +14,10 @@ rust-version.workspace = true
 name = "sbpf_analyze"
 
 [dependencies]
+either = { workspace = true }
 sbpf-common = { workspace = true }
 sbpf-ir = { workspace = true }
 smallvec = { workspace = true }
 
 [dev-dependencies]
-either = { workspace = true }
+sbpf-vm = { workspace = true }

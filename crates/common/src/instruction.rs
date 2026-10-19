@@ -52,6 +52,11 @@ impl Instruction {
         )
     }
 
+    /// Whether this is a `div`/`mod` carrying the BPF v4 signed-semantics marker.
+    pub fn is_signed_div_or_mod(&self) -> bool {
+        matches!(self.off, Some(Either::Right(off)) if self.opcode.is_signed_div_or_mod(off))
+    }
+
     /// Checks if the instruction is a syscall.
     /// This should be used only when the call label hasn't been resolved to -1.
     pub fn is_syscall(&self) -> bool {
@@ -365,7 +370,7 @@ fn fmt_imm(imm: &Either<String, Number>) -> String {
         Either::Left(label) => label.clone(),
         Either::Right(Number::Int(v)) | Either::Right(Number::Addr(v)) => {
             if *v < 0 {
-                format!("-0x{:x}", -v)
+                format!("-0x{:x}", v.unsigned_abs())
             } else {
                 format!("0x{:x}", v)
             }
@@ -385,6 +390,22 @@ mod test {
         hex_literal::hex,
         syscall_map::murmur3_32,
     };
+
+    #[test]
+    fn test_to_asm_lddw_i64_min() {
+        let inst = Instruction {
+            opcode: Opcode::Lddw,
+            dst: Some(Register { n: 3 }),
+            src: None,
+            off: None,
+            imm: Some(Either::Right(Number::Int(i64::MIN))),
+            span: 0..16,
+        };
+        assert_eq!(
+            inst.to_asm(AsmFormat::Default).unwrap(),
+            "lddw r3, -0x8000000000000000"
+        );
+    }
 
     #[test]
     fn serialize_e2e() {

@@ -131,7 +131,8 @@ pub fn decode_store_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    if src != 0 || off != 0 {
+    let is_signed = opcode.is_signed_div_or_mod(off);
+    if src != 0 || (off != 0 && !is_signed) {
         return Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction has src: {}, off: {} supposed to be zeros",
@@ -145,7 +146,7 @@ pub fn decode_binary_immediate(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: None,
-        off: None,
+        off: is_signed.then_some(Either::Right(off)),
         imm: Some(Either::Right(Number::Int(imm.into()))),
         span: 0..8,
     })
@@ -177,7 +178,8 @@ pub fn decode_endian(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 pub fn decode_binary_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
     assert!(bytes.len() >= 8);
     let (opcode, dst, src, off, imm) = parse_bytes(bytes)?;
-    if off != 0 || imm != 0 {
+    let is_signed = opcode.is_signed_div_or_mod(off);
+    if imm != 0 || (off != 0 && !is_signed) {
         return Err(SBPFError::BytecodeError {
             error: format!(
                 "{} instruction has off: {}, imm: {} supposed to be zeros",
@@ -191,7 +193,7 @@ pub fn decode_binary_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
         opcode,
         dst: Some(Register { n: dst }),
         src: Some(Register { n: src }),
-        off: None,
+        off: is_signed.then_some(Either::Right(off)),
         imm: None,
         span: 0..8,
     })
@@ -435,7 +437,11 @@ pub fn decode_jump32_register(bytes: &[u8]) -> Result<Instruction, SBPFError> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::syscalls::REGISTERED_SYSCALLS, syscall_map::murmur3_32};
+    use {
+        super::*,
+        crate::{opcode::SIGNED_DIV_OFF, syscalls::REGISTERED_SYSCALLS},
+        syscall_map::murmur3_32,
+    };
 
     #[test]
     fn test_decode_load_immediate_valid() {
@@ -1068,6 +1074,60 @@ mod tests {
     fn test_decode_call_invalid_src_register() {
         let bytes = vec![0x85, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // src=2
         let result = decode_call_immediate(&bytes);
+        assert!(result.is_err());
+    }
+
+    // ── signed div/mod marker (off=1) ────────────────────────────────────────
+
+    #[test]
+    fn test_decode_binary_register_div64_signed_marker() {
+        // div64 r3, r4  off=1  →  signed 64-bit division marker
+        // Div64Reg opcode = 0x3f, reg byte = (4<<4)|3 = 0x43, off = 0x01 0x00
+        let bytes = vec![0x3f, 0x43, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let result = decode_binary_register(&bytes).unwrap();
+        assert_eq!(result.opcode, Opcode::Div64Reg);
+        assert_eq!(result.dst.unwrap().n, 3);
+        assert_eq!(result.src.unwrap().n, 4);
+        assert_eq!(result.off, Some(Either::Right(SIGNED_DIV_OFF)));
+        assert!(result.imm.is_none());
+    }
+
+    #[test]
+    fn test_decode_binary_register_mod64_signed_marker() {
+        // mod64 r1, r2  off=1
+        // Mod64Reg opcode = 0x9f, reg byte = (2<<4)|1 = 0x21
+        let bytes = vec![0x9f, 0x21, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let result = decode_binary_register(&bytes).unwrap();
+        assert_eq!(result.opcode, Opcode::Mod64Reg);
+        assert_eq!(result.off, Some(Either::Right(SIGNED_DIV_OFF)));
+    }
+
+    #[test]
+    fn test_decode_binary_immediate_div64_signed_marker() {
+        // div64 r5, 7  off=1  →  signed 64-bit divide by immediate
+        // Div64Imm opcode = 0x37, dst=5, off=0x01 0x00, imm=7
+        let bytes = vec![0x37, 0x05, 0x01, 0x00, 0x07, 0x00, 0x00, 0x00];
+        let result = decode_binary_immediate(&bytes).unwrap();
+        assert_eq!(result.opcode, Opcode::Div64Imm);
+        assert_eq!(result.dst.unwrap().n, 5);
+        assert_eq!(result.off, Some(Either::Right(SIGNED_DIV_OFF)));
+        assert!(matches!(result.imm, Some(Either::Right(Number::Int(7)))));
+    }
+
+    #[test]
+    fn test_decode_binary_register_off1_non_div_is_error() {
+        // add64 r1, r2  off=1  →  must still be rejected
+        // Add64Reg opcode = 0x0f, reg byte = (2<<4)|1 = 0x21, off=1
+        let bytes = vec![0x0f, 0x21, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let result = decode_binary_register(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_binary_register_div64_off2_is_error() {
+        // div64 r3, r4  off=2  →  only off=1 is the marker; 2 must be rejected
+        let bytes = vec![0x3f, 0x43, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let result = decode_binary_register(&bytes);
         assert!(result.is_err());
     }
 }

@@ -253,6 +253,11 @@ impl InstructionNode {
         }
     }
 
+    pub(crate) fn set_instruction(&mut self, instruction: Instruction) {
+        self.opcode = instruction.opcode;
+        self.instruction = Some(instruction);
+    }
+
     pub(crate) fn defs_mut(&mut self) -> &mut SmallVec<[DefId; 1]> {
         &mut self.defs
     }
