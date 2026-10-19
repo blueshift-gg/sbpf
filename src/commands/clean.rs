@@ -4,7 +4,6 @@ use {
 };
 
 pub fn clean() -> Result<(), Error> {
-    fs::remove_dir_all(".sbpf")?;
     clean_directory("deploy", "so")?;
     Ok(())
 }
