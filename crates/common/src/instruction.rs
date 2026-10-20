@@ -426,6 +426,21 @@ mod test {
     }
 
     #[test]
+    fn serialize_e2e_lddw_min() {
+        let b = hex!("18010000000000000000000000000080");
+        let i = Instruction::from_bytes(&b).unwrap();
+        assert_eq!(i.to_bytes().unwrap(), &b);
+        assert_eq!(
+            i.to_asm(AsmFormat::Default).unwrap(),
+            "lddw r1, -0x8000000000000000"
+        );
+        assert_eq!(
+            i.to_asm(AsmFormat::Llvm).unwrap(),
+            "r1 = -0x8000000000000000 ll"
+        );
+    }
+
+    #[test]
     fn serialize_e2e_add64_imm() {
         let b = hex!("0701000000000000");
         let i = Instruction::from_bytes(&b).unwrap();
