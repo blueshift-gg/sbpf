@@ -268,7 +268,10 @@ impl RangeAnalysis {
                 }
                 None => Range::TOP,
             },
-            Opcode::Div64Imm | Opcode::Div64Reg | Opcode::Mod64Imm | Opcode::Mod64Reg => {
+            // Only unsigned: a signed div/mod (off = 1) can be negative.
+            Opcode::Div64Imm | Opcode::Div64Reg | Opcode::Mod64Imm | Opcode::Mod64Reg
+                if !inst.is_signed_div_or_mod() =>
+            {
                 Range::bounded(0, dst().hi)
             }
             Opcode::Le | Opcode::Be => match imm {
@@ -439,6 +442,38 @@ mod tests {
         let r = ranges(&cfg, &analysis);
         assert_eq!(r[1], Some(Range::exact(8)));
         assert_eq!(r[3], Some(Range::TOP));
+    }
+
+    #[test]
+    fn test_signed_div_and_mod_are_unbounded() {
+        let signed = |opcode, dst, src: Option<u8>, imm: Option<i64>| {
+            Src::Inst(Instruction {
+                opcode,
+                dst: Some(Register { n: dst }),
+                src: src.map(|n| Register { n }),
+                off: Some(Either::Right(sbpf_common::opcode::SIGNED_DIV_OFF)),
+                imm: imm.map(|v| Either::Right(Number::Int(v))),
+                span: 0..0,
+            })
+        };
+        let cfg = build(&[
+            Src::Label("entrypoint"),
+            // 100 s/ -3 = -33
+            inst(Opcode::Ldxb, 1, Some(10), None),
+            signed(Opcode::Div64Reg, 1, Some(2), None),
+            // -8 s% 3 = -2, above the dividend as a u64
+            inst(Opcode::Mov64Imm, 3, None, Some(-8)),
+            signed(Opcode::Mod64Imm, 3, None, Some(3)),
+            inst(Opcode::Ldxb, 4, Some(10), None),
+            inst(Opcode::Div64Reg, 4, Some(2), None),
+            exit(),
+        ]);
+        let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
+
+        let r = ranges(&cfg, &analysis);
+        assert_eq!(r[1], Some(Range::TOP));
+        assert_eq!(r[3], Some(Range::TOP));
+        assert_eq!(r[5], Some(Range { lo: 0, hi: 0xFF }));
     }
 
     #[test]
