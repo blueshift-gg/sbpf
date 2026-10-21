@@ -12,6 +12,10 @@ use {
     serde::{Deserialize, Serialize},
 };
 
+const BPF_ATOMIC_DW: u8 = 0xdb;
+const BPF_LOAD_ACQUIRE_IMM: u32 = 0x100;
+const BPF_STORE_RELEASE_IMM: u32 = 0x110;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum AsmFormat {
     #[default]
@@ -92,6 +96,29 @@ impl Instruction {
         }
     }
 
+    /// Remap 64-bit BPF atomic load-acquire and store-release operations
+    /// to plain non-atomic LDX and STX operations.
+    fn remap_atomic_operation(bytes: &[u8]) -> Option<[u8; 8]> {
+        if bytes.len() < 8 || !matches!(bytes[0], BPF_ATOMIC_DW) {
+            return None;
+        }
+        let imm = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+        let new_opcode: Opcode = match (bytes[0], imm) {
+            // Map load-acquire to LDX operation
+            (BPF_ATOMIC_DW, BPF_LOAD_ACQUIRE_IMM) => Opcode::Ldxdw,
+            // Map store-release to STX operation
+            (BPF_ATOMIC_DW, BPF_STORE_RELEASE_IMM) => Opcode::Stxdw,
+            _ => return None,
+        };
+        let mut bytes: [u8; 8] = bytes[..8].try_into().unwrap();
+        // set opcode (byte 0) to the new opcode
+        bytes[0] = new_opcode.into();
+        // dst/src (byte 1) and offset (bytes 2..4) are unchanged
+        // set imm (bytes 4..8) to 0
+        bytes[4..8].fill(0);
+        Some(bytes)
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SBPFError> {
         let opcode: Opcode = bytes[0].try_into()?;
         opcode.group().decode_fn()(bytes)
@@ -135,6 +162,8 @@ impl Instruction {
     }
 
     pub fn from_bytes_sbpf_v3(bytes: &[u8]) -> Result<Self, SBPFError> {
+        let remapped = Self::remap_atomic_operation(bytes);
+        let bytes = remapped.as_ref().map_or(bytes, |b| b.as_slice());
         let opcode = Opcode::try_from_sbpf_v3(bytes[0])?;
         opcode.group().decode_fn()(bytes)
     }
@@ -732,6 +761,33 @@ mod test {
     fn test_invalid_opcode() {
         let result = Instruction::from_bytes(&hex!("ff00000000000000"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remap_load_acquire_u64() {
+        let i = Instruction::from_bytes_sbpf_v3(&hex!("db21100000010000")).unwrap();
+        assert_eq!(i.opcode, Opcode::Ldxdw);
+        assert_eq!(i.to_bytes().unwrap(), &hex!("7921100000000000"));
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "ldxdw r1, [r2+0x10]");
+    }
+
+    #[test]
+    fn test_remap_store_release_u64() {
+        let i = Instruction::from_bytes_sbpf_v3(&hex!("db21100010010000")).unwrap();
+        assert_eq!(i.opcode, Opcode::Stxdw);
+        assert_eq!(i.to_bytes().unwrap(), &hex!("7b21100000000000"));
+        assert_eq!(i.to_asm(AsmFormat::Default).unwrap(), "stxdw [r1+0x10], r2");
+    }
+
+    #[test]
+    fn test_atomic_other_imm_not_remapped() {
+        // imm is not BPF_LOAD_ACQUIRE_IMM or BPF_STORE_RELEASE_IMM
+        let result = Instruction::from_bytes_sbpf_v3(&hex!("db21000000000000"));
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Bytecode error: invalid opcode: 0xdb"
+        );
     }
 
     #[test]
