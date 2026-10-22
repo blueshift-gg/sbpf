@@ -257,7 +257,8 @@ impl RangeAnalysis {
             },
             Opcode::And64Imm => match imm {
                 Some(m @ 0..) => Range::bounded(0, m as i128),
-                _ => dst(),
+                // A negative mask can still reduce the value below the input's lower bound.
+                _ => Range::bounded(0, dst().hi),
             },
             Opcode::And64Reg => Range::bounded(0, dst().hi.min(src().hi)),
             Opcode::Rsh64Imm => imm.map_or(Range::TOP, |k| dst().shr(k as u32 & 63)),
@@ -442,6 +443,31 @@ mod tests {
         let r = ranges(&cfg, &analysis);
         assert_eq!(r[1], Some(Range::exact(8)));
         assert_eq!(r[3], Some(Range::TOP));
+    }
+
+    #[test]
+    fn test_negative_and_mask_range_contains_result() {
+        let values = [1, 0xFF, 0x7FFF_FFFF, 0x8000_0000, 0x1_0000_0001, u64::MAX];
+        // Include the unsigned spelling of a negative 32-bit immediate.
+        let masks = [-1, -2, -256, i32::MIN as i64, 0xFFFF_FFFE];
+        for value in values {
+            for mask in masks {
+                let cfg = build(&[
+                    Src::Label("entrypoint"),
+                    inst(Opcode::Lddw, 0, None, Some(value as i64)),
+                    inst(Opcode::And64Imm, 0, None, Some(mask)),
+                    exit(),
+                ]);
+                let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
+                let range = ranges(&cfg, &analysis)[1].unwrap();
+                let result = value & (mask as i32 as i64 as u64);
+
+                assert!(
+                    (range.lo..=range.hi).contains(&(result as i128)),
+                    "{value:#x} & {mask:#x} = {result:#x} is outside {range:?}",
+                );
+            }
+        }
     }
 
     #[test]
