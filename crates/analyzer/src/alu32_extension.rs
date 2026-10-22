@@ -961,6 +961,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_negative_and_mask_preserves_alu32_zero_extension() {
+        // The mask clears the low bit, so the subtraction underflows to u32::MAX.
+        let program = [
+            Src::Label("entrypoint"),
+            inst(Opcode::Mov64Imm, Some(0), None, Some(1)),
+            inst(Opcode::And64Imm, Some(0), None, Some(-2)),
+            inst(Opcode::Sub32Imm, Some(0), None, Some(1)),
+            exit(),
+        ];
+        let original = instructions(&program);
+        let mut cfg = build(&program);
+        fix_alu32_extension(&mut cfg);
+        let rewritten: Vec<Instruction> = cfg
+            .all_instructions()
+            .map(|(_, node)| node.instruction().unwrap().clone())
+            .collect();
+
+        assert_eq!(execute(&original, [0; 4], true), u32::MAX as u64);
+        assert_eq!(execute(&rewritten, [0; 4], false), u32::MAX as u64);
+    }
+
     /// Sanity check for the harness: without the pass, SBPF and eBPF disagree.
     #[test]
     fn test_unrewritten_program_differs_from_ebpf_semantics() {

@@ -257,7 +257,8 @@ impl RangeAnalysis {
             },
             Opcode::And64Imm => match imm {
                 Some(m @ 0..) => Range::bounded(0, m as i128),
-                _ => dst(),
+                // A negative mask can still reduce the value below the input's lower bound.
+                _ => Range::bounded(0, dst().hi),
             },
             Opcode::And64Reg => Range::bounded(0, dst().hi.min(src().hi)),
             Opcode::Rsh64Imm => imm.map_or(Range::TOP, |k| dst().shr(k as u32 & 63)),
@@ -268,7 +269,10 @@ impl RangeAnalysis {
                 }
                 None => Range::TOP,
             },
-            Opcode::Div64Imm | Opcode::Div64Reg | Opcode::Mod64Imm | Opcode::Mod64Reg => {
+            // Only unsigned: a signed div/mod (off = 1) can be negative.
+            Opcode::Div64Imm | Opcode::Div64Reg | Opcode::Mod64Imm | Opcode::Mod64Reg
+                if !inst.is_signed_div_or_mod() =>
+            {
                 Range::bounded(0, dst().hi)
             }
             Opcode::Le | Opcode::Be => match imm {
@@ -439,6 +443,63 @@ mod tests {
         let r = ranges(&cfg, &analysis);
         assert_eq!(r[1], Some(Range::exact(8)));
         assert_eq!(r[3], Some(Range::TOP));
+    }
+
+    #[test]
+    fn test_negative_and_mask_range_contains_result() {
+        let values = [1, 0xFF, 0x7FFF_FFFF, 0x8000_0000, 0x1_0000_0001, u64::MAX];
+        // Include the unsigned spelling of a negative 32-bit immediate.
+        let masks = [-1, -2, -256, i32::MIN as i64, 0xFFFF_FFFE];
+        for value in values {
+            for mask in masks {
+                let cfg = build(&[
+                    Src::Label("entrypoint"),
+                    inst(Opcode::Lddw, 0, None, Some(value as i64)),
+                    inst(Opcode::And64Imm, 0, None, Some(mask)),
+                    exit(),
+                ]);
+                let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
+                let range = ranges(&cfg, &analysis)[1].unwrap();
+                let result = value & (mask as i32 as i64 as u64);
+
+                assert!(
+                    (range.lo..=range.hi).contains(&(result as i128)),
+                    "{value:#x} & {mask:#x} = {result:#x} is outside {range:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_signed_div_and_mod_are_unbounded() {
+        let signed = |opcode, dst, src: Option<u8>, imm: Option<i64>| {
+            Src::Inst(Instruction {
+                opcode,
+                dst: Some(Register { n: dst }),
+                src: src.map(|n| Register { n }),
+                off: Some(Either::Right(sbpf_common::opcode::SIGNED_DIV_OFF)),
+                imm: imm.map(|v| Either::Right(Number::Int(v))),
+                span: 0..0,
+            })
+        };
+        let cfg = build(&[
+            Src::Label("entrypoint"),
+            // 100 s/ -3 = -33
+            inst(Opcode::Ldxb, 1, Some(10), None),
+            signed(Opcode::Div64Reg, 1, Some(2), None),
+            // -8 s% 3 = -2, above the dividend as a u64
+            inst(Opcode::Mov64Imm, 3, None, Some(-8)),
+            signed(Opcode::Mod64Imm, 3, None, Some(3)),
+            inst(Opcode::Ldxb, 4, Some(10), None),
+            inst(Opcode::Div64Reg, 4, Some(2), None),
+            exit(),
+        ]);
+        let analysis = RangeAnalysis::compute(&cfg.functions()[0], all_defs(&cfg));
+
+        let r = ranges(&cfg, &analysis);
+        assert_eq!(r[1], Some(Range::TOP));
+        assert_eq!(r[3], Some(Range::TOP));
+        assert_eq!(r[5], Some(Range { lo: 0, hi: 0xFF }));
     }
 
     #[test]
