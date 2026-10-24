@@ -117,6 +117,15 @@ impl MockFileResolver {
 }
 
 impl FileResolver for MockFileResolver {
+    fn resolve_path(&self, path: &str, relative_to: &str) -> Result<String, std::io::Error> {
+        Ok(std::path::Path::new(relative_to)
+            .parent()
+            .unwrap_or(std::path::Path::new(""))
+            .join(path)
+            .to_string_lossy()
+            .into_owned())
+    }
+
     fn resolve(&self, path: &str, _relative_to: &str) -> Result<String, std::io::Error> {
         self.files.get(path).cloned().ok_or_else(|| {
             std::io::Error::new(

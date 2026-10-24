@@ -236,6 +236,41 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_include_paths() {
+        for with_decoy in [false, true] {
+            let mut resolver = MockFileResolver::new();
+            resolver.add_file("src/program/includes/outer.s", ".include \"inner.s\"");
+            resolver.add_file("src/program/includes/inner.s", "mov64 r0, 7");
+            if with_decoy {
+                resolver.add_file("includes/inner.s", "mov64 r0, 99");
+            }
+
+            let mut registry = FileRegistry::new();
+            let result = resolve_includes(
+                ".include \"includes/outer.s\"\nexit",
+                "src/program/program.s",
+                Some(&resolver),
+                &mut registry,
+            )
+            .unwrap();
+
+            assert_eq!(result.len(), 2);
+            assert_eq!(result[0].text, "mov64 r0, 7");
+            assert_eq!(
+                registry.path(result[0].origin.file_id),
+                "src/program/includes/inner.s"
+            );
+            assert_eq!(result[0].origin.line, 1);
+            assert_eq!(result[1].text, "exit");
+            assert_eq!(
+                registry.path(result[1].origin.file_id),
+                "src/program/program.s"
+            );
+            assert_eq!(result[1].origin.line, 2);
+        }
+    }
+
+    #[test]
     fn test_include_cycle_detection() {
         let mut resolver = MockFileResolver::new();
         resolver.add_file("a.s", ".include \"<input>\"");
