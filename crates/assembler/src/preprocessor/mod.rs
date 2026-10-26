@@ -19,6 +19,13 @@ pub(crate) struct SourceLine {
 /// Trait for resolving `.include` file paths to their contents.
 /// Abstracted as a trait so tests can use an in-memory mock.
 pub trait FileResolver {
+    /// Resolve the filename used for nested includes and cycle detection.
+    /// The returned name must also be accepted by `resolve`.
+    /// Resolvers with a flat virtual namespace may keep the default behavior.
+    fn resolve_path(&self, path: &str, _relative_to: &str) -> Result<String, std::io::Error> {
+        Ok(path.to_string())
+    }
+
     /// Resolve an include path relative to the including file's directory.
     /// Returns the file contents.
     fn resolve(&self, path: &str, relative_to: &str) -> Result<String, std::io::Error>;
@@ -51,20 +58,37 @@ impl Default for FsFileResolver {
 
 impl FileResolver for FsFileResolver {
     fn resolve(&self, path: &str, relative_to: &str) -> Result<String, std::io::Error> {
+        std::fs::read_to_string(self.resolve_path(path, relative_to)?)
+    }
+
+    fn resolve_path(&self, path: &str, relative_to: &str) -> Result<String, std::io::Error> {
+        // Canonical names keep aliases such as `../` from bypassing cycle detection.
+        let resolved_name = |candidate: PathBuf| {
+            candidate
+                .canonicalize()?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "include path is not UTF-8",
+                    )
+                })
+        };
         // Try relative to the including file's directory first
         let base_dir = std::path::Path::new(relative_to)
             .parent()
             .unwrap_or(std::path::Path::new("."));
         let candidate = base_dir.join(path);
         if candidate.exists() {
-            return std::fs::read_to_string(&candidate);
+            return resolved_name(candidate);
         }
 
         // Try each include path
         for include_dir in &self.include_paths {
             let candidate = include_dir.join(path);
             if candidate.exists() {
-                return std::fs::read_to_string(&candidate);
+                return resolved_name(candidate);
             }
         }
 
@@ -93,6 +117,15 @@ impl MockFileResolver {
 }
 
 impl FileResolver for MockFileResolver {
+    fn resolve_path(&self, path: &str, relative_to: &str) -> Result<String, std::io::Error> {
+        Ok(std::path::Path::new(relative_to)
+            .parent()
+            .unwrap_or(std::path::Path::new(""))
+            .join(path)
+            .to_string_lossy()
+            .into_owned())
+    }
+
     fn resolve(&self, path: &str, _relative_to: &str) -> Result<String, std::io::Error> {
         self.files.get(path).cloned().ok_or_else(|| {
             std::io::Error::new(

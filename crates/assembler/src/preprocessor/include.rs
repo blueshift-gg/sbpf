@@ -40,7 +40,10 @@ pub(crate) fn resolve_includes(
     registry: &mut FileRegistry,
 ) -> Result<Vec<SourceLine>, Vec<CompileError>> {
     let mut include_stack: HashSet<String> = HashSet::new();
-    include_stack.insert(source_path.to_string());
+    let source_identity = resolver
+        .and_then(|r| r.resolve_path(source_path, "").ok())
+        .unwrap_or_else(|| source_path.to_string());
+    include_stack.insert(source_identity);
 
     let file_id = registry.add(source_path, source.to_string());
     let mut errors = Vec::new();
@@ -100,26 +103,34 @@ fn resolve_recursive(
                 }
             };
 
-            // Check for include cycle
-            if include_stack.contains(include_path) {
-                errors.push(CompileError::IncludeCycle {
-                    path: include_path.to_string(),
-                    span,
-                    custom_label: None,
+            // Keep the resolved filename, not just the literal include directive.
+            // Nested includes must start from the directory of the file we found.
+            let resolved = resolver
+                .resolve_path(include_path, file_path)
+                .and_then(|path| {
+                    if include_stack.contains(&path) {
+                        return Ok((path, None));
+                    }
+                    resolver
+                        .resolve(&path, file_path)
+                        .map(|content| (path, Some(content)))
                 });
-                continue;
-            }
-
-            // Resolve and read the file
-            match resolver.resolve(include_path, file_path) {
-                Ok(content) => {
-                    let included_file_id = registry.add(include_path, content.clone());
-                    include_stack.insert(include_path.to_string());
+            match resolved {
+                Ok((_, None)) => {
+                    errors.push(CompileError::IncludeCycle {
+                        path: include_path.to_string(),
+                        span,
+                        custom_label: None,
+                    });
+                }
+                Ok((resolved_path, Some(content))) => {
+                    let included_file_id = registry.add(&resolved_path, content.clone());
+                    include_stack.insert(resolved_path.clone());
 
                     resolve_recursive(
                         &content,
                         included_file_id,
-                        include_path,
+                        &resolved_path,
                         Some(resolver),
                         registry,
                         include_stack,
@@ -127,7 +138,7 @@ fn resolve_recursive(
                         errors,
                     );
 
-                    include_stack.remove(include_path);
+                    include_stack.remove(&resolved_path);
                 }
                 Err(e) => {
                     if e.kind() == std::io::ErrorKind::NotFound {
@@ -222,6 +233,41 @@ mod tests {
         assert_eq!(result[0].text, "a_line");
         assert_eq!(result[1].text, "b_line");
         assert_eq!(result[2].text, "a_end");
+    }
+
+    #[test]
+    fn test_nested_include_paths() {
+        for with_decoy in [false, true] {
+            let mut resolver = MockFileResolver::new();
+            resolver.add_file("src/program/includes/outer.s", ".include \"inner.s\"");
+            resolver.add_file("src/program/includes/inner.s", "mov64 r0, 7");
+            if with_decoy {
+                resolver.add_file("includes/inner.s", "mov64 r0, 99");
+            }
+
+            let mut registry = FileRegistry::new();
+            let result = resolve_includes(
+                ".include \"includes/outer.s\"\nexit",
+                "src/program/program.s",
+                Some(&resolver),
+                &mut registry,
+            )
+            .unwrap();
+
+            assert_eq!(result.len(), 2);
+            assert_eq!(result[0].text, "mov64 r0, 7");
+            assert_eq!(
+                registry.path(result[0].origin.file_id),
+                "src/program/includes/inner.s"
+            );
+            assert_eq!(result[0].origin.line, 1);
+            assert_eq!(result[1].text, "exit");
+            assert_eq!(
+                registry.path(result[1].origin.file_id),
+                "src/program/program.s"
+            );
+            assert_eq!(result[1].origin.line, 2);
+        }
     }
 
     #[test]
