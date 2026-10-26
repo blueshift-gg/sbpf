@@ -7,6 +7,22 @@ use {
     std::collections::HashSet,
 };
 
+/// Cut off a trailing `;`, `#` or `//` comment (the grammar's `COMMENT`), so
+/// the preprocessor never reads it as part of a macro argument or directive.
+/// Markers inside a string literal don't count.
+fn strip_comment(line: &str) -> &str {
+    let mut in_string = false;
+    for (i, c) in line.char_indices() {
+        match c {
+            '"' => in_string = !in_string,
+            ';' | '#' if !in_string => return &line[..i],
+            '/' if !in_string && line[i + 1..].starts_with('/') => return &line[..i],
+            _ => {}
+        }
+    }
+    line
+}
+
 /// Parse a `.include "path"` directive from a line.
 /// Returns Some(path) if the line is an include directive, None otherwise.
 fn parse_include_directive(line: &str) -> Option<&str> {
@@ -80,6 +96,7 @@ fn resolve_recursive(
 ) {
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_number = (line_idx + 1) as u32;
+        let line_text = strip_comment(line_text);
 
         if let Some(include_path) = parse_include_directive(line_text) {
             // Calculate a span for error reporting.
@@ -182,6 +199,18 @@ mod tests {
         assert_eq!(parse_include_directive("mov64 r1, 1"), None);
         assert_eq!(parse_include_directive(".includes \"foo.s\""), None);
         assert_eq!(parse_include_directive(".include"), None);
+    }
+
+    #[test]
+    fn test_strip_comment() {
+        assert_eq!(strip_comment("SUB_LEN 1, 4 ; r2 = 3"), "SUB_LEN 1, 4 ");
+        assert_eq!(strip_comment(".endr # done"), ".endr ");
+        assert_eq!(strip_comment("mov64 r1, 8 / 2 // half"), "mov64 r1, 8 / 2 ");
+        assert_eq!(
+            strip_comment(".ascii \"a;b#c//d\" ; text"),
+            ".ascii \"a;b#c//d\" "
+        );
+        assert_eq!(strip_comment("exit"), "exit");
     }
 
     #[test]
