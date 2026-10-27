@@ -2275,7 +2275,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2299,7 +2299,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-analyze"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "either",
  "sbpf-common",
@@ -2346,7 +2346,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-assembler"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2372,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "either",
  "hex-literal",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-common-derive"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-common-tablegen"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-debugger"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "bs58",
@@ -2429,7 +2429,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-disassembler"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "either",
  "hex-literal",
@@ -2443,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-ir"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "either",
  "sbpf-common",
@@ -2452,7 +2452,7 @@ dependencies = [
 
 [[package]]
 name = "sbpf-runtime"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "base64",
  "blake3",
@@ -2485,11 +2485,11 @@ dependencies = [
 
 [[package]]
 name = "sbpf-syscall-map"
-version = "0.3.2"
+version = "0.3.3"
 
 [[package]]
 name = "sbpf-vm"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "either",
  "sbpf-common",
@@ -4280,7 +4280,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "quote",
