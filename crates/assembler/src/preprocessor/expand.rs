@@ -242,7 +242,7 @@ fn bind_args(
     for (i, param) in macro_def.params.iter().enumerate() {
         if param.is_vararg {
             // Collect all remaining arguments
-            let vararg_values: Vec<&str> = args[i..].iter().map(|s| s.as_str()).collect();
+            let vararg_values: Vec<&str> = args.iter().skip(i).map(|s| s.as_str()).collect();
             bindings.insert(param.name.clone(), vararg_values.join(", "));
         } else if i < args.len() {
             bindings.insert(param.name.clone(), args[i].clone());
@@ -841,6 +841,19 @@ mod tests {
 
         let result = expand_and_collect(lines);
         assert_eq!(result, vec!["    .ascii \"hello\"", "    .ascii a, b, c"]);
+    }
+
+    #[test]
+    fn test_vararg_after_omitted_default() {
+        let lines = vec![
+            make_line(".macro LOG level=0, args:vararg", 1),
+            make_line("    mov64 r1, \\level", 2),
+            make_line(".endm", 3),
+            make_line("LOG", 4),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(result, vec!["    mov64 r1, 0"]);
     }
 
     #[test]
