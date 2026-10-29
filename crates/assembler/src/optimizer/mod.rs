@@ -13,15 +13,15 @@ use {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfgDumpStage {
-    BeforeDfe,
-    AfterDfe,
+    BeforeOpt,
+    AfterOpt,
 }
 
 impl CfgDumpStage {
     pub fn file_name(self) -> &'static str {
         match self {
-            Self::BeforeDfe => "dfe-before.dot",
-            Self::AfterDfe => "dfe-after.dot",
+            Self::BeforeOpt => "opt-before.dot",
+            Self::AfterOpt => "opt-after.dot",
         }
     }
 }
@@ -41,11 +41,11 @@ where
     F: FnMut(CfgDumpStage, &Cfg),
 {
     let mut cfg = cfg_for_ast(ast);
-    observe(CfgDumpStage::BeforeDfe, &cfg);
+    observe(CfgDumpStage::BeforeOpt, &cfg);
     remove_dead_functions(&mut cfg);
-    observe(CfgDumpStage::AfterDfe, &cfg);
     sbpf_analyze::fix_alu32_extension(&mut cfg);
     sbpf_analyze::fix_signed_div(&mut cfg);
+    observe(CfgDumpStage::AfterOpt, &cfg);
     write_cfg_to_ast(ast, &cfg);
 }
 
@@ -201,6 +201,70 @@ mod tests {
             opcode::Opcode,
         },
     };
+
+    #[test]
+    fn test_cfg_dump_stage_file_names() {
+        assert_eq!(CfgDumpStage::BeforeOpt.file_name(), "opt-before.dot");
+        assert_eq!(CfgDumpStage::AfterOpt.file_name(), "opt-after.dot");
+    }
+
+    #[test]
+    fn test_optimizer_observer_captures_before_and_after_all_passes() {
+        let mut ast = alu32_program();
+        let mut signed_div = alu_node(Opcode::Div64Reg, 0, Some(3), None);
+        if let ASTNode::Instruction { instruction, .. } = &mut signed_div {
+            instruction.off = Some(Either::Right(sbpf_common::opcode::SIGNED_DIV_OFF));
+        }
+        ast.nodes.insert(ast.nodes.len() - 1, signed_div);
+        ast.add_function_entry("dead".to_string());
+        ast.nodes.extend([
+            label_node("dead", 0),
+            instruction_node(Opcode::Exit, None, 0, None),
+        ]);
+        assign_offsets(&mut ast);
+
+        let mut snapshots = Vec::new();
+        optimize_with_observer(&mut ast, |stage, cfg| {
+            snapshots.push((stage, cfg.clone()));
+        });
+
+        let [(before_stage, before), (after_stage, after)] = snapshots.as_slice() else {
+            panic!("expected exactly two CFG snapshots");
+        };
+        assert_eq!(*before_stage, CfgDumpStage::BeforeOpt);
+        assert_eq!(*after_stage, CfgDumpStage::AfterOpt);
+        assert!(before.functions().iter().any(|f| f.name() == "dead"));
+        assert_eq!(after.functions().len(), 1);
+        assert_eq!(after.functions()[0].name(), "entrypoint");
+
+        let instructions = |cfg: &Cfg| {
+            cfg.all_instructions()
+                .filter_map(|(_, node)| node.instruction().cloned())
+                .collect::<Vec<_>>()
+        };
+        let before = instructions(before);
+        let after = instructions(after);
+
+        assert!(!before.iter().any(|i| i.opcode == Opcode::Mov32Reg));
+        assert!(after.iter().any(|i| {
+            i.opcode == Opcode::Mov32Reg
+                && i.dst == Some(Register { n: 1 })
+                && i.src == Some(Register { n: 1 })
+        }));
+        assert!(before.iter().any(Instruction::is_signed_div_or_mod));
+        assert!(!after.iter().any(Instruction::is_signed_div_or_mod));
+        assert!(after.iter().any(|i| i.opcode == Opcode::Div64Reg));
+
+        let written_instructions: Vec<_> = ast
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                ASTNode::Instruction { instruction, .. } => Some(instruction.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(after, written_instructions);
+    }
 
     #[test]
     fn test_optimizer_preserves_unreachable_blocks_in_reachable_function() {
