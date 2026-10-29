@@ -13,15 +13,15 @@ use {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CfgDumpStage {
-    BeforeDfe,
-    AfterDfe,
+    BeforeOpt,
+    AfterOpt,
 }
 
 impl CfgDumpStage {
     pub fn file_name(self) -> &'static str {
         match self {
-            Self::BeforeDfe => "dfe-before.dot",
-            Self::AfterDfe => "dfe-after.dot",
+            Self::BeforeOpt => "opt-before.dot",
+            Self::AfterOpt => "opt-after.dot",
         }
     }
 }
@@ -41,11 +41,11 @@ where
     F: FnMut(CfgDumpStage, &Cfg),
 {
     let mut cfg = cfg_for_ast(ast);
-    observe(CfgDumpStage::BeforeDfe, &cfg);
+    observe(CfgDumpStage::BeforeOpt, &cfg);
     remove_dead_functions(&mut cfg);
-    observe(CfgDumpStage::AfterDfe, &cfg);
     sbpf_analyze::fix_alu32_extension(&mut cfg);
     sbpf_analyze::fix_signed_div(&mut cfg);
+    observe(CfgDumpStage::AfterOpt, &cfg);
     write_cfg_to_ast(ast, &cfg);
 }
 
