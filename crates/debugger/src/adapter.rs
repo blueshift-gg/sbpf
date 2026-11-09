@@ -108,9 +108,13 @@ pub fn run_adapter_loop<T: DebuggerInterface>(debugger: &mut T) {
                     }
                     "getMemory" => {
                         if let Some(args) = cmd.args {
-                            let address = args.get(0).and_then(Value::as_u64).unwrap_or(0);
-                            let size = args.get(1).and_then(Value::as_u64).unwrap_or(0) as usize;
-                            debugger.get_memory(address, size)
+                            match serde_json::from_value::<(u64, usize)>(args) {
+                                Ok((address, size)) => debugger.get_memory(address, size),
+                                Err(error) => json!({
+                                    "type": "error",
+                                    "message": format!("Invalid getMemory args: {error}")
+                                }),
+                            }
                         } else {
                             json!({"type": "error", "message": "Missing args"})
                         }
@@ -118,9 +122,13 @@ pub fn run_adapter_loop<T: DebuggerInterface>(debugger: &mut T) {
                     "getComputeUnits" => debugger.get_compute_units(),
                     "setRegister" => {
                         if let Some(args) = cmd.args {
-                            let index = args.get(0).and_then(Value::as_u64).unwrap_or(0) as usize;
-                            let value = args.get(1).and_then(Value::as_u64).unwrap_or(0);
-                            debugger.set_register(index, value)
+                            match serde_json::from_value::<(usize, u64)>(args) {
+                                Ok((index, value)) => debugger.set_register(index, value),
+                                Err(error) => json!({
+                                    "type": "error",
+                                    "message": format!("Invalid setRegister args: {error}")
+                                }),
+                            }
                         } else {
                             json!({"type": "error", "message": "Missing args"})
                         }
