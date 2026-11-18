@@ -62,6 +62,7 @@ help: the following other types implement trait `OpcodeGroup`
 note: required by a bound in `sbpf_common_tablegen::OpcodeTable::Group`
    --> $WORKSPACE/crates/common/macros/tablegen/src/lib.rs
     |
+    | pub trait OpcodeTable: Copy + Sized + 'static {
     |     type Group: OpcodeGroup;
     |                 ^^^^^^^^^^^ required by this bound in `OpcodeTable::Group`
     = note: this error originates in the derive macro `OpcodeGroup` (in Nightly builds, run with -Z macro-backtrace for more info)
