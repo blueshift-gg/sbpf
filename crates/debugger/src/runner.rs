@@ -112,3 +112,53 @@ fn load_session_from_bytes(
         elf_path: elf_path.unwrap_or_else(|| PathBuf::from("<memory>")),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{debugger::DebugMode, input::parse_input},
+    };
+
+    #[test]
+    fn test_instruction_asm_resolves_rodata_labels() {
+        let source = r#".globl entrypoint
+entrypoint:
+    lddw r0, pad
+    lddw r1, message
+    lddw r2, tail
+    exit
+.rodata
+pad: .ascii "0123456789abcdef"
+message: .ascii "hi"
+tail: .ascii "ending"
+"#;
+        let bytecode = Assembler::new(AssemblerOption::default())
+            .assemble(source)
+            .unwrap();
+        let mut session = load_session_from_bytes(
+            bytecode,
+            parse_input("").unwrap(),
+            RuntimeConfig::default(),
+            None,
+        )
+        .unwrap();
+        let debugger = &mut session.debugger;
+
+        let mut asm = Vec::new();
+        for _ in 0..3 {
+            asm.push(debugger.get_instruction_asm().unwrap());
+            debugger.set_debug_mode(DebugMode::Step);
+            debugger.run().unwrap();
+        }
+
+        assert_eq!(
+            asm,
+            [
+                "lddw r0, str_0000",
+                "lddw r1, str_0010",
+                "lddw r2, str_0012"
+            ]
+        );
+    }
+}
