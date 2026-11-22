@@ -268,7 +268,12 @@ fn render_asm(
             {
                 let target_idx = (idx as i64 + 1 + *imm) as usize;
                 if let Some(&target_pos) = positions.get(target_idx) {
-                    ix.imm = Some(Either::Left(format!("fn_{:04x}", target_pos)));
+                    let label = if entrypoint_offset == Some(target_pos) {
+                        "entrypoint".to_string()
+                    } else {
+                        format!("fn_{:04x}", target_pos)
+                    };
+                    ix.imm = Some(Either::Left(label));
                 }
             }
 
@@ -768,6 +773,44 @@ entrypoint:
 entrypoint:
   r1 = 0x1 ll
   call sol_log_64_
+  exit
+"#
+        );
+    }
+
+    #[test]
+    fn test_disassemble_call_to_entrypoint() {
+        // Test v3 program that calls its own entrypoint
+        //
+        // .globl entrypoint
+        // entrypoint:
+        //     call helper
+        //     exit
+        //
+        // helper:
+        //     call entrypoint
+        //     exit
+        let elf_bytes = hex!(
+            "7f454c460201010000000000000000000300f7000100000000000000010000004000000000000000"
+            "00000000000000000300000040003800010040000000000001000000010000007800000000000000"
+            "00000000010000000000000001000000200000000000000020000000000000000000000000000000"
+            "8510000001000000950000000000000085100000fdffffff9500000000000000"
+        );
+
+        assert_eq!(
+            disassemble_program(
+                Program::from_bytes(&elf_bytes).unwrap(),
+                AsmFormat::Default,
+                false,
+            ),
+            r#".globl entrypoint
+
+entrypoint:
+  call fn_0010
+  exit
+
+fn_0010:
+  call entrypoint
   exit
 "#
         );
