@@ -347,24 +347,18 @@ impl Debugger {
     }
 
     pub fn get_instruction_asm(&self) -> Option<String> {
-        let inst = self.get_instruction()?;
-        let mut asm = inst.to_asm(AsmFormat::Default).ok()?;
+        let mut inst = self.get_instruction()?.clone();
 
         // Resolve rodata label.
         if inst.opcode == Opcode::Lddw
             && let Some(Either::Right(Number::Int(imm))) = &inst.imm
             && let Some(ref rodata_symbols) = self.rodata
+            && let Some(sym) = rodata_symbols.iter().find(|sym| sym.address == *imm as u64)
         {
-            let addr = *imm as u64;
-            for sym in rodata_symbols {
-                if sym.address == addr {
-                    asm = asm.replace(&imm.to_string(), &sym.name);
-                    break;
-                }
-            }
+            inst.imm = Some(Either::Left(sym.name.clone()));
         }
 
-        Some(asm)
+        inst.to_asm(AsmFormat::Default).ok()
     }
 
     pub fn get_source_location(&self, pc: u64) -> Option<(&str, usize, usize)> {
