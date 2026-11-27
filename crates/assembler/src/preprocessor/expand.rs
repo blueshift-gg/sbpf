@@ -83,7 +83,16 @@ fn expand_line(
     // Check if the first token matches a known macro name
     let first_token = first_token(trimmed);
     if let Some(macro_def) = first_token.and_then(|name| macros.get(name)) {
-        let args_str = trimmed[macro_def.name.len()..].trim();
+        // A call can follow labels on the same line (`loop: INC r1`): keep the
+        // labels as their own line and read the arguments after the name.
+        let (labels, call) = split_labels(trimmed);
+        if !labels.is_empty() {
+            output.push(SourceLine {
+                text: labels.to_string(),
+                origin: line.origin.clone(),
+            });
+        }
+        let args_str = call[macro_def.name.len()..].trim();
         let args = split_args(args_str);
 
         match bind_args(macro_def, &args) {
@@ -148,6 +157,21 @@ fn first_token(line: &str) -> Option<&str> {
     }
 
     Some(token)
+}
+
+/// Split the labels in front of a macro call (`a: b: NAME args`) off the call.
+fn split_labels(line: &str) -> (&str, &str) {
+    let mut call = line;
+    loop {
+        let end = call
+            .find(|c: char| c.is_whitespace() || c == ',')
+            .unwrap_or(call.len());
+        if !call[..end].ends_with(':') {
+            break;
+        }
+        call = call[end..].trim_start();
+    }
+    (line[..line.len() - call.len()].trim_end(), call)
 }
 
 /// Split arguments by top-level commas, respecting quotes and brackets.
@@ -707,6 +731,23 @@ mod tests {
 
         let result = expand_and_collect(lines);
         assert_eq!(result, vec!["    mov64 r0, 0"]);
+    }
+
+    #[test]
+    fn test_labels_before_macro_call() {
+        let lines = vec![
+            make_line(".macro SET reg, val", 1),
+            make_line("    mov64 \\reg, \\val", 2),
+            make_line(".endm", 3),
+            make_line("start: SET r0, 5", 4),
+            make_line("naïve: b: SET r1, 6", 5),
+        ];
+
+        let result = expand_and_collect(lines);
+        assert_eq!(
+            result,
+            vec!["start:", "    mov64 r0, 5", "naïve: b:", "    mov64 r1, 6"]
+        );
     }
 
     #[test]

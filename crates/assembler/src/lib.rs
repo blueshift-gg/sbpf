@@ -944,6 +944,28 @@ entrypoint:
     }
 
     #[test]
+    fn test_assemble_label_before_macro_call() {
+        // `start: SET r0, 5` used to take `rt: SET r0` as the register and
+        // drop the label.
+        let source = r#"
+.macro SET reg, val
+    mov64 \reg, \val
+.endm
+.globl entrypoint
+entrypoint:
+    ja start
+start: SET r0, 5
+    exit
+"#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let result = assembler.assemble_with_preprocess(source, "test.s", None);
+        let expected = assemble(
+            ".globl entrypoint\nentrypoint:\n    ja start\nstart:\n    mov64 r0, 5\n    exit\n",
+        );
+        assert_eq!(result.unwrap(), expected.unwrap());
+    }
+
+    #[test]
     fn test_assemble_directives_with_trailing_comments() {
         let source = r#"
 .macro TWICE x # repeats x
