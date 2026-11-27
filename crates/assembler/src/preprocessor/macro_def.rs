@@ -16,7 +16,7 @@ pub struct Param {
 pub struct MacroDef {
     pub name: String,
     pub params: Vec<Param>,
-    pub body_lines: Vec<String>,
+    pub(crate) body_lines: Vec<SourceLine>,
     pub defined_at: SourceOrigin,
 }
 
@@ -39,7 +39,7 @@ pub(crate) fn scan_macro_definitions(lines: Vec<SourceLine>) -> MacroScanResult 
     let mut remaining = Vec::new();
     let mut errors = Vec::new();
 
-    let mut current_macro: Option<(String, Vec<Param>, SourceOrigin, Vec<String>)> = None;
+    let mut current_macro: Option<(String, Vec<Param>, SourceOrigin, Vec<SourceLine>)> = None;
 
     // Track the origin of the .macro directive line for error reporting
     let mut macro_start_origin: Option<SourceOrigin> = None;
@@ -75,7 +75,7 @@ pub(crate) fn scan_macro_definitions(lines: Vec<SourceLine>) -> MacroScanResult 
                 }
             } else {
                 // Accumulate body lines
-                macro_state.3.push(line.text.clone());
+                macro_state.3.push(line);
             }
         } else if let Some((name, params)) = parse_macro_directive(trimmed) {
             // Validate parameters
