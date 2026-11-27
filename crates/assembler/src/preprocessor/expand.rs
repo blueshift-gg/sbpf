@@ -92,12 +92,12 @@ fn expand_line(
 
                 // Expand each body line with parameter substitution
                 for body_line in &macro_def.body_lines {
-                    let expanded_text = substitute(body_line, &bindings, expansion_id);
+                    let expanded_text = substitute(&body_line.text, &bindings, expansion_id);
                     let expanded_line = SourceLine {
                         text: expanded_text,
                         origin: SourceOrigin::with_macro_expansion(
-                            macro_def.defined_at.file_id,
-                            macro_def.defined_at.line,
+                            body_line.origin.file_id,
+                            body_line.origin.line,
                             macro_def.name.clone(),
                             line.origin.clone(),
                             depth + 1,

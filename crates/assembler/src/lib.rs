@@ -1116,6 +1116,28 @@ e:
     }
 
     #[test]
+    fn test_macro_body_error_points_at_body_line() {
+        // Errors inside a macro body used to point at the `.macro` line.
+        let source = r#".macro SET reg, val
+    mov64 r0, 1
+    mov64 \reg, \val
+.endm
+.globl entrypoint
+entrypoint:
+    SET r0, xyz
+    exit
+"#;
+        let assembler = Assembler::new(AssemblerOption::default());
+        let errors = assembler
+            .assemble_with_preprocess(source, "test.s", None)
+            .unwrap_err();
+        let origin = errors.errors[0].origin.as_ref().unwrap();
+        assert_eq!(origin.line, 3);
+        let expansion = origin.macro_expansion.as_ref().unwrap();
+        assert_eq!(expansion.invocation_origin.line, 7);
+    }
+
+    #[test]
     fn test_assemble_with_debug_data() {
         let source = r#".equ MSG_LEN, 14
 
