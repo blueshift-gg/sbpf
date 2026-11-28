@@ -71,7 +71,7 @@ define_compile_errors! {
         fields = { error: String, span: Range<usize> }
     },
     OutOfRangeLiteral {
-        error = "Out of range literal'",
+        error = "Out of range literal",
         label = "Out of range literal",
         fields = { span: Range<usize> }
     },
